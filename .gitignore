@@ -1,0 +1,10 @@
+# downloaded by build/01_get_tools.sh (Godot editor, export templates, Mesa lavapipe)
+/tools/
+# exported builds and packaged zips (build/05_export.sh, 06_package.sh, 07_web.sh)
+/dist/
+# Godot import cache (rebuilt by build/03_import.sh)
+/project/.godot/
+# generator caches and test screenshots
+/build/.cache/
+__pycache__/
+/previews/

@@ -1,0 +1,17 @@
+SUMMIT game content
+===================
+
+All game content in SUMMIT is original and was generated procedurally by the
+game's own build tools:
+
+- Mountain terrain: landscape-evolution simulation (uplift + stream-power
+  erosion), particle hydraulic erosion and thermal erosion, written for SUMMIT.
+- Textures (snow, rock, bark, noise, particles): procedural noise generators.
+- 3D models (skier, skis, poles, pine trees, rocks, chalets, chairlifts):
+  generated in code at runtime.
+- Animation: procedural (inverse kinematics) and a verlet ragdoll.
+- Sound effects: synthesized from filtered noise and oscillators.
+
+No third-party art, audio or proprietary game assets are included.
+The engine (Godot Engine) and its third-party components are covered by the
+licenses in GODOT_ENGINE_LICENSE.txt and THIRD_PARTY_NOTICES.txt.

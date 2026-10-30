@@ -1,0 +1,67 @@
+; Engine configuration file.
+; SUMMIT - open-world extreme skiing
+
+config_version=5
+
+[application]
+
+config/name="SUMMIT"
+config/description="Open-world extreme skiing."
+config/version="1.0.0"
+run/main_scene="res://scenes/main.tscn"
+config/features=PackedStringArray("4.6", "Forward Plus")
+boot_splash/bg_color=Color(0.06, 0.08, 0.11, 1)
+boot_splash/show_image=false
+config/icon="res://icon.png"
+config/windows_native_icon="res://icon.ico"
+
+[autoload]
+
+Settings="*res://scripts/core/settings.gd"
+Game="*res://scripts/core/game.gd"
+Sfx="*res://scripts/core/sfx.gd"
+
+[audio]
+
+buses/default_bus_layout="res://default_bus_layout.tres"
+
+[debug]
+
+gdscript/warnings/integer_division=0
+gdscript/warnings/narrowing_conversion=0
+gdscript/warnings/unused_parameter=0
+gdscript/warnings/shadowed_variable=0
+gdscript/warnings/unused_variable=0
+
+[display]
+
+window/size/viewport_width=1600
+window/size/viewport_height=900
+window/size/window_width_override=1600
+window/size/window_height_override=900
+window/stretch/mode="disabled"
+window/vsync/vsync_mode=1
+
+[gui]
+
+theme/default_font_antialiasing=1
+
+[physics]
+
+common/physics_ticks_per_second=120
+common/max_physics_steps_per_frame=12
+
+[rendering]
+
+renderer/rendering_method="forward_plus"
+renderer/rendering_method.web="gl_compatibility"
+rendering_device/driver.windows="vulkan"
+rendering_device/fallback_to_vulkan=true
+rendering_device/fallback_to_d3d12=true
+rendering_device/fallback_to_opengl3=true
+textures/default_filters/anisotropic_filtering_level=3
+textures/vram_compression/import_etc2_astc=true
+lights_and_shadows/directional_shadow/size=4096
+lights_and_shadows/directional_shadow/soft_shadow_filter_quality=2
+environment/defaults/default_clear_color=Color(0.55, 0.68, 0.85, 1)
+anti_aliasing/quality/msaa_3d=0
