@@ -41,6 +41,7 @@ var minimap: MiniMap
 var lift_panel: Control
 var _lift_info := {}
 var _lift_skip := 0.0
+var _streaks: ColorRect
 
 
 func setup(s: Skier, td: TerrainData) -> void:
@@ -61,6 +62,13 @@ func setup(s: Skier, td: TerrainData) -> void:
 	_build_prompt()
 	_build_reticle()
 	_build_misc()
+	_streaks = ColorRect.new()
+	_streaks.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_streaks.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_streaks.material = ShaderMaterial.new()
+	(_streaks.material as ShaderMaterial).shader = load("res://shaders/speed_lines.gdshader")
+	root.add_child(_streaks)
+	root.move_child(_streaks, 0)
 	lift_panel = Control.new()
 	lift_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	lift_panel.anchor_left = 0.5
@@ -314,6 +322,15 @@ func _process(delta: float) -> void:
 			combo_label.text = "COMBO  %s  ×%.1f" % [_thousands(tricks.combo_points), tricks.multiplier]
 		else:
 			combo_label.text = ""
+	# speed streaks above ~65 km/h (Settings > Camera > speed effects)
+	var fx_on := bool(Settings.get_value("camera", "speed_fx")) and skier.mode == Skier.Mode.SKI and not skier.is_crashed
+	var amt := clampf((skier.speed_kmh() - 65.0) / 45.0, 0.0, 1.0) if fx_on else 0.0
+	_streaks.visible = amt > 0.01
+	if _streaks.visible:
+		var sm := _streaks.material as ShaderMaterial
+		sm.set_shader_parameter("amount", amt)
+		sm.set_shader_parameter("t", Time.get_ticks_msec() * 0.001)
+		sm.set_shader_parameter("aspect", root.size.x / maxf(root.size.y, 1.0))
 	if minimap:
 		notif_box.offset_top = (24.0 + MiniMap.SIZE + 14.0) if minimap.visible else 24.0
 	_hint_time += delta

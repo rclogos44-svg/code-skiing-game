@@ -15,6 +15,13 @@ const SHOULDER_HALF := 0.185
 const TORSO_LEN := 0.50
 const ANKLE_H := 0.15
 const HEAD_LAYER := 2   # render layer bit hidden in first-person
+## Gear colours (Settings > Skier): [name, colour]
+const JACKETS := [["Signal red", Color(0.85, 0.22, 0.1)], ["Glacier blue", Color(0.12, 0.42, 0.85)], ["Lime", Color(0.55, 0.8, 0.15)],
+	["Sunflower", Color(0.98, 0.75, 0.1)], ["Violet", Color(0.5, 0.25, 0.75)], ["Black", Color(0.08, 0.09, 0.11)], ["White", Color(0.92, 0.93, 0.95)]]
+const PANTS := [["Charcoal", Color(0.16, 0.18, 0.23)], ["Black", Color(0.06, 0.06, 0.07)], ["Navy", Color(0.1, 0.14, 0.3)],
+	["Olive", Color(0.3, 0.33, 0.2)], ["Sand", Color(0.7, 0.62, 0.48)], ["Red", Color(0.6, 0.12, 0.1)]]
+const HELMETS := [["White", Color(0.94, 0.95, 0.97)], ["Black", Color(0.08, 0.08, 0.09)], ["Orange", Color(1.0, 0.45, 0.08)],
+	["Blue", Color(0.15, 0.4, 0.9)], ["Mint", Color(0.55, 0.9, 0.75)]]
 
 var skier: Skier
 var parts := {}
@@ -101,6 +108,19 @@ func _build() -> void:
 		_add("basket_" + side, pl[2], grip_m)
 	# a stripe of accent colour on the jacket
 	_add("stripe", SkierModel.lathe([Vector2(0.0, 0.0), Vector2(0.18, 0.0), Vector2(0.183, 0.035), Vector2(0.0, 0.035)], 1.19, 0.73, 18), accent)
+	_apply_gear()
+	Settings.changed.connect(func(section: String, _k: String):
+		if section == "gear":
+			_apply_gear())
+
+
+func _apply_gear() -> void:
+	var c := func(pal: Array, key: String) -> Color: return pal[clampi(int(Settings.get_value("gear", key)), 0, pal.size() - 1)][1]
+	set_color(c.call(JACKETS, "jacket"))
+	var pants: Color = c.call(PANTS, "pants")
+	for n in ["pelvis", "thigh_l", "thigh_r", "shin_l", "shin_r"]:
+		(parts[n].material_override as StandardMaterial3D).albedo_color = pants
+	(parts["helmet"].material_override as StandardMaterial3D).albedo_color = c.call(HELMETS, "helmet")
 
 
 func _add(name: String, mesh: Mesh, m: Material, head := false) -> void:

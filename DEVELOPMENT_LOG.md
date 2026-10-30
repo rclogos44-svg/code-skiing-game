@@ -261,3 +261,16 @@ Hybrid approach: the proven snow/edge model stays; the body now drives pop and r
 - Tests (physics suite, 55 checks): ride onto a box and slide it to the end; can't ride onto a
   rail at snow level but can pop onto it; Realistic with no input falls off, balancing with A/D
   (simple controller) reaches the end; landing across a box gives a slide.
+
+## Phase 3 — graphics: conditions, gear, effects
+
+- **Time of day** (Morning, Midday, Golden hour, Dusk) and **weather** (Clear, Light snow,
+  Snowstorm, Valley fog) in Settings > Graphics: sun colour and strength, sky gradient, cloud
+  cover, fog colour/density/height, ambient light and falling snow (none / light / blizzard with
+  wind). The sun keeps its direction because the long-distance terrain shadows are baked for it,
+  so "golden hour" and "dusk" are lighting moods rather than a lower sun.
+- **Gear colours** (Settings > Skier): jacket, pants, helmet.
+- **Boot prints** in the snow when walking (ring buffer of 240 prints).
+- **Speed streaks** on screen above ~65 km/h (off with Settings > Camera > speed effects).
+- Checked by screenshots of every condition (desktop renderer).
+- Not done in this pass: new tree models, a new skier mesh, jacket flutter, deeper powder trenches.

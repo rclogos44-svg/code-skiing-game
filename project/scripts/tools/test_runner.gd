@@ -36,6 +36,8 @@ func run(w: World) -> void:
 			await _showcase3()
 		"showcase4":
 			await _showcase4()
+		"showcase5":
+			await _showcase5()
 		_:
 			print("[TEST] unknown test mode ", Game.test_mode)
 			failures += 1
@@ -982,6 +984,53 @@ func _showcase4() -> void:
 		await _snap(sh[2])
 	s.scripted_input = null
 	s.set_physics_process(true)
+
+
+## Time of day / weather, gear colours, boot prints and speed streaks.
+func _showcase5() -> void:
+	var s := world.skier
+	var keep := [Settings.get_value("world", "time_of_day"), Settings.get_value("world", "weather"), Settings.get_value("gear", "jacket"),
+		Settings.get_value("gear", "helmet")]
+	world.spawn_at_drop("Powder Bowl")
+	s.frozen = true
+	await _frames(20)
+	for c in [["morning", "clear"], ["day", "snowing"], ["golden", "clear"], ["dusk", "clear"], ["day", "storm"], ["day", "fog"]]:
+		Settings.set_value("world", "time_of_day", c[0])
+		Settings.set_value("world", "weather", c[1])
+		await _frames(25)
+		await _snap("cond_%s_%s" % c)
+	Settings.set_value("world", "time_of_day", "day")
+	Settings.set_value("world", "weather", "clear")
+	Settings.set_value("gear", "jacket", 1)
+	Settings.set_value("gear", "helmet", 2)
+	s.frozen = false
+	var spot := _find_slope(6.0, 12.0)
+	world.spawn(spot["pos"], spot["yaw"])
+	await _frames(5)
+	s.toggle_skis()
+	s.scripted_input = {"tuck": 1.0}
+	await _frames(90)
+	s.scripted_input = null
+	var f := Skier.forward_flat_s(s.heading)
+	_free_cam(s.position - f * 1.5 + f.cross(Vector3.UP) * 2.5 + Vector3.UP * 2.6, s.position - f * 2.5)
+	await _frames(3)
+	await _snap("gear_prints")
+	world.camera.set_process(true)
+	s.toggle_skis()
+	var hud = get_parent().get("hud")
+	if hud:
+		hud.visible = true
+	var steep := _find_slope(30.0, 38.0)
+	world.spawn(steep["pos"], steep["yaw"])
+	s.teleport(steep["pos"], steep["yaw"], 28.0)
+	s.scripted_input = {"tuck": 1.0}
+	await _frames(25)
+	await _snap("speed_streaks")
+	s.scripted_input = null
+	Settings.set_value("world", "time_of_day", keep[0])
+	Settings.set_value("world", "weather", keep[1])
+	Settings.set_value("gear", "jacket", keep[2])
+	Settings.set_value("gear", "helmet", keep[3])
 
 
 # ------------------------------------------------------------------ terrain features

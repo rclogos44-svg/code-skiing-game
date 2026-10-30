@@ -47,12 +47,78 @@ func setup(s: Skier, b: SkierBody, td: TerrainData) -> void:
 	s.tree_brush.connect(_on_tree)
 	s.respawned.connect(_break_tracks)
 	Settings.changed.connect(_on_settings)
+	_make_prints()
+	_apply_weather()
 
 
 func _on_settings(section: String, _k: String) -> void:
-	if section == "graphics":
+	if section == "graphics" or section == "world":
 		_detail = int(Settings.get_value("graphics", "detail"))
-		ambient.amount = [300, 700, 1400, 2400][clampi(_detail, 0, 3)]
+		_apply_weather()
+
+
+## Falling snow follows the weather setting: none when clear, a blizzard in a storm.
+func _apply_weather() -> void:
+	var w := String(Settings.get_value("world", "weather"))
+	var mul: float = {"clear": 0.0, "snowing": 1.0, "storm": 2.5, "fog": 0.3}.get(w, 1.0)
+	ambient.emitting = mul > 0.0
+	ambient.amount = maxi(int([300, 700, 1400, 2400][clampi(_detail, 0, 3)] * mul), 1)
+	var pm := ambient.process_material as ParticleProcessMaterial
+	var wind := 4.0 if w == "storm" else 1.0
+	pm.initial_velocity_min = 1.0 * wind
+	pm.initial_velocity_max = 3.5 * wind
+	pm.gravity = Vector3(0.6 * wind * 2.0, -0.9, 0.3 * wind * 2.0)
+
+
+# ------------------------------------------------------------------ boot prints
+const MAX_PRINTS := 240
+var _prints: MultiMesh
+var _print_n := 0
+var _last_step := 0
+
+
+func _make_prints() -> void:
+	var g := Gradient.new()
+	g.set_color(0, Color(1, 1, 1, 1))
+	g.set_color(1, Color(1, 1, 1, 0))
+	var gt := GradientTexture2D.new()
+	gt.gradient = g
+	gt.fill = GradientTexture2D.FILL_RADIAL
+	gt.fill_from = Vector2(0.5, 0.5)
+	gt.fill_to = Vector2(0.5, 0.0)
+	var m := StandardMaterial3D.new()
+	m.albedo_texture = gt
+	m.albedo_color = Color(0.32, 0.42, 0.6, 0.85)
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.roughness = 1.0
+	var pm := PlaneMesh.new()
+	pm.size = Vector2(0.14, 0.32)
+	_prints = MultiMesh.new()
+	_prints.transform_format = MultiMesh.TRANSFORM_3D
+	_prints.mesh = pm
+	_prints.instance_count = MAX_PRINTS
+	_prints.visible_instance_count = 0
+	var mi := MultiMeshInstance3D.new()
+	mi.multimesh = _prints
+	mi.material_override = m
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mi.custom_aabb = AABB(Vector3(-1, -1, -1) * 1e5, Vector3.ONE * 2e5)
+	add_child(mi)
+
+
+func _update_prints() -> void:
+	if skier.mode != Skier.Mode.WALK or not skier.contact or skier.speed < 0.3:
+		return
+	var step := int(floor((skier.walk_phase + PI * 0.5) / PI))
+	if step == _last_step:
+		return
+	_last_step = step
+	var foot: Vector3 = body.joints.get("ankle_l" if step % 2 == 0 else "ankle_r", skier.position)
+	foot.y = terrain.height(foot.x, foot.z) + 0.015
+	var b := Basis(Vector3.UP, skier.heading)
+	_prints.set_instance_transform(_print_n % MAX_PRINTS, Transform3D(b, foot))
+	_print_n += 1
+	_prints.visible_instance_count = mini(_print_n, MAX_PRINTS)
 
 
 func _snow_material(tex: Texture2D, tint := Color(1, 1, 1)) -> StandardMaterial3D:
@@ -226,6 +292,7 @@ func _process(_delta: float) -> void:
 	var cam := get_viewport().get_camera_3d()
 	if cam:
 		ambient.global_position = cam.global_position + Vector3(0, 6, 0) - Vector3(1, -0.3, 0.4) * 10.0
+	_update_prints()
 	if skier.is_crashed or skier.mode != Skier.Mode.SKI:
 		spray_l.amount_ratio = 0.0
 		spray_r.amount_ratio = 0.0

@@ -74,6 +74,8 @@ var _defaults := {
 	"camera": {"fov": 72.0, "distance": 1.0, "speed_fx": true, "shake": true, "auto_center": true,
 		"minimap": true, "minimap_rotate": true},
 	"audio": {"master": 0.8, "sfx": 1.0, "ambience": 0.8, "ui": 0.7},
+	"world": {"time_of_day": "day", "weather": "snowing"},
+	"gear": {"jacket": 0, "pants": 0, "helmet": 0},
 }
 var _save_pending := false
 

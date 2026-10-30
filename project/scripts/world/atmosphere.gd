@@ -1,7 +1,24 @@
 class_name Atmosphere
 extends Node3D
 ## Sky, sun, fog / aerial perspective, ambient light, tonemapping and the quality settings
-## that belong to them (shadows, SSAO, glow, volumetrics).
+## that belong to them (shadows, SSAO, glow, volumetrics).  Time of day and weather (Settings >
+## Graphics) change light colour, sky, clouds and fog; the sun keeps its direction because the
+## terrain's long-distance shadows are baked for it.
+
+## time of day: sun colour, sun energy, zenith, horizon, fog colour, ambient energy
+const TIMES := {
+	"morning": [Color(1.0, 0.88, 0.76), 1.3, Color(0.17, 0.35, 0.70), Color(0.86, 0.82, 0.82), Color(0.80, 0.80, 0.86), 0.9],
+	"day": [Color(1.0, 0.965, 0.91), 1.55, Color(0.13, 0.32, 0.68), Color(0.60, 0.74, 0.90), Color(0.66, 0.76, 0.90), 1.0],
+	"golden": [Color(1.0, 0.70, 0.42), 1.35, Color(0.18, 0.28, 0.56), Color(1.0, 0.72, 0.52), Color(0.95, 0.76, 0.62), 0.85],
+	"dusk": [Color(1.0, 0.58, 0.42), 0.5, Color(0.07, 0.09, 0.22), Color(0.52, 0.46, 0.62), Color(0.40, 0.42, 0.58), 0.55],
+}
+## weather: cloud cover, sun multiplier, fog density multiplier, height-fog density, grey-out of the sky
+const WEATHER := {
+	"clear": [0.12, 1.0, 0.8, 0.0008, 0.0],
+	"snowing": [0.42, 1.0, 1.0, 0.0008, 0.0],
+	"storm": [0.97, 0.35, 7.0, 0.002, 0.75],
+	"fog": [0.3, 0.9, 1.2, 0.03, 0.15],
+}
 
 var env: Environment
 var world_env: WorldEnvironment
@@ -73,8 +90,25 @@ func setup(td: TerrainData) -> void:
 
 
 func _on_settings(section: String, _key: String) -> void:
-	if section == "graphics":
+	if section == "graphics" or section == "world":
 		apply_settings()
+
+
+func _apply_conditions(fog_base: float) -> void:
+	var t: Array = TIMES.get(String(Settings.get_value("world", "time_of_day")), TIMES["day"])
+	var w: Array = WEATHER.get(String(Settings.get_value("world", "weather")), WEATHER["snowing"])
+	var grey := Color(0.62, 0.66, 0.72)
+	sun.light_color = t[0]
+	sun.light_energy = float(t[1]) * float(w[1])
+	sky_mat.set_shader_parameter("zenith_color", (t[2] as Color).lerp(grey * 0.9, w[4]))
+	sky_mat.set_shader_parameter("horizon_color", (t[3] as Color).lerp(grey, w[4]))
+	sky_mat.set_shader_parameter("cloud_coverage", w[0])
+	env.fog_light_color = (t[4] as Color).lerp(Color(0.78, 0.8, 0.84), w[4])
+	env.fog_density = fog_base * float(w[2])
+	env.fog_height_density = w[3]
+	# valley fog sits in the low valleys; otherwise a thin haze high up
+	env.fog_height = 650.0 if Settings.get_value("world", "weather") == "fog" else 900.0
+	env.ambient_light_energy = t[5]
 
 
 func apply_settings() -> void:
@@ -93,7 +127,7 @@ func apply_settings() -> void:
 	env.ssil_intensity = 0.6
 	env.sdfgi_enabled = false
 	var vd := int(Settings.get_value("graphics", "view_distance"))
-	env.fog_density = [0.00016, 0.00011, 0.000085, 0.00007][clampi(vd, 0, 3)]
+	_apply_conditions([0.00016, 0.00011, 0.000085, 0.00007][clampi(vd, 0, 3)])
 	if terrain_renderer:
 		terrain_renderer.set_lod_scale([0.97, 1.0, 1.12, 1.35][clampi(detail, 0, 3)])
 		terrain_renderer.material.set_shader_parameter("shadow_fade_start", dist * 0.55)
