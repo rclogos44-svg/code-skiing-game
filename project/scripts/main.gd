@@ -292,7 +292,7 @@ func _process(delta: float) -> void:
 	if world.resort:
 		ride_info = world.resort.ride_info()
 		if ride_info.is_empty() and not s.is_crashed and not challenges.is_active():
-			var lf: Dictionary = world.resort.lift_near(s.position, 25.0)
+			var lf: Dictionary = world.resort.lift_near(s.position)
 			if not lf.is_empty() and s.speed < 6.0:
 				prompt = "Press %s to ride the %s" % [Settings.binding_label("interact"), lf["name"]]
 		# hold the interact key while riding to skip to the top
@@ -327,7 +327,7 @@ func _try_lift() -> void:
 		if r.ride["phase"] == "wait":
 			r.cancel_wait()
 		return
-	var lf: Dictionary = r.lift_near(s.position, 25.0)
+	var lf: Dictionary = r.lift_near(s.position)
 	if lf.is_empty() or s.speed >= 6.0 or s.is_crashed or challenges.is_active():
 		return
 	r.board(lf, s)

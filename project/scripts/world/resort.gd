@@ -554,13 +554,18 @@ func unload_point(lf: Dictionary) -> Vector3:
 	return p
 
 
-## The lift whose loading point is near `pos`, or {}.
-func lift_near(pos: Vector3, radius := 25.0) -> Dictionary:
+## The lift whose loading point is nearest to `pos` (within `radius`), or {}.
+## The village lifts start a few tens of metres apart, so nearest - not first - matters.
+func lift_near(pos: Vector3, radius := 15.0) -> Dictionary:
+	var best := {}
+	var best_d := radius
 	for lf in lifts:
 		var lp := load_point(lf)
-		if Vector2(pos.x - lp.x, pos.z - lp.z).length() < radius:
-			return lf
-	return {}
+		var d := Vector2(pos.x - lp.x, pos.z - lp.z).length()
+		if d < best_d:
+			best_d = d
+			best = lf
+	return best
 
 
 func is_riding() -> bool:

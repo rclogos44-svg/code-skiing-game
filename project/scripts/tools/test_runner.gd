@@ -205,29 +205,39 @@ func _lift_ride() -> void:
 		check("resort has lifts", false)
 		return
 	var s := world.skier
-	var lf: Dictionary = r.lifts[0]
-	var lp: Vector3 = r.load_point(lf)
-	s.teleport(lp - (lf["dir"] as Vector3) * 6.0, Skier.yaw_of(lf["dir"]))
-	check("lift prompt near the loading point", not r.lift_near(s.position, 25.0).is_empty())
-	Engine.time_scale = 4.0
-	r.board(lf, s)
-	var t := 0.0
-	while t < 12.0 and s.mode != Skier.Mode.LIFT:
+	for lf: Dictionary in r.lifts:
+		var nm: String = lf["name"]
+		var lp: Vector3 = r.load_point(lf)
+		# every lift: standing on its mat selects that lift, not a neighbour's
+		var near: Dictionary = r.lift_near(lp + (lf["dir"] as Vector3) * 1.0)
+		check("%s: its mat selects it" % nm, not near.is_empty() and near["index"] == lf["index"], "got %s" % near.get("name", "none"))
+		# skis stay clear of the snow along the whole up line (feet hang ~0.75 m below the seat)
+		var lowest := INF
+		var d: float = r.LOAD_S + 15.0
+		while d < float(lf["up_len"]) - r.UNLOAD_BEFORE - 15.0:
+			var q: Vector3 = r._sample_loop(lf, d).origin
+			lowest = minf(lowest, q.y + r.SEAT_Y - 0.75 - world.terrain.height(q.x, q.z))
+			d += 4.0
+		check("%s: skis clear the snow" % nm, lowest > 0.3, "lowest %.1f m" % lowest)
+		s.teleport(lp - (lf["dir"] as Vector3) * 2.0, Skier.yaw_of(lf["dir"]))
+		Engine.time_scale = 4.0
+		r.board(r.lift_near(s.position), s)
+		var t := 0.0
+		while t < 15.0 and s.mode != Skier.Mode.LIFT:
+			await get_tree().process_frame
+			t += get_process_delta_time()
+		var info0: Dictionary = r.ride_info()
+		check("%s: chair picks the skier up" % nm, s.mode == Skier.Mode.LIFT and info0.get("name", "") == nm, "after %.1f s" % t)
+		var y0 := s.position.y
+		for i in 90:
+			await get_tree().process_frame
+		var info: Dictionary = r.ride_info()
+		check("%s: riding up" % nm, s.position.y > y0 + 1.0 and info.get("phase", "") == "ride", "climbed %.1f m, %.0f s to go" % [s.position.y - y0, float(info.get("remaining", 0.0))])
+		r.skip_ride()
 		await get_tree().process_frame
-		t += get_process_delta_time()
-	check("chair picks the skier up", s.mode == Skier.Mode.LIFT, "after %.1f s" % t)
-	var y0 := s.position.y
-	var clearance := INF
-	for i in 120:
-		await get_tree().process_frame
-		clearance = minf(clearance, s.position.y - world.terrain.height(s.position.x, s.position.z))
-	var info: Dictionary = r.ride_info()
-	check("riding up the lift", s.position.y > y0 + 1.0 and info.get("phase", "") == "ride", "climbed %.1f m, %.0f s to go, min seat clearance %.1f m" % [s.position.y - y0, float(info.get("remaining", 0.0)), clearance])
-	r.skip_ride()
-	await get_tree().process_frame
-	var top: Vector3 = r.unload_point(lf)
-	check("unloads at the top on skis", s.mode == Skier.Mode.SKI and Vector2(s.position.x - top.x, s.position.z - top.z).length() < 6.0)
-	Engine.time_scale = 1.0
+		var top: Vector3 = r.unload_point(lf)
+		check("%s: unloads at the top on skis" % nm, s.mode == Skier.Mode.SKI and Vector2(s.position.x - top.x, s.position.z - top.z).length() < 6.0)
+		Engine.time_scale = 1.0
 
 
 func _find_slope(min_deg: float, max_deg: float, groomed := false) -> Dictionary:
