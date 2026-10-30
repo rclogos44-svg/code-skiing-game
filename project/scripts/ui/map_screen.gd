@@ -461,6 +461,16 @@ func _draw_overlay() -> void:
 		_target(mp, 9.0, {"type": "piste", "name": pi["name"], "sub": "%s piste" % DIFF_NAMES.get(pi["difficulty"], ""), "x": mid[0], "z": mid[1]})
 		if z >= 1.5:
 			_label(pi["name"], mp, 12, col.darkened(0.15) if pi["difficulty"] != "black" else INK, 30.0)
+	# terrain park rails and boxes
+	if z >= 1.5:
+		for r in terrain.layout.get("rails", []):
+			var ra := _w2m(r[0], r[1])
+			var rb := _w2m(r[2], r[3])
+			var mid := (ra + rb) * 0.5
+			var half := maxf(ra.distance_to(rb) * 0.5, 4.0)
+			var rd := (rb - ra).normalized()
+			ci.draw_line(mid - rd * half, mid + rd * half, Color(0.05, 0.05, 0.08), 5.0, true)
+			ci.draw_line(mid - rd * half, mid + rd * half, Color(1.0, 0.75, 0.15) if r[4] == "rail" else Color(1.0, 0.5, 0.1), 3.0, true)
 	# glade trails and halfpipe gullies
 	for f in terrain.layout.get("features", []):
 		var ft := String(f["type"])

@@ -15,6 +15,7 @@ var camera: CameraRig
 var fx: Node3D
 var audio: Node
 var resort: Node3D
+var park: Node3D
 var load_ms := {}
 
 
@@ -67,6 +68,11 @@ func build() -> bool:
 		npc.name = "NPCSkiers"
 		add_child(npc)
 		npc.setup(terrain, resort.rider_mat)
+	if ResourceLoader.exists("res://scripts/world/park.gd"):
+		park = load("res://scripts/world/park.gd").new()
+		park.name = "Park"
+		add_child(park)
+		park.setup(terrain, obstacles)
 	load_ms["resort"] = Time.get_ticks_msec() - t3
 	obstacles.build()
 
@@ -74,6 +80,8 @@ func build() -> bool:
 	skier.name = "Skier"
 	add_child(skier)
 	skier.setup(terrain, obstacles)
+	if park:
+		skier.rails = park.rails
 
 	body = SkierBody.new()
 	body.name = "SkierBody"

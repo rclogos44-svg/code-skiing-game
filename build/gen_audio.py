@@ -90,6 +90,10 @@ def main():
     ice = shaped_noise(3, lambda f: band(f, 2500, 9000, 2.0) + 0.5 * band(f, 4000, 4600, 8.0))
     rattle = 1.0 + 0.6 * np.abs(shaped_noise(3, lambda f: band(f, 30, 120, 3)))
     write(os.path.join(out, "ice_loop.wav"), ice * rattle)
+    # metal / plastic sliding under the skis (rails and boxes)
+    n = 3 * SR
+    rl = shaped_noise(3, lambda f: band(f, 1500, 6000, 2.0) + 0.8 * band(f, 2900, 3300, 10.0) + 0.5 * band(f, 4700, 5100, 10.0))
+    write(os.path.join(out, "rail_loop.wav"), rl * (0.85 + 0.15 * periodic_lfo(n, 9)))
     n = 12 * SR
     amb = shaped_noise(12, lambda f: band(f, 40, 400, 1.5)) * (0.6 + 0.4 * periodic_lfo(n, 1, 0.3) * periodic_lfo(n, 3))
     amb += 0.15 * shaped_noise(12, lambda f: band(f, 3000, 9000, 2.0))

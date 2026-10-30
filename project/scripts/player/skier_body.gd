@@ -198,7 +198,7 @@ func _compute_pose(dt: float) -> void:
 	var torso_t := 0.0
 	if not s.airborne and s.speed > 1.5:
 		# hockey stop: the skis pivot underneath while the upper body keeps facing downhill
-		var lim := lerpf(0.7, 1.3, s.edge_brake)
+		var lim := lerpf(0.7, 1.3, maxf(s.edge_brake, 1.0 if s.grind_slide and s.is_grinding() else 0.0))
 		torso_t = clampf(wrapf(s.travel_yaw - s.heading, -PI, PI), -lim, lim) * lerpf(0.75, 0.9, s.edge_brake) + _lean * 0.22
 	# winding up for a spin: shoulders turn against the spin direction
 	torso_t -= s.wind * 0.55
@@ -314,6 +314,9 @@ func _compute_pose(dt: float) -> void:
 		hand_local = hand_local.lerp(Vector3(sgn * 0.42, -0.22, -0.14), arms_air)
 		if plant_side == sgn:
 			hand_local = hand_local.lerp(Vector3(sgn * 0.16, -0.34, -0.48), _pole_plant)
+		if s.is_grinding():
+			# arms out for balance on a rail, swaying with it
+			hand_local = hand_local.lerp(Vector3(sgn * 0.48, -0.12 + 0.12 * sgn * s.rail_balance, -0.2), 0.85)
 		if s.sketchy > 0.0:
 			# close call: arms windmill to catch the balance
 			var a := s.time * 13.0 + (0.0 if sgn > 0.0 else PI)

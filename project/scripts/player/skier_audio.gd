@@ -11,7 +11,7 @@ var _prev_edgeb := 0.0
 
 func setup(s: Skier) -> void:
 	skier = s
-	for n in ["wind", "slide", "carve", "powder", "ice"]:
+	for n in ["wind", "slide", "carve", "powder", "ice", "rail"]:
 		layers[n] = _loop(n + "_loop", "SFX")
 	layers["ambient"] = _loop("ambient_loop", "Ambience")
 	(layers["ambient"] as AudioStreamPlayer).volume_db = -14.0
@@ -66,6 +66,8 @@ func _process(delta: float) -> void:
 	_mix("carve", carve * 0.6, 0.9 + 0.3 * v, dt)
 	_mix("powder", (clampf(sp / 15.0, 0.0, 1.0) * powder if on_snow else 0.0) * 0.7, 0.9 + 0.2 * v, dt)
 	_mix("ice", (clampf(sp / 15.0, 0.0, 1.0) * ice if on_snow else 0.0) * 0.4, 1.0 + 0.3 * v, dt)
+	var on_rail := skier.is_grinding()
+	_mix("rail", clampf(sp / 8.0, 0.25, 1.0) * 0.55 if on_rail else 0.0, (1.0 if on_rail and skier.grind["kind"] == "rail" else 0.7) + sp * 0.01, dt)
 	# footsteps on foot: one crunch per half gait cycle
 	if skier.mode == Skier.Mode.WALK and skier.contact:
 		var step := int(floor((skier.walk_phase + PI * 0.5) / PI))

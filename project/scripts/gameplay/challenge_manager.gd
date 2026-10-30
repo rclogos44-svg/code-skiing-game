@@ -98,6 +98,8 @@ func describe(c: Dictionary) -> String:
 func _trick_label(t: String) -> String:
 	if t == "grab":
 		return "grab"
+	if t == "jib":
+		return "rail / box slide"
 	return t + "° spin"
 
 
@@ -285,6 +287,8 @@ func _on_trick(t: Dictionary) -> void:
 			var ok := false
 			if want == "grab":
 				ok = int(t["grabs"]) > 0
+			elif want == "jib":
+				ok = "jib" in t.get("tags", [])
 			else:
 				ok = int(t["spin"]) >= int(want)
 			if ok:

@@ -34,6 +34,8 @@ func run(w: World) -> void:
 			await _showcase2()
 		"showcase3":
 			await _showcase3()
+		"showcase4":
+			await _showcase4()
 		_:
 			print("[TEST] unknown test mode ", Game.test_mode)
 			failures += 1
@@ -219,6 +221,83 @@ func _body_physics(spot: Dictionary) -> void:
 		s.step(1.0 / 120.0)
 	s.crashed.disconnect(cb)
 	check("landing on your back crashes", String(box.get("r", "")) == "Landed on your back", String(box.get("r", "no crash")))
+	s.difficulty = saved
+
+
+## Rides at a park feature along its line from `back` metres before it.  Optional per-step
+## controller `ctl(s) -> Dictionary` provides the input.  Returns {mounted, info, crash, slide}.
+func _jib_run(r: Dictionary, back: float, v0: float, ctl: Callable, heading_off := 0.0, from_air := false) -> Dictionary:
+	var s := world.skier
+	var a: Vector3 = r["a"]
+	var dir: Vector3 = (r["b"] - a).normalized()
+	var flat := Vector3(dir.x, 0, dir.z).normalized()
+	s.teleport(a - flat * back, Skier.yaw_of(flat), v0)
+	var res := {"mounted": false, "info": {}, "crash": "", "slide": false}
+	if from_air:
+		s.position = a + dir * 0.8 + Vector3.UP * 0.25
+		s.airborne = true
+		s.vel = dir * v0 + Vector3.DOWN * 1.0
+		s.heading = Skier.yaw_of(flat) + heading_off
+	var box := {}
+	var cb := func(info): box["info"] = info
+	var ccb := func(reason, _v): box["crash"] = reason
+	s.jibbed.connect(cb)
+	s.crashed.connect(ccb)
+	for i in 600:
+		if s.is_crashed or box.has("info"):
+			break
+		s.scripted_input = ctl.call(s)
+		s.step(1.0 / 120.0)
+		s.time += 1.0 / 120.0
+		if s.is_grinding():
+			res["mounted"] = true
+			res["slide"] = s.grind_slide
+	s.jibbed.disconnect(cb)
+	s.crashed.disconnect(ccb)
+	res["info"] = box.get("info", {})
+	res["crash"] = box.get("crash", "")
+	return res
+
+
+func _jibs() -> void:
+	var s := world.skier
+	var park = world.park
+	if park == null or park.rails.is_empty():
+		check("terrain park has rails and boxes", false)
+		return
+	var boxes: Array = park.rails.filter(func(r): return r["kind"] == "box")
+	var rls: Array = park.rails.filter(func(r): return r["kind"] == "rail")
+	check("terrain park has rails and boxes", not boxes.is_empty() and not rls.is_empty(), "%d boxes, %d rails" % [boxes.size(), rls.size()])
+	var saved := s.difficulty
+	var none := func(_s): return {}
+	s.difficulty = 0
+	var r1 := _jib_run(boxes[0], 10.0, 8.0, none)
+	var name1 := str(TrickSystem.evaluate_jib(r1["info"]).get("name", "")) if not r1["info"].is_empty() else ""
+	check("box: ride on from the snow and slide to the end", r1["mounted"] and r1["info"].get("how", "") == "end", "%s, %.1f s -> '%s'" % [r1["info"].get("how", "no slide"), float(r1["info"].get("time", 0.0)), name1])
+	var r2 := _jib_run(rls[0], 10.0, 8.0, none)
+	check("rail: cannot ride onto it at snow level", not r2["mounted"])
+	var popper := func(sk: Skier):
+		var dist: float = (rls[0]["a"] as Vector3 - sk.position).dot((rls[0]["b"] - rls[0]["a"]).normalized())
+		return {"jump": 1.0} if dist > 4.0 else {}
+	var r3 := _jib_run(rls[0], 11.0, 8.5, popper)
+	check("rail: pop onto it", r3["mounted"], "%s %s" % [r3["info"].get("how", "no slide"), r3["crash"]])
+	var longest: Dictionary = boxes[0]
+	for b in boxes:
+		if float(b["length"]) > float(longest["length"]):
+			longest = b
+	s.difficulty = 2
+	var r4 := _jib_run(longest, 10.0, 6.0, none)
+	check("Realistic: no balance input falls off", r4["mounted"] and r4["crash"] == "Fell off the rail", "%s %s" % [r4["info"].get("how", ""), r4["crash"]])
+	var balancer := func(sk: Skier):
+		if not sk.is_grinding():
+			return {}
+		var c := -sk.rail_balance * 3.0 - sk._rail_bal_vel * 1.5
+		return {"steer_right": clampf(c, 0.0, 1.0), "steer_left": clampf(-c, 0.0, 1.0)}
+	var r5 := _jib_run(longest, 10.0, 6.0, balancer)
+	check("Realistic: balancing with A/D reaches the end", r5["info"].get("how", "") == "end", "%s %s, %.1f s" % [r5["info"].get("how", ""), r5["crash"], float(r5["info"].get("time", 0.0))])
+	s.difficulty = 1
+	var r6 := _jib_run(boxes[0], 0.0, 7.0, none, PI * 0.5, true)
+	check("landing across a box gives a slide", r6["mounted"] and r6["slide"], str(TrickSystem.evaluate_jib(r6["info"]).get("name", "")) if not r6["info"].is_empty() else r6["crash"])
 	s.difficulty = saved
 
 
@@ -451,6 +530,7 @@ func _physics() -> void:
 		_run(s, 1.5, {})
 		check("hitting a tree at speed crashes", s.is_crashed, "reason via signal")
 	_body_physics(spot)
+	_jibs()
 	_on_foot(spot)
 	world.body.set_process(true)
 	s.set_physics_process(true)
@@ -860,6 +940,46 @@ func _showcase3() -> void:
 			_free_cam(cpos, s.position + Vector3.UP * 0.9)
 			await _frames(3)
 			await _snap("phys_" + st[2])
+	s.scripted_input = null
+	s.set_physics_process(true)
+
+
+func _showcase4() -> void:
+	var s := world.skier
+	var park = world.park
+	var r0: Dictionary = park.rails[0]
+	var a: Vector3 = r0["a"]
+	var dir: Vector3 = (r0["b"] - a).normalized()
+	var flat := Vector3(dir.x, 0, dir.z).normalized()
+	var side := flat.cross(Vector3.UP)
+	world.spawn(a - flat * 30.0, Skier.yaw_of(flat))
+	await _frames(10)
+	var mid := park.rails[2]["a"] as Vector3
+	_free_cam(a - flat * 25.0 + side * 22.0 + Vector3.UP * 12.0, mid)
+	await _frames(20)
+	await _snap("park_overview")
+	s.set_physics_process(false)
+	s.difficulty = 0
+	var shots := [[park.rails[0], PI * 0.5, "park_boxslide"], [park.rails[1], 0.0, "park_rail5050"]]
+	for sh in shots:
+		var r: Dictionary = sh[0]
+		var ra: Vector3 = r["a"]
+		var rd: Vector3 = (r["b"] - ra).normalized()
+		var rf := Vector3(rd.x, 0, rd.z).normalized()
+		s.teleport(ra - rf * 2.0, Skier.yaw_of(rf), 6.0)
+		s.position = ra + rd * 0.8 + Vector3.UP * 0.2
+		s.airborne = true
+		s.vel = rd * 6.0 + Vector3.DOWN
+		s.heading = Skier.yaw_of(rf) + float(sh[1])
+		s.scripted_input = {"lean_back": 1.0} if sh[2] == "park_rail5050" else {}
+		for i in 50:
+			s.step(1.0 / 120.0)
+			s.time += 1.0 / 120.0
+		s._cur_xform = s._compose_xform()
+		s._prev_xform = s._cur_xform
+		_free_cam(s.position + rf.cross(Vector3.UP) * 3.5 + rf * 2.0 + Vector3.UP * 1.0, s.position + Vector3.UP * 0.7)
+		await _frames(3)
+		await _snap(sh[2])
 	s.scripted_input = null
 	s.set_physics_process(true)
 

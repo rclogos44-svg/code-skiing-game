@@ -11,6 +11,8 @@ extends Node3D
 ## (tucked or grabbing spins faster); in-air control depends on the difficulty.  Landings are
 ## judged on yaw, pitch and impact.  Takeoff happens naturally when the terrain falls away faster
 ## than gravity can follow (ballistic ground constraint).
+## Rails and boxes: ride onto a box or pop onto a rail, slide it (balance with A/D, press the
+## tips / tails with Up / Down) and pop off or ride off the end.
 ## Other modes: walking / hiking with the skis off, and sitting on a chairlift.
 
 signal took_off
@@ -20,6 +22,7 @@ signal respawned
 signal tree_brush(pos: Vector3, strength: float)
 signal jumped(strength: float)
 signal mode_changed(mode: int)
+signal jibbed(info: Dictionary)
 
 enum Mode { SKI, WALK, LIFT }
 
@@ -39,9 +42,9 @@ const FLIP_POP := 4.4              # flip rate (rad/s) from leaning fully at the
 ## Easy / Normal / Realistic: in-air spin & flip authority (rad/s^2), spin damping, auto-levelling
 ## toward a clean landing, landing tolerance (deg), impact limit and edge catching.
 const DIFFICULTY := [
-	{"name": "Easy", "air_spin": 20.0, "spin_damp": 7.0, "air_flip": 9.0, "level": 3.0, "land_tol": 62.0, "impact": 24.0, "edge_catch": false},
-	{"name": "Normal", "air_spin": 11.0, "spin_damp": 3.0, "air_flip": 6.0, "level": 1.8, "land_tol": 50.0, "impact": 20.0, "edge_catch": false},
-	{"name": "Realistic", "air_spin": 4.5, "spin_damp": 0.8, "air_flip": 3.0, "level": 0.0, "land_tol": 40.0, "impact": 17.0, "edge_catch": true},
+	{"name": "Easy", "air_spin": 20.0, "spin_damp": 7.0, "air_flip": 9.0, "level": 3.0, "land_tol": 62.0, "impact": 24.0, "edge_catch": false, "rail": 1.0, "rail_assist": 3.0},
+	{"name": "Normal", "air_spin": 11.0, "spin_damp": 3.0, "air_flip": 6.0, "level": 1.8, "land_tol": 50.0, "impact": 20.0, "edge_catch": false, "rail": 2.0, "rail_assist": 1.2},
+	{"name": "Realistic", "air_spin": 4.5, "spin_damp": 0.8, "air_flip": 3.0, "level": 0.0, "land_tol": 40.0, "impact": 17.0, "edge_catch": true, "rail": 3.2, "rail_assist": 0.0},
 ]
 
 var terrain: TerrainData
@@ -117,6 +120,19 @@ var grab_kind_l := ""              # "", "tip" or "tail"
 var grab_kind_r := ""
 var _ground_pitch := 0.0           # pitch of the snow along the direction of travel
 var _ground_pitch_rate := 0.0      # how fast it changes (a kicker's lip throws you backward)
+var rails: Array = []              # jib features {a, b (top line), kind, width, length}, set by the park
+var grind := {}                    # the rail being slid
+var grind_slide := false           # skis across the rail (slide) instead of along it (50-50)
+var grind_switch := false
+var grind_time := 0.0
+var grind_press := 0.0             # seconds pressing the tips (+) or tails (-)
+var rail_balance := 0.0            # -1..1, falls off past either end
+var _rail_bal_vel := 0.0
+var _grind_t := 0.0
+var _grind_v := 0.0
+var _grind_dir := 1.0
+var _grind_entry := 0.0
+var _rail_cd := 0.0
 
 var _safe: Array = []
 var _safe_timer := 0.0
@@ -212,6 +228,7 @@ func _reset_motion() -> void:
 	air_pitch_peak = 0.0
 	sketchy = 0.0
 	_ground_pitch_rate = 0.0
+	grind = {}
 
 
 # ------------------------------------------------------------------ input
@@ -291,6 +308,9 @@ func step(dt: float) -> void:
 	if not charging and _jump_buffer <= 0.0:
 		charge = move_toward(charge, 0.0, 3.0 * dt)
 	_coyote = maxf(_coyote - dt, 0.0)
+	if not grind.is_empty():
+		_grind_step(dt)
+		return
 
 	var p := position
 	ground_h = terrain.height(p.x, p.z)
@@ -343,6 +363,9 @@ func step(dt: float) -> void:
 		max_air_height = maxf(max_air_height, p.y - h2)
 	else:
 		ground_time += dt
+	_rail_cd = maxf(_rail_cd - dt, 0.0)
+	if not rails.is_empty() and not is_crashed and _rail_cd <= 0.0:
+		_try_mount()
 
 
 func _measure_turn(dt: float) -> void:
@@ -529,6 +552,9 @@ func _air_step(dt: float, spin_in: float, flip_in: float) -> void:
 
 
 func _do_jump() -> void:
+	if not grind.is_empty():
+		_leave_rail("pop")
+		ground_n = Vector3.UP
 	var n := ground_n
 	# crouch depth, loaded tails (lean back while crouching) and rebound off a compression
 	var strength := 2.6 + 2.6 * charge + 1.6 * tail_load + 1.2 * clampf(compression, 0.0, 1.0)
@@ -776,6 +802,8 @@ func lean_angle() -> float:
 	var a := atan2(lat_acc, G) * 0.92
 	# hockey stop: lean into the hill against the skid
 	a += edge_brake * stop_side * 0.55 * clampf(speed / 5.0, 0.3, 1.0)
+	if not grind.is_empty():
+		a = rail_balance * 0.6
 	return clampf(a, -0.85, 0.85)
 
 
@@ -924,3 +952,112 @@ func end_lift(pos: Vector3, yaw: float, push: float) -> void:
 	var walking := mode == Mode.WALK
 	teleport(pos, yaw, 0.0 if walking else push, true)
 	mode_changed.emit(mode)
+
+
+# ------------------------------------------------------------------ rails and boxes
+func is_grinding() -> bool:
+	return not grind.is_empty()
+
+
+## Boxes (low) can be ridden onto from the snow; rails (higher) need a pop.
+func _try_mount() -> void:
+	for r: Dictionary in rails:
+		var a: Vector3 = r["a"]
+		var ab: Vector3 = r["b"] - a
+		var length := ab.length()
+		var dir := ab / length
+		var t := (position - a).dot(dir)
+		if t < 0.3 or t > length - 0.6:
+			continue
+		var top := a + dir * t
+		var side := dir.cross(Vector3.UP).normalized()
+		var lat := (position - top).dot(side)
+		if absf(lat) > float(r["width"]) * 0.5 + 0.3:
+			continue
+		var dy := position.y - top.y
+		if dy < (-0.42 if r["kind"] == "box" else -0.1) or dy > 0.45:
+			continue
+		var vh := vel.dot(dir)
+		if absf(vh) < 2.0 or (airborne and vel.y > 1.0):
+			continue
+		_mount(r, t, lat / (float(r["width"]) * 0.5 + 0.3), vh)
+		return
+
+
+func _mount(r: Dictionary, t: float, lat01: float, vh: float) -> void:
+	if airborne and absf(wrapf(air_pitch, -PI, PI)) > deg_to_rad(50.0):
+		crash("Missed the rail")
+		return
+	grind = r
+	_grind_dir = signf(vh)
+	_grind_t = t
+	_grind_v = absf(vh) * 0.95
+	var axis: Vector3 = (r["b"] - r["a"]).normalized() * _grind_dir
+	var ay := yaw_of(Vector3(axis.x, 0.0, axis.z))
+	# stance from how you land on it: along the rail (50-50) or across it (slide)
+	var rel := wrapf(heading - ay, -PI, PI)
+	grind_slide = absf(rel) > PI * 0.25 and absf(rel) < PI * 0.75
+	grind_switch = absf(rel) >= PI * 0.75
+	heading = wrapf(ay + (signf(rel) * PI * 0.5 if grind_slide else (PI if grind_switch else 0.0)), -PI, PI)
+	_grind_entry = air_rotation if airborne else 0.0
+	airborne = false
+	spin_vel = 0.0
+	flip_vel = 0.0
+	air_pitch = 0.0
+	yaw_rate = 0.0
+	rail_balance = clampf(lat01 * 0.4, -0.5, 0.5)
+	_rail_bal_vel = 0.0
+	grind_time = 0.0
+	grind_press = 0.0
+	compression = 0.3
+
+
+func _grind_step(dt: float) -> void:
+	var r := grind
+	var a: Vector3 = r["a"]
+	var dir: Vector3 = (r["b"] - a).normalized()
+	var axis := dir * _grind_dir
+	var d := diff()
+	# speed along the rail: gravity, sliding friction (more when sideways), air drag
+	var mu := (0.035 if r["kind"] == "rail" else 0.06) + (0.04 if grind_slide else 0.0)
+	_grind_v += (-G * axis.y - mu * G - 0.003 * _grind_v * _grind_v) * dt
+	_grind_t += _grind_v * dt * _grind_dir
+	grind_time += dt
+	ground_time = 0.0
+	if absf(lean_fa) > 0.5:
+		grind_press += signf(lean_fa) * dt
+	# balance: an inverted pendulum held with A/D (assist and instability depend on difficulty)
+	var k := float(d["rail"])
+	var wobble := sin(time * 2.3 + _grind_t * 1.7) * 0.6 + sin(time * 5.3) * 0.4
+	_rail_bal_vel += (rail_balance * (2.0 * k - float(d["rail_assist"])) + wobble * k * 0.5 + _raw_steer * 5.0) * dt
+	_rail_bal_vel *= 1.0 - 1.8 * dt
+	rail_balance += _rail_bal_vel * dt
+	var top := a + dir * _grind_t
+	position = top
+	vel = axis * _grind_v
+	speed = _grind_v
+	contact = false
+	ground_n = Vector3.UP
+	travel_yaw = yaw_of(Vector3(axis.x, 0.0, axis.z))
+	lat_acc = 0.0
+	if absf(rail_balance) >= 1.0:
+		var side := dir.cross(Vector3.UP).normalized() * signf(rail_balance)
+		_leave_rail("fall")
+		if bool(d["edge_catch"]):
+			crash("Fell off the rail")
+			return
+		position += side * 0.35
+		vel += side * 1.5 + Vector3.UP * 1.0
+		_take_off()
+	elif _grind_t < 0.0 or _grind_t > float(r["length"]) or _grind_v < 0.3:
+		_leave_rail("end" if _grind_v >= 0.3 else "stall")
+		vel += Vector3.UP * 0.4
+		_take_off()
+
+
+func _leave_rail(how: String) -> void:
+	var r := grind
+	grind = {}
+	_rail_cd = 0.4
+	jibbed.emit({"kind": r["kind"], "time": grind_time, "slide": grind_slide, "switch": grind_switch,
+		"press": grind_press, "entry_rot": _grind_entry, "how": how})

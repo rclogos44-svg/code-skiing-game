@@ -243,3 +243,21 @@ Hybrid approach: the proven snow/edge model stays; the body now drives pop and r
 - Tests: physics suite 48 checks (pop loading, backflip start, wind-up spin, tuck spin rate,
   per-difficulty air control, upside-down landing crash) and trick naming unit tests, all
   passing; all natural kickers that landed before still land on Normal.
+
+## Phase 2/4 — terrain park: rails and boxes
+
+- Jib line below the three kickers on Meadow Way (`scripts/world/park.gd`): 3 boxes and 3 rails
+  in two lanes, placed along the piste on gentle ground, top lines kept clear of snow bulges.
+  New "Terrain Park" drop zone and "Rail Session" challenge (4 rail/box slides in 150 s).
+  Rails and boxes show on the mountain map when zoomed in.
+- Physics (`Skier._try_mount/_grind_step`): low boxes can be ridden onto from the snow, raised
+  rails need a pop. Stance comes from how you land: along it = 50-50, across it = slide
+  (switch when landing backwards). Speed from gravity along the feature and sliding friction
+  (more when sliding sideways). Balance is an inverted pendulum held with A/D (self-righting on
+  Easy, unstable on Normal, more so on Realistic where falling off is a crash). Up/Down press the
+  tips / tails. Space pops off; a spin wound up on the rail releases as you leave.
+- Scoring: "180 On", "Switch", "50-50" / "Box Slide" / "Rail Slide", "to Nose/Tail Press",
+  time on the feature; rails score more than boxes. Rail scrape sound.
+- Tests (physics suite, 55 checks): ride onto a box and slide it to the end; can't ride onto a
+  rail at snow level but can pop onto it; Realistic with no input falls off, balancing with A/D
+  (simple controller) reaches the end; landing across a box gives a slide.

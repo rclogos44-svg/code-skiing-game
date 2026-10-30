@@ -29,6 +29,7 @@ func setup(s: Skier) -> void:
 	s.landed.connect(_on_landed)
 	s.crashed.connect(_on_crashed)
 	s.respawned.connect(_reset_combo)
+	s.jibbed.connect(func(info: Dictionary): _add(evaluate_jib(info)))
 
 
 func _process(_dt: float) -> void:
@@ -139,8 +140,40 @@ func _on_landed(info: Dictionary) -> void:
 		return
 	if info["air_time"] < 0.35:
 		return
-	var t := evaluate(info)
 	Game.stat_max("longest_air", float(info["air_time"]))
+	_add(evaluate(info))
+
+
+## Rail / box slides: stance, presses, switch, spin on, time on the feature.
+static func evaluate_jib(info: Dictionary) -> Dictionary:
+	var dur := float(info["time"])
+	if dur < 0.4 or (info["how"] == "fall" and dur < 0.8):
+		return {}
+	var slide: bool = info["slide"]
+	var parts: Array[String] = []
+	var points := 250.0 + 300.0 * dur
+	var on := int(floor((absf(rad_to_deg(float(info["entry_rot"]))) + 45.0) / 90.0)) * 90
+	if on >= 180:
+		parts.append("%d On" % on)
+		points += 250.0 * (on / 90.0 - 1.0)
+	if info["switch"]:
+		parts.append("Switch")
+		points *= 1.2
+	parts.append("50-50" if not slide else ("Box Slide" if info["kind"] == "box" else "Rail Slide"))
+	if slide:
+		points *= 1.3
+	var press := float(info["press"])
+	if absf(press) >= 0.4:
+		parts.append("to Nose Press" if press > 0.0 else "to Tail Press")
+		points *= 1.25
+	if info["kind"] == "rail":
+		points *= 1.2
+	var tags: Array[String] = ["jib", String(info["kind"])]
+	return {"name": " ".join(parts), "points": int(round(points)), "quality": "Clean" if info["how"] != "fall" else "Slipped off",
+		"spin": 0, "grabs": 0, "air_time": 0.0, "tags": tags}
+
+
+func _add(t: Dictionary) -> void:
 	if t.is_empty():
 		return
 	combo_count += 1
