@@ -137,6 +137,8 @@ func _graphics_tab() -> Control:
 func _controls_tab() -> Control:
 	var sg := _scroll("Controls")
 	var g: GridContainer = sg[1]
+	_row(g, "Difficulty", _option("controls", "difficulty", [0, 1, 2], ["Easy - forgiving landings, lots of air control",
+		"Normal - some air control and assist", "Realistic - rotation only from your takeoff, edges can catch"]))
 	_row(g, "Mouse sensitivity", _slider("controls", "mouse_sens", 0.2, 3.0, 0.05))
 	_row(g, "Invert mouse Y", _check("controls", "invert_y"))
 	_row(g, "Steering sensitivity", _slider("controls", "steer_sens", 0.4, 2.0, 0.05))

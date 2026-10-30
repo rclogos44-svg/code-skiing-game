@@ -32,6 +32,8 @@ func run(w: World) -> void:
 			await _showcase()
 		"showcase2":
 			await _showcase2()
+		"showcase3":
+			await _showcase3()
 		_:
 			print("[TEST] unknown test mode ", Game.test_mode)
 			failures += 1
@@ -160,6 +162,64 @@ func _run(s: Skier, seconds: float, input: Dictionary) -> void:
 			break
 		s.step(dt)
 		s.time += dt
+
+
+## Jump from the slope: crouch with `hold` for `charge_s`, then `before` for `pre_s`, release,
+## then `air` in the air.  Returns {clear, rot, pitch, crash}.
+func _pop(spot: Dictionary, hold: Dictionary, charge_s: float, before: Dictionary, pre_s: float, air: Dictionary, air_s := 0.6) -> Dictionary:
+	var s := _settle_on(spot["pos"], spot["yaw"])
+	_run(s, 1.5, {})
+	_run(s, charge_s, hold)
+	_run(s, pre_s, before)
+	var res := {"clear": 0.0, "rot": 0.0, "pitch": 0.0, "crash": ""}
+	s.scripted_input = air
+	for i in int(air_s * 120.0):
+		s.step(1.0 / 120.0)
+		s.time += 1.0 / 120.0
+		if s.airborne:
+			res["clear"] = maxf(res["clear"], s.position.y - world.terrain.height(s.position.x, s.position.z))
+			res["rot"] = s.air_rotation
+			res["pitch"] = s.air_pitch
+	return res
+
+
+func _body_physics(spot: Dictionary) -> void:
+	var s := world.skier
+	var saved := s.difficulty
+	s.difficulty = 1
+	var plain := _pop(spot, {"jump": 1.0}, 0.6, {"jump": 1.0}, 0.25, {})
+	var loaded := _pop(spot, {"jump": 1.0, "lean_back": 1.0}, 0.6, {"jump": 1.0}, 0.25, {})
+	check("leaning back loads the tails: bigger pop", loaded["clear"] > plain["clear"] * 1.15, "%.2f m vs %.2f m" % [loaded["clear"], plain["clear"]])
+	var bf := _pop(spot, {"jump": 1.0, "lean_back": 1.0}, 0.6, {"jump": 1.0, "lean_back": 1.0}, 0.05, {"lean_back": 1.0}, 0.35)
+	check("holding back at the pop starts a backflip", bf["pitch"] < -0.5, "%.0f deg after 0.35 s" % rad_to_deg(bf["pitch"]))
+	var wound := _pop(spot, {"jump": 1.0, "lean_right": 1.0}, 0.8, {"jump": 1.0, "lean_right": 1.0}, 0.02, {}, 0.5)
+	check("wind-up spins without air input", wound["rot"] > deg_to_rad(90.0), "%.0f deg in 0.5 s" % rad_to_deg(wound["rot"]))
+	var tucked := _pop(spot, {"jump": 1.0, "lean_right": 1.0}, 0.8, {"jump": 1.0, "lean_right": 1.0}, 0.02, {"tuck": 1.0}, 0.5)
+	check("tucking spins faster", tucked["rot"] > wound["rot"] * 1.1, "%.0f vs %.0f deg" % [rad_to_deg(tucked["rot"]), rad_to_deg(wound["rot"])])
+	var ctrl := []
+	for d in 3:
+		s.difficulty = d
+		ctrl.append(_pop(spot, {"jump": 1.0}, 0.6, {"jump": 1.0}, 0.02, {"spin_right": 1.0}, 0.45)["rot"])
+	check("air control: Easy > Normal > Realistic", ctrl[0] > ctrl[1] and ctrl[1] > ctrl[2], "%.0f / %.0f / %.0f deg" % [rad_to_deg(ctrl[0]), rad_to_deg(ctrl[1]), rad_to_deg(ctrl[2])])
+	# landing upside down
+	s.difficulty = 1
+	s = _settle_on(spot["pos"], spot["yaw"])
+	s.position.y += 1.5
+	s.airborne = true
+	s.air_pitch = -PI * 0.85
+	s.air_time = 0.8
+	s.vel = s.forward_flat() * 8.0 + Vector3.DOWN * 3.0
+	var box := {}
+	var cb := func(reason, _v): box["r"] = reason
+	s.crashed.connect(cb)
+	s.scripted_input = {}
+	for i in 120:
+		if s.is_crashed:
+			break
+		s.step(1.0 / 120.0)
+	s.crashed.disconnect(cb)
+	check("landing on your back crashes", String(box.get("r", "")) == "Landed on your back", String(box.get("r", "no crash")))
+	s.difficulty = saved
 
 
 func _on_foot(spot: Dictionary) -> void:
@@ -355,7 +415,8 @@ func _physics() -> void:
 	_run(s, 0.6, {"jump": 1.0})
 	_run(s, 0.02, {})
 	_run(s, 0.5, {"spin_right": 1.0})
-	check("spin input rotates in air", absf(s.air_rotation) > deg_to_rad(90.0) or not s.airborne, "%.0f deg" % rad_to_deg(s.air_rotation))
+	# (Normal difficulty: in-air input only adds some rotation; most of a spin comes from the wind-up)
+	check("spin input rotates in air", absf(s.air_rotation) > deg_to_rad(60.0) or not s.airborne, "%.0f deg" % rad_to_deg(s.air_rotation))
 	# 8. flat terrain: speed decays
 	var flat := _find_slope(0.0, 3.0)
 	if not flat.is_empty():
@@ -389,6 +450,7 @@ func _physics() -> void:
 		s.vel = Vector3(-18, 0, 0)
 		_run(s, 1.5, {})
 		check("hitting a tree at speed crashes", s.is_crashed, "reason via signal")
+	_body_physics(spot)
 	_on_foot(spot)
 	world.body.set_process(true)
 	s.set_physics_process(true)
@@ -509,6 +571,14 @@ func _gameplay() -> void:
 	check("grab recognised, no fake spin", tg.get("spin", -1) == 0 and tg.get("grabs", 0) == 1, str(tg.get("name", "")))
 	var tn := TrickSystem.evaluate(base.merged({"rotation": 0.3, "air_time": 0.6}, true))
 	check("small hop scores nothing", tn.is_empty())
+	var tbf := TrickSystem.evaluate(base.merged({"rotation": 0.1, "flip": -TAU * 0.97}, true))
+	check("backflip recognised", str(tbf.get("name", "")) == "Backflip", str(tbf.get("name", "")))
+	var tdf := TrickSystem.evaluate(base.merged({"rotation": deg_to_rad(358.0), "flip": TAU * 2.02}, true))
+	check("double frontflip 360 recognised", str(tdf.get("name", "")).begins_with("Double Frontflip"), str(tdf.get("name", "")))
+	var tck := TrickSystem.evaluate(base.merged({"rotation": deg_to_rad(722.0), "flip": 0.1, "pitch_peak": deg_to_rad(80.0)}, true))
+	check("cork recognised", str(tck.get("name", "")).contains("Cork 720"), str(tck.get("name", "")))
+	var ttip := TrickSystem.evaluate(base.merged({"rotation": 0.0, "grab_l": 0.8, "grab_kind_l": "tip"}, true))
+	check("tip grab recognised", str(ttip.get("name", "")) == "Left Tip Grab", str(ttip.get("name", "")))
 	var tsk := TrickSystem.evaluate(base.merged({"rotation": deg_to_rad(360.0), "misalign": 40.0}, true))
 	check("sketchy landing scores less", int(tsk.get("points", 0)) < int(t360.get("points", 0)))
 	# --- real 360: jump off a slope, spin, land
@@ -761,6 +831,37 @@ func _showcase2() -> void:
 		await _snap("stop_seq_%d" % k)
 	s.set_physics_process(true)
 	s.scripted_input = null
+
+
+## Stepped simulation with a fixed side camera: wind-up, backflip, tip grab.
+func _showcase3() -> void:
+	var s := world.skier
+	var spot := _find_slope(18.0, 26.0, true)
+	if spot.is_empty():
+		spot = _find_slope(18.0, 26.0)
+	world.spawn(spot["pos"], spot["yaw"])
+	s.set_physics_process(false)
+	s.difficulty = 0
+	var seq := [[{}, 150, ""], [{"jump": 1.0, "lean_back": 1.0, "lean_right": 0.0}, 70, "load"],
+		[{"jump": 1.0, "lean_back": 1.0}, 2, ""], [{"lean_back": 1.0}, 22, "flip_a"], [{"lean_back": 1.0}, 22, "flip_b"],
+		[{"lean_back": 1.0}, 22, "flip_c"], [{}, 22, "flip_d"], [{}, 60, ""], [{"jump": 1.0, "lean_right": 1.0}, 80, "windup"],
+		[{"jump": 1.0, "lean_right": 1.0}, 2, ""], [{"grab_left": 1.0, "lean_forward": 1.0}, 40, "tipgrab"]]
+	var cpos := Vector3.INF
+	for st in seq:
+		s.scripted_input = st[0]
+		for i in int(st[1]):
+			s.step(1.0 / 120.0)
+			s.time += 1.0 / 120.0
+		s._cur_xform = s._compose_xform()
+		s._prev_xform = s._cur_xform
+		if st[2] != "":
+			var f := Skier.forward_flat_s(Skier.yaw_of(Vector3(s.vel.x, 0, s.vel.z)) if s.speed > 1.0 else s.heading)
+			cpos = s.position + f.cross(Vector3.UP) * 7.0 + f * 1.0 + Vector3.UP * 1.2
+			_free_cam(cpos, s.position + Vector3.UP * 0.9)
+			await _frames(3)
+			await _snap("phys_" + st[2])
+	s.scripted_input = null
+	s.set_physics_process(true)
 
 
 # ------------------------------------------------------------------ terrain features

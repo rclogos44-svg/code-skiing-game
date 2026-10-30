@@ -1,7 +1,8 @@
 class_name TrickSystem
 extends Node
 ## Freestyle scoring.  Every trick is derived from what actually happened in the air: measured
-## yaw rotation (rounded to 180 degree steps only when the landing is aligned), grab hold times,
+## yaw rotation (rounded to 180 degree steps only when the landing is aligned), flip rotation
+## (full flips, or a cork when the spin went off-axis and came back), grab type and hold times,
 ## air time and landing quality.  Tricks landed in quick succession form a combo that is banked
 ## after a few seconds on the snow and lost on a crash.
 
@@ -11,6 +12,8 @@ signal combo_lost(points: int)
 
 const COMBO_WINDOW := 3.5
 const SPIN_POINTS := {180: 200, 360: 500, 540: 900, 720: 1400, 900: 2000, 1080: 2700, 1260: 3500, 1440: 4400}
+const FLIP_POINTS := {1: 1000, 2: 2400, 3: 4200}
+const FLIP_NAMES := {1: "", 2: "Double ", 3: "Triple "}
 
 var skier: Skier
 var combo_points := 0
@@ -66,12 +69,22 @@ static func evaluate(info: Dictionary) -> Dictionary:
 	var parts: Array[String] = []
 	var points := 0
 	var tags: Array[String] = []
+	var flip := float(info.get("flip", 0.0))
+	var flips := int(floor((absf(rad_to_deg(flip)) + 60.0) / 360.0))
+	var cork := flips == 0 and spin >= 360 and rad_to_deg(float(info.get("pitch_peak", 0.0))) >= 50.0
+	if flips >= 1:
+		parts.append("%s%s" % [FLIP_NAMES.get(flips, "%dx " % flips), "Backflip" if flip < 0.0 else "Frontflip"])
+		points += int(FLIP_POINTS.get(flips, 4200 + (flips - 3) * 2000))
+		tags.append("flip")
+		tags.append("backflip" if flip < 0.0 else "frontflip")
 	if spin >= 180:
 		var dir := "Right" if float(info["rotation"]) > 0.0 else "Left"
-		parts.append("%s %d" % [dir, spin])
-		points += int(SPIN_POINTS.get(spin, 4400 + (spin - 1440) * 6))
+		parts.append("%s %s%d" % [dir, "Cork " if cork else "", spin])
+		points += int(int(SPIN_POINTS.get(spin, 4400 + (spin - 1440) * 6)) * (1.3 if cork else 1.0))
 		tags.append("spin")
 		tags.append(str(spin))
+		if cork:
+			tags.append("cork")
 	var grabs := 0
 	if gl >= 0.25:
 		grabs += 1
@@ -84,11 +97,13 @@ static func evaluate(info: Dictionary) -> Dictionary:
 		points = int(points * 1.25)
 		tags.append("grab")
 		tags.append("double_grab")
-	elif gl >= 0.25:
-		parts.append("Left Ski Grab")
-		tags.append("grab")
-	elif gr >= 0.25:
-		parts.append("Right Ski Grab")
+	elif gl >= 0.25 or gr >= 0.25:
+		# tip / tail grabs (leaning while grabbing) score a little more than a plain grab
+		var kind := String(info.get("grab_kind_l" if gl >= 0.25 else "grab_kind_r", ""))
+		var side := "Left" if gl >= 0.25 else "Right"
+		parts.append({"tip": "%s Tip Grab", "tail": "%s Tail Grab"}.get(kind, "%s Ski Grab") % side)
+		if kind != "":
+			points = int(points * 1.15)
 		tags.append("grab")
 	if air >= 1.0:
 		points += int(120.0 * (air - 1.0) * 2.0)

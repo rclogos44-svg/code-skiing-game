@@ -69,7 +69,6 @@ func _build() -> void:
 	var strap := SkierModel.mat(Color(0.08, 0.08, 0.09), 0.7)
 	var glove := SkierModel.mat(Color(0.06, 0.06, 0.07), 0.55)
 	var boot := SkierModel.mat(Color(0.18, 0.32, 0.55), 0.35, 0.0, {"clearcoat": 0.5})
-	var ski_top := SkierModel.mat(Color(0.95, 0.95, 0.95), 0.35, 0.0, {"clearcoat": 0.9})
 	var bind := SkierModel.mat(Color(0.12, 0.12, 0.13), 0.4, 0.4)
 	var pole_m := SkierModel.mat(Color(0.75, 0.77, 0.8), 0.3, 0.8)
 	var grip_m := SkierModel.mat(Color(0.1, 0.1, 0.1), 0.6)
@@ -92,7 +91,9 @@ func _build() -> void:
 		_add("shin_" + side, SkierModel.limb(0.066, 0.058, SHIN), pants)
 		_add("boot_" + side, SkierModel.boot(), boot)
 		var sk := SkierModel.ski()
-		_add("ski_" + side, sk[0], ski_top)
+		var flex := ShaderMaterial.new()
+		flex.shader = load("res://shaders/ski_flex.gdshader")
+		_add("ski_" + side, sk[0], flex)
 		_add("bind_" + side, sk[1], bind)
 		var pl := SkierModel.pole()
 		_add("pole_" + side, pl[0], pole_m)
@@ -162,6 +163,12 @@ func _compute_pose(dt: float) -> void:
 	# yaw revert after a switch landing: body keeps spinning to face forward
 	if absf(s.revert) > 0.001:
 		root.basis = Basis(up, s.revert) * root.basis
+	# flips: the whole body rotates about its centre of mass
+	if s.airborne and absf(s.air_pitch) > 0.001:
+		var piv := root.origin + up * 0.9
+		var fr := Basis(root.basis.x.normalized(), -s.air_pitch)
+		root = Transform3D(fr * root.basis, piv + fr * (root.origin - piv))
+		up = root.basis.y
 	# visual sink in deep powder
 	var powder := s.surface.r * (1.0 - s.surface.g) if not s.airborne else 0.0
 	root.origin -= up * powder * 0.16 * (1.0 - clampf(s.speed / 25.0, 0.0, 0.6))
@@ -193,6 +200,8 @@ func _compute_pose(dt: float) -> void:
 		# hockey stop: the skis pivot underneath while the upper body keeps facing downhill
 		var lim := lerpf(0.7, 1.3, s.edge_brake)
 		torso_t = clampf(wrapf(s.travel_yaw - s.heading, -PI, PI), -lim, lim) * lerpf(0.75, 0.9, s.edge_brake) + _lean * 0.22
+	# winding up for a spin: shoulders turn against the spin direction
+	torso_t -= s.wind * 0.55
 	var w_t := 7.0
 	_torso_yaw_v += (w_t * w_t * (torso_t - _torso_yaw) - 2.0 * w_t * _torso_yaw_v) * dt
 	_torso_yaw = clampf(_torso_yaw + _torso_yaw_v * dt, -0.9, 0.9)
@@ -218,15 +227,17 @@ func _compute_pose(dt: float) -> void:
 	if s.pushing > 0.5:
 		ph = 0.86 + sin(s.time * 7.0) * 0.03
 	ph = _sm("pelvis_h", ph, 14.0, dt)
-	var pz := _sm("pelvis_z", 0.06 + 0.10 * tuck + 0.05 * s.charge + 0.05 * edgeb, 10.0, dt)
-	var pitch := deg_to_rad(22.0 + 38.0 * tuck + 22.0 * s.charge + 25.0 * s.compression + 32.0 * grab * air + 4.0 * edgeb + 30.0 * gear)
+	# weight shift: forward drives the shins and chest over the tips, back sits on the tails
+	var lf := s.lean_fa
+	var pz := _sm("pelvis_z", 0.06 + 0.10 * tuck + 0.05 * s.charge + 0.05 * edgeb + 0.13 * maxf(-lf, 0.0) - 0.05 * maxf(lf, 0.0), 10.0, dt)
+	var pitch := deg_to_rad(22.0 + 38.0 * tuck + 22.0 * s.charge + 25.0 * s.compression + 32.0 * grab * air + 4.0 * edgeb + 30.0 * gear + 12.0 * lf * (1.0 - air))
 	if s.pushing > 0.5:
 		pitch += deg_to_rad(18.0 + sin(s.time * 7.0) * 12.0)
 	pitch = _sm("pitch", pitch, 10.0, dt)
 	# angulation: legs take the full inclination, the torso stays much more upright
 	var counter := _lean * 0.58
 	var plow := _sm("plow", 0.0, 8.0, dt)
-	var feet_up := _sm("feet_up", air * (0.06 + 0.26 * grab), 8.0, dt)
+	var feet_up := _sm("feet_up", air * (0.06 + 0.26 * grab + 0.22 * clampf(absf(s.flip_vel) / 4.0, 0.0, 1.0)), 8.0, dt)
 	var arms_air := _sm("arms_air", air * (1.0 - grab), 5.0, dt)
 
 	# ---- feet / skis
@@ -303,11 +314,17 @@ func _compute_pose(dt: float) -> void:
 		hand_local = hand_local.lerp(Vector3(sgn * 0.42, -0.22, -0.14), arms_air)
 		if plant_side == sgn:
 			hand_local = hand_local.lerp(Vector3(sgn * 0.16, -0.34, -0.48), _pole_plant)
+		if s.sketchy > 0.0:
+			# close call: arms windmill to catch the balance
+			var a := s.time * 13.0 + (0.0 if sgn > 0.0 else PI)
+			hand_local = hand_local.lerp(Vector3(sgn * 0.5, -0.05 + 0.25 * sin(a), -0.15 + 0.25 * cos(a)), clampf(s.sketchy / 0.3, 0.0, 1.0))
 		var hand := sh + tb * hand_local
 		var g := gl if sd == "l" else gr
 		if g > 0.01:
 			var sxf := ski_l if sd == "l" else ski_r
-			var grab_pt := sxf.origin + sxf.basis * Vector3(sgn * 0.07, 0.10, -0.12)
+			var kind := s.grab_kind_l if sd == "l" else s.grab_kind_r
+			var along := {"tip": -0.72, "tail": 0.62}.get(kind, -0.12) as float
+			var grab_pt := sxf.origin + sxf.basis * Vector3(sgn * 0.07, 0.10, along)
 			hand = hand.lerp(grab_pt, g)
 		var elbow_pole := sh + tb * Vector3(sgn * 0.5, -0.2, 0.45)
 		var el := ik2(sh, hand, UPPER_ARM, FOREARM, elbow_pole)
@@ -564,6 +581,12 @@ func _seg(name: String, a: Vector3, b: Vector3, side_hint: Vector3) -> void:
 
 
 func _apply_parts() -> void:
+	# skis bend under load (landings, crouching on the tails) and spring back in the air
+	var bend := clampf(skier.compression * 1.2 + skier.tail_load * 0.6 + skier.charge * 0.3, 0.0, 1.2)
+	if skier.airborne:
+		bend = -0.15
+	for sd in ["l", "r"]:
+		(parts["ski_" + sd].material_override as ShaderMaterial).set_shader_parameter("bend", bend)
 	var tb := torso_basis
 	parts["pelvis"].global_transform = Transform3D(tb, joints["pelvis"])
 	parts["torso"].global_transform = Transform3D(tb, joints["waist"])

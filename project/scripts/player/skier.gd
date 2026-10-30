@@ -5,8 +5,12 @@ extends Node3D
 ## Ground model: gravity along the slope, sidecut carving (turn radius = R_sidecut * cos(edge))
 ## limited by edge grip, lossless redirection while the edge holds and friction when it skids,
 ## snow friction per surface type, powder drag, aerodynamic drag (tuck vs upright) and the hockey
-## stop.  Air: ballistic flight, spins with damping, grabs.  Takeoff happens naturally when the
-## terrain falls away faster than gravity can follow (ballistic ground constraint).
+## stop.  The body's weight shifts fore/aft (arrow keys): leaning back loads the tails for a bigger
+## pop, and a spin is wound up on the ground.  Air: ballistic flight; spin and flip rotation come
+## from takeoff (wind-up, leaning at the pop, the lip itself) and change speed with body shape
+## (tucked or grabbing spins faster); in-air control depends on the difficulty.  Landings are
+## judged on yaw, pitch and impact.  Takeoff happens naturally when the terrain falls away faster
+## than gravity can follow (ballistic ground constraint).
 ## Other modes: walking / hiking with the skis off, and sitting on a chairlift.
 
 signal took_off
@@ -30,6 +34,15 @@ const SPIN_DAMP := 7.0
 const WALK_SPEED := 1.8
 const JOG_SPEED := 3.4
 const MAX_HIKE_SLOPE := 40.0
+const WIND_SPIN := 7.5             # spin rate (rad/s) from a full wind-up at takeoff
+const FLIP_POP := 4.4              # flip rate (rad/s) from leaning fully at the pop
+## Easy / Normal / Realistic: in-air spin & flip authority (rad/s^2), spin damping, auto-levelling
+## toward a clean landing, landing tolerance (deg), impact limit and edge catching.
+const DIFFICULTY := [
+	{"name": "Easy", "air_spin": 20.0, "spin_damp": 7.0, "air_flip": 9.0, "level": 3.0, "land_tol": 62.0, "impact": 24.0, "edge_catch": false},
+	{"name": "Normal", "air_spin": 11.0, "spin_damp": 3.0, "air_flip": 6.0, "level": 1.8, "land_tol": 50.0, "impact": 20.0, "edge_catch": false},
+	{"name": "Realistic", "air_spin": 4.5, "spin_damp": 0.8, "air_flip": 3.0, "level": 0.0, "land_tol": 40.0, "impact": 17.0, "edge_catch": true},
+]
 
 var terrain: TerrainData
 var obstacles: Obstacles
@@ -92,6 +105,18 @@ var _walk_vy := 0.0
 var _walk_air := false
 var _jump_prev := false
 var _mode_before_lift := Mode.SKI
+var difficulty := 1
+var lean_fa := 0.0                 # body weight: + forward over the tips, - back on the tails
+var wind := 0.0                    # upper body wound up for a spin (+ = right), on the ground
+var tail_load := 0.0               # crouching while leaning back: extra pop
+var flip_vel := 0.0                # rad/s, + = forward (front flip)
+var air_pitch := 0.0               # flip rotation so far (rad)
+var air_pitch_peak := 0.0          # largest |pitch| reached in this jump (corks)
+var sketchy := 0.0                 # > 0 while recovering from a sketchy landing (s)
+var grab_kind_l := ""              # "", "tip" or "tail"
+var grab_kind_r := ""
+var _ground_pitch := 0.0           # pitch of the snow along the direction of travel
+var _ground_pitch_rate := 0.0      # how fast it changes (a kicker's lip throws you backward)
 
 var _safe: Array = []
 var _safe_timer := 0.0
@@ -111,12 +136,17 @@ func setup(td: TerrainData, obs: Obstacles) -> void:
 	terrain = td
 	obstacles = obs
 	Settings.changed.connect(_on_settings)
-	steer_sens = float(Settings.get_value("controls", "steer_sens"))
+	_on_settings("controls", "")
 
 
 func _on_settings(section: String, _key: String) -> void:
 	if section == "controls":
 		steer_sens = float(Settings.get_value("controls", "steer_sens"))
+		difficulty = clampi(int(Settings.get_value("controls", "difficulty")), 0, 2)
+
+
+func diff() -> Dictionary:
+	return DIFFICULTY[difficulty]
 
 
 func forward_flat(yaw := heading) -> Vector3:
@@ -174,6 +204,14 @@ func _reset_motion() -> void:
 	edge_brake = 0.0
 	brake = 0.0
 	tuck = 0.0
+	lean_fa = 0.0
+	wind = 0.0
+	tail_load = 0.0
+	flip_vel = 0.0
+	air_pitch = 0.0
+	air_pitch_peak = 0.0
+	sketchy = 0.0
+	_ground_pitch_rate = 0.0
 
 
 # ------------------------------------------------------------------ input
@@ -222,7 +260,17 @@ func step(dt: float) -> void:
 	var want_tuck := _pressed("tuck")
 	var want_brake := _pressed("brake")
 	var jump_held := _pressed("jump")
-	var spin_in := _in("spin_right") - _in("spin_left")
+	# arrows: body lean fore/aft and wind-up / spin (Q/E still spin as well)
+	var spin_in := clampf(_in("spin_right") - _in("spin_left") + _in("lean_right") - _in("lean_left"), -1.0, 1.0)
+	var lean_in := _in("lean_forward") - _in("lean_back")
+	lean_fa = move_toward(lean_fa, lean_in, 5.0 * dt)
+	if not airborne:
+		wind = move_toward(wind, spin_in, (2.5 if absf(spin_in) > 0.1 else 4.0) * dt)
+		# loading builds while crouching with the weight back and fades slowly, so you can
+		# straighten up just before the pop (big ollie) instead of popping into a backflip
+		var load_t := charge * maxf(-lean_fa, 0.0)
+		tail_load = move_toward(tail_load, load_t, (4.0 if load_t > tail_load else 1.0) * dt)
+	sketchy = maxf(sketchy - dt, 0.0)
 	# smooth inputs (no instant redirection)
 	var srate := 3.2 * steer_sens if absf(raw_steer) > absf(steer) else 5.0
 	steer = move_toward(steer, clampf(raw_steer, -1.0, 1.0), srate * dt)
@@ -258,7 +306,7 @@ func step(dt: float) -> void:
 		rock = smoothstep(46.0, 56.0, slope)
 
 	if airborne:
-		_air_step(dt, spin_in)
+		_air_step(dt, spin_in, lean_in)
 	else:
 		_ground_step(dt, n, cf)
 
@@ -333,6 +381,10 @@ func _ground_step(dt: float, n: Vector3, cf: float) -> void:
 	var grip := 1.0 - 0.45 * ice - 0.15 * powder - 0.6 * rock
 	if aggressive:
 		grip = minf(grip * 1.35 + ice * 0.15, 1.45)
+	# weight back on the tails: the tips wash out (less grip); forward: crisper turn entry
+	grip *= 1.0 - 0.3 * maxf(-lean_fa, 0.0)
+	if sketchy > 0.0:
+		grip *= 0.7
 	var a_lat_max := (2.2 if aggressive else 1.6) * G * maxf(n.y, 0.2) * grip * maxf(cf, 0.35)
 	# --- edge angle follows steering (visual lean and carve radius)
 	var max_edge := deg_to_rad(64.0 if aggressive else 48.0)
@@ -346,7 +398,7 @@ func _ground_step(dt: float, n: Vector3, cf: float) -> void:
 		omega_carve = signf(edge) * minf(sp / r, a_lat_max / sp)
 	var w := clampf((sp - 3.0) / 7.0, 0.0, 1.0)
 	var omega_target := lerpf(omega_pivot, omega_carve + steer * 0.12, w)
-	omega_target *= 1.0 - 0.3 * tuck
+	omega_target *= (1.0 - 0.3 * tuck) * (1.0 + 0.2 * lean_fa)
 	# hockey stop: the skis pivot across the direction of travel and the edges set.  It builds up
 	# progressively (a tap checks speed, holding it stops), toward the hill or the steered side.
 	var vdir := vt / sp if sp > 0.3 else f
@@ -362,6 +414,11 @@ func _ground_step(dt: float, n: Vector3, cf: float) -> void:
 		var err := stop_side * deg_to_rad(82.0) * minf(edge_brake * 1.6, 1.0) - slip_s
 		omega_target = lerpf(omega_target, clampf(err * 9.0, -6.5, 6.5), edge_brake)
 	yaw_rate = lerpf(yaw_rate, omega_target, 1.0 - exp(-dt / 0.07))
+	# pitch of the snow along the travel direction; its rate of change at a lip becomes flip rotation
+	if sp > 1.0:
+		var gp := asin(clampf(-(vt / sp).y, -1.0, 1.0))
+		_ground_pitch_rate = lerpf(_ground_pitch_rate, wrapf(gp - _ground_pitch, -PI, PI) / dt, 1.0 - exp(-7.0 * dt))
+		_ground_pitch = gp
 	heading = wrapf(heading - yaw_rate * dt, -PI, PI)
 	f = forward_flat()
 	f = (f - n * f.dot(n)).normalized()
@@ -381,6 +438,10 @@ func _ground_step(dt: float, n: Vector3, cf: float) -> void:
 		else:
 			vdir = vdir.rotated(n, signf(ang) * max_turn).normalized()
 			carve_g = a_lat_max
+			# Realistic: skidding sideways fast on a flat ski catches the downhill edge
+			if diff()["edge_catch"] and absf(ang) > deg_to_rad(65.0) and sp > 13.0 and absf(edge) < 0.12 and edge_brake < 0.3 and cf >= 1.0:
+				crash("Caught an edge")
+				return
 			var mu_skid := 0.55 + 0.55 * edge_brake * clampf(grip, 0.55, 1.15)
 			var dec := mu_skid * G * maxf(n.y, 0.2) * sin(minf(absf(ang), PI * 0.5))
 			sp = maxf(sp - dec * dt, 0.0)
@@ -419,17 +480,30 @@ func _ground_step(dt: float, n: Vector3, cf: float) -> void:
 		steep_time = maxf(steep_time - dt, 0.0)
 
 
-func _air_step(dt: float, spin_in: float) -> void:
+func _air_step(dt: float, spin_in: float, flip_in: float) -> void:
 	vel += Vector3(0, -G, 0) * dt
 	var sp := vel.length()
-	var cda := lerpf(0.0042, 0.0022, maxf(tuck, (grab_l + grab_r) * 0.5))
+	var compact := maxf(tuck, (grab_l + grab_r) * 0.5)
+	var cda := lerpf(0.0042, 0.0022, compact)
 	vel -= vel * cda * sp * dt
+	var d := diff()
+	# body english: how much you can change your rotation once airborne depends on the difficulty
 	if absf(spin_in) > 0.1:
-		spin_vel = move_toward(spin_vel, signf(spin_in) * SPIN_MAX, SPIN_ACCEL * dt)
+		spin_vel = move_toward(spin_vel, signf(spin_in) * SPIN_MAX, float(d["air_spin"]) * dt)
 	else:
-		spin_vel = move_toward(spin_vel, 0.0, SPIN_DAMP * dt)
-	heading = wrapf(heading - spin_vel * dt, -PI, PI)
-	air_rotation += spin_vel * dt
+		spin_vel = move_toward(spin_vel, 0.0, float(d["spin_damp"]) * dt)
+	if absf(flip_in) > 0.1:
+		flip_vel = move_toward(flip_vel, signf(flip_in) * SPIN_MAX * 0.7, float(d["air_flip"]) * dt)
+	elif float(d["level"]) > 0.0 and absf(roundf(air_pitch / TAU) * TAU - air_pitch) < deg_to_rad(60.0):
+		# assist: settle a small tilt toward a clean landing (it cannot rescue an upside-down one)
+		var target := roundf(air_pitch / TAU) * TAU
+		flip_vel += ((target - air_pitch) * float(d["level"]) * 2.0 - flip_vel * float(d["level"])) * dt
+	# tucked or grabbing: smaller moment of inertia, faster rotation
+	var w_mul := 1.0 + 0.3 * compact
+	heading = wrapf(heading - spin_vel * w_mul * dt, -PI, PI)
+	air_rotation += spin_vel * w_mul * dt
+	air_pitch += flip_vel * w_mul * dt
+	air_pitch_peak = maxf(air_pitch_peak, absf(air_pitch))
 	# light air steering ("body english")
 	var hv := Vector3(vel.x, 0, vel.z)
 	if hv.length() > 1.0:
@@ -437,6 +511,12 @@ func _air_step(dt: float, spin_in: float) -> void:
 		vel += right * steer * 1.1 * dt
 	var gl := _pressed("grab_left")
 	var gr := _pressed("grab_right")
+	# where the hand goes: leaning forward reaches the tip, leaning back the tail
+	var kind := "tip" if flip_in > 0.5 else ("tail" if flip_in < -0.5 else "")
+	if gl and grab_l < 0.05:
+		grab_kind_l = kind
+	if gr and grab_r < 0.05:
+		grab_kind_r = kind
 	grab_l = move_toward(grab_l, 1.0 if gl else 0.0, 7.0 * dt)
 	grab_r = move_toward(grab_r, 1.0 if gr else 0.0, 7.0 * dt)
 	if grab_l > 0.8:
@@ -450,8 +530,10 @@ func _air_step(dt: float, spin_in: float) -> void:
 
 func _do_jump() -> void:
 	var n := ground_n
-	var strength := 2.6 + 2.6 * charge
+	# crouch depth, loaded tails (lean back while crouching) and rebound off a compression
+	var strength := 2.6 + 2.6 * charge + 1.6 * tail_load + 1.2 * clampf(compression, 0.0, 1.0)
 	vel += (n * 0.75 + Vector3.UP * 0.25).normalized() * strength
+	tail_load = 0.0
 	position.y += 0.05
 	charge = 0.0
 	_coyote = 0.0
@@ -470,8 +552,17 @@ func _take_off(from_jump := false) -> void:
 	takeoff_pos = position
 	max_air_height = 0.0
 	_coyote = 0.0 if from_jump else 0.12
-	# carry some of the carving rotation into the air (natural pre-wind)
-	spin_vel = clampf(yaw_rate * 0.5, -3.0, 3.0)
+	# rotation is set at takeoff: carving rotation and the wound-up upper body give the spin ...
+	spin_vel = clampf(yaw_rate * 0.5 + wind * WIND_SPIN, -SPIN_MAX, SPIN_MAX)
+	wind = 0.0
+	# ... the lip pitches you backward, and leaning at the pop starts a front / back flip
+	flip_vel = clampf(_ground_pitch_rate * 0.35, -1.0, 1.0)
+	if from_jump:
+		flip_vel += lean_fa * FLIP_POP
+	air_pitch = 0.0
+	air_pitch_peak = 0.0
+	grab_kind_l = ""
+	grab_kind_r = ""
 	took_off.emit()
 
 
@@ -485,26 +576,34 @@ func _land(n: Vector3, impact: float) -> void:
 	var is_switch := adiff > PI * 0.5
 	var misalign := minf(adiff, PI - adiff)
 	var grabbing := grab_l > 0.5 or grab_r > 0.5
+	var pitch_off := absf(wrapf(air_pitch, -PI, PI))
+	var d := diff()
+	var tol := deg_to_rad(float(d["land_tol"]))
 	var info := {
 		"impact": impact, "misalign": rad_to_deg(misalign), "switch": is_switch, "air_time": air_time,
 		"rotation": air_rotation, "grab_l": grab_time_l, "grab_r": grab_time_r, "speed": sp,
 		"height": max_air_height, "distance": Vector2(position.x - takeoff_pos.x, position.z - takeoff_pos.z).length(),
-		"crash": "",
+		"crash": "", "flip": air_pitch, "pitch_peak": air_pitch_peak, "pitch_off": rad_to_deg(pitch_off),
+		"grab_kind_l": grab_kind_l, "grab_kind_r": grab_kind_r,
 	}
 	ground_n = n
 	compression = clampf(impact / 14.0, 0.1, 1.0) * (1.0 if air_time > 0.25 else 0.4)
 	compression_vel = 0.0
 	# crash conditions
 	var reason := ""
-	if impact > CRASH_IMPACT:
+	if pitch_off > tol + deg_to_rad(15.0) and air_time > 0.3:
+		reason = "Landed on your back" if wrapf(air_pitch, -PI, PI) < 0.0 else "Landed on your head"
+	elif impact > float(d["impact"]):
 		reason = "Hard landing"
-	elif impact > 13.0 and misalign > deg_to_rad(32.0):
+	elif impact > float(d["impact"]) - 7.0 and (misalign > deg_to_rad(32.0) or pitch_off > deg_to_rad(30.0)):
 		reason = "Hard landing"
-	elif misalign > deg_to_rad(52.0) and sp > 5.0 and air_time > 0.3:
+	elif misalign > tol and sp > 5.0 and air_time > 0.3:
 		reason = "Landed sideways"
 	elif grabbing and impact > 7.0 and air_time > 0.3:
 		reason = "Held the grab too long"
 	info["crash"] = reason
+	if reason == "" and air_time > 0.3 and (misalign > deg_to_rad(25.0) or pitch_off > deg_to_rad(20.0) or impact > float(d["impact"]) - 6.0):
+		sketchy = 0.8                  # arms windmilling, less grip for a moment
 	vel = hv
 	if reason == "":
 		# absorb part of the impact
@@ -514,6 +613,8 @@ func _land(n: Vector3, impact: float) -> void:
 			revert = PI * (1.0 if spin_vel >= 0.0 else -1.0)
 		yaw_rate = 0.0
 	spin_vel = 0.0
+	flip_vel = 0.0
+	air_pitch = 0.0
 	grab_l = 0.0
 	grab_r = 0.0
 	_last_land_t = time

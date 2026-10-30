@@ -220,3 +220,26 @@ Research notes on Grand Mountain Adventure 2, Steep and Riders Republic are in `
   (Powder Rush, Timber Slalom, Widowmaker Line) - it tucks straight at gates across 40-48° terrain
   and keeps crashing. The races are skiable by choosing a line, but their medal times are not
   verified by simulation yet.
+
+## Phase 2 — physics-based skiing (inspired by Jibbers; see RESEARCH.md)
+
+Hybrid approach: the proven snow/edge model stays; the body now drives pop and rotation.
+- **Weight shift (Up/Down arrows)**: forward = crisper turn entry; back = tips wash out (less
+  grip). Crouching (Space) with the weight back loads the tails: let go of Down just before the
+  pop for a bigger ollie (tested 1.68 m vs 1.31 m), keep holding it for a backflip (Up: front flip).
+  Popping off a compression (landing, bump) adds pop too.
+- **Spins from the wind-up (Left/Right arrows on the ground)**: shoulders counter-rotate; at
+  takeoff the wind-up becomes spin (186° in 0.5 s with no air input). Carving rotation still
+  carries over. Kicker lips and rollovers add their own pitch rotation.
+- **In the air**: arrows (and Q/E) adjust spin and flip; tucking or grabbing spins ~30% faster.
+  Grabs while leaning become tip / tail grabs. Knees tuck during flips.
+- **Landings** judged on yaw, flip pitch and impact: "Landed on your back / head", hard and
+  sideways landings; close calls trigger a short recovery (arms windmill, less grip).
+- **Skis flex** visibly under load (shader), and spring back in the air.
+- **Three difficulties** (Settings > Controls): Easy (strong air control, auto-levelling,
+  forgiving landings), Normal, Realistic (rotation essentially from the takeoff, tight landing
+  tolerance, edges can catch when skidding sideways fast on a flat ski).
+- **Tricks**: flips (Backflip/Frontflip, Double, Triple), corks (off-axis spins), tip/tail grabs.
+- Tests: physics suite 48 checks (pop loading, backflip start, wind-up spin, tuck spin rate,
+  per-difficulty air control, upside-down landing crash) and trick naming unit tests, all
+  passing; all natural kickers that landed before still land on Normal.

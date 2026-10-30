@@ -36,8 +36,16 @@ W            Tuck (less air resistance) / pole-push on flat ground
 S            Hockey stop (tap: check speed, hold: stop; + A/D picks the side)
 A / D        Carve left / right
 Left Shift   Aggressive edge carving (tighter turns, scrubs speed)
-Space        Hold to crouch, release to jump (longer hold = bigger ollie)
-Q / E        Spin left / right in the air
+Space        Hold to crouch, release to pop (longer hold = bigger ollie)
+Up / Down    Shift your weight forward / back. Crouch with Down held to load the
+             tails, let go of Down just before releasing Space for a bigger pop;
+             keep holding Down (or Up) as you pop for a backflip (front flip).
+             In the air: Up / Down keep flipping.
+Left / Right On the ground: wind up a spin (release Space while winding). In the
+             air: spin. Q / E also spin. Tucking (W) or grabbing spins faster.
+Z / X + Up   Tip grab, Z / X + Down tail grab
+Difficulty   Settings > Controls: Easy (lots of air control, forgiving),
+             Normal, Realistic (rotation only from your takeoff, edges catch)
 Z / X        Grab left / right ski in the air
 Mouse        Look around      Scroll wheel   Zoom camera
 C            Switch camera (standard / close chase)
