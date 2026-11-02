@@ -1,0 +1,18 @@
+SUMMIT — starting the downloaded game
+
+1. Extract the ENTIRE ZIP. Keep index.html, SUMMIT.js and the data folder together.
+2. Do not double-click index.html. Browsers block the required file:// data requests.
+3. Windows: double-click START-WINDOWS.bat (requires Python 3).
+   macOS/Linux: open a terminal in this folder and run: python3 start_game.py
+   On macOS you can also run: sh START-MAC.command
+4. The launcher opens your browser automatically. Keep its terminal window open.
+
+If Python 3 is missing, install it from https://www.python.org/downloads/
+No Python packages or additional dependencies are required.
+The server listens only on your own computer and chooses an available port.
+
+To play without installing anything, enable GitHub Pages on the repository:
+https://github.com/rclogos44-svg/code-skiing-game/settings/pages
+Select Deploy from a branch -> gh-pages -> /(root) -> Save.
+Expected site after deployment:
+https://rclogos44-svg.github.io/code-skiing-game/

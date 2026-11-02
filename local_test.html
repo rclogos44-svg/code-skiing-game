@@ -163,7 +163,7 @@ kbd {
     <ul class="facts">
       <li><b>6.1 × 6.1 km</b> of mountains</li>
       <li><b>1,640 m</b> vertical</li>
-      <li><b>13</b> drop zones</li>
+      <li><b>15</b> drop zones</li>
       <li><b>13</b> challenges</li>
     </ul>
     <div class="progress" role="status" aria-live="polite">
@@ -257,7 +257,7 @@ const SUMMIT_FILES = {"SUMMIT.wasm": {"parts": ["data/summit-wasm-0.wasm", "data
     failed = true;
     phase.textContent = "Could not start";
     amount.textContent = "";
-    errorBox.textContent = msg + "\n\nTry the latest Chrome, Edge or Firefox on a computer, and make sure hardware acceleration (WebGL) is enabled.";
+    errorBox.textContent = msg;
     errorBox.hidden = false;
   };
   window.addEventListener("unhandledrejection", function (ev) {
@@ -265,6 +265,13 @@ const SUMMIT_FILES = {"SUMMIT.wasm": {"parts": ["data/summit-wasm-0.wasm", "data
     if (loader.hidden) { return; }
     window.__summitFail(r && r.message ? r.message : String(r));
   });
+
+  if (location.protocol === "file:") {
+    window.__summitFail("This game cannot load by double-clicking index.html.\n\nExtract the entire ZIP, then use START-WINDOWS.bat on Windows, or run python3 start_game.py in the extracted folder on macOS/Linux. The launcher requires Python 3 and opens the correct browser address automatically.\n\nSee START-HERE.txt, or play through the hosted GitHub Pages site once enabled.");
+    phase.textContent = "Start the local launcher";
+    document.getElementById("play").hidden = true;
+    return;
+  }
 
   function mb(n) { return (n / 1048576).toFixed(0); }
 
