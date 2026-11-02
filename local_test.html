@@ -1,0 +1,316 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><link rel="icon" href="data:,"></head><body>
+<title>SUMMIT · Your mountain. Your line.</title>
+<link rel="icon" href="data:,">
+<style>
+/* Layout: one-screen game. The canvas fills the viewport; the loader is a full-bleed overlay
+   styled like a trail-map sign. Single dark theme by design (it frames a game). */
+:root {
+  --night: #0b1320;
+  --slate: #142236;
+  --ridge: #24384f;
+  --ice: #eaf2fb;
+  --frost: #9db2c9;
+  --signal: #ff7a1a;
+  --display: "Barlow Condensed", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+  --body: "Barlow", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--night);
+  color: var(--ice);
+  font-family: var(--body);
+  overflow: hidden;
+  touch-action: none;
+}
+#canvas {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  outline: none;
+  background: var(--night);
+}
+#loader {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow-y: auto;
+  padding-block: max(24px, env(safe-area-inset-top, 0px)) max(24px, env(safe-area-inset-bottom, 0px));
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  background:
+    linear-gradient(180deg, rgba(11, 19, 32, 0.2), var(--night) 78%),
+    radial-gradient(120% 70% at 70% 0%, #2c4a6e 0%, var(--night) 70%);
+  z-index: 5;
+}
+#loader[hidden] { display: none; }
+.panel {
+  width: min(640px, 100%);
+  display: grid;
+  gap: 22px;
+}
+.peaks { width: 100%; height: auto; display: block; }
+.eyebrow {
+  font-family: var(--display);
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--signal);
+  font-size: 0.95rem;
+  margin: 0;
+}
+h1 {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: clamp(3.6rem, 13vw, 7.5rem);
+  line-height: 0.85;
+  letter-spacing: 0.04em;
+  margin: 0;
+  text-wrap: balance;
+}
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--frost);
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+}
+.facts b { color: var(--ice); font-weight: 600; }
+.progress {
+  display: grid;
+  gap: 8px;
+}
+.bar {
+  height: 10px;
+  border-radius: 5px;
+  background: var(--ridge);
+  overflow: hidden;
+}
+.bar i {
+  display: block;
+  height: 100%;
+  width: 0%;
+  background: var(--signal);
+  border-radius: 5px;
+  transition: width 0.25s ease-out;
+}
+.status {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.95rem;
+  color: var(--frost);
+  font-variant-numeric: tabular-nums;
+}
+.status span:first-child { color: var(--ice); }
+.keys {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 8px 18px;
+  margin: 0;
+  padding: 16px 18px;
+  background: color-mix(in srgb, var(--slate) 85%, transparent);
+  border-radius: 10px;
+  font-size: 0.92rem;
+  color: var(--frost);
+}
+.keys div { display: flex; gap: 10px; align-items: baseline; min-width: 0; }
+kbd {
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--ice);
+  background: var(--ridge);
+  border-radius: 4px;
+  padding: 1px 7px;
+  white-space: nowrap;
+}
+.note { margin: 0; color: var(--frost); font-size: 0.9rem; line-height: 1.5; max-width: 62ch; }
+.error {
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: #3a1a14;
+  color: #ffd9cc;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+.error[hidden], .note[hidden] { display: none; }
+@media (prefers-reduced-motion: reduce) { .bar i { transition: none; } }
+</style>
+
+<canvas id="canvas" tabindex="0" aria-label="SUMMIT game"></canvas>
+
+<div id="loader">
+  <div class="panel">
+    <svg class="peaks" viewBox="0 0 640 120" aria-hidden="true">
+      <path d="M0 120 L120 46 L170 74 L250 14 L330 70 L390 40 L470 92 L540 52 L640 110 L640 120 Z" fill="#24384f"/>
+      <path d="M250 14 L274 40 L262 37 L250 48 L238 38 Z M390 40 L408 54 L396 53 L386 60 Z M120 46 L136 58 L124 57 L114 64 Z" fill="#eaf2fb"/>
+      <path d="M40 120 C 160 96, 300 108, 430 72 S 600 60, 640 66" stroke="#ff7a1a" stroke-width="5" fill="none" stroke-linecap="round"/>
+    </svg>
+    <div>
+      <p class="eyebrow">Open-world mountain skiing</p>
+      <h1>SUMMIT</h1>
+    </div>
+    <ul class="facts">
+      <li><b>6.1 × 6.1 km</b> of mountains</li>
+      <li><b>1,640 m</b> vertical</li>
+      <li><b>13</b> drop zones</li>
+      <li><b>13</b> challenges</li>
+    </ul>
+    <div class="progress" role="status" aria-live="polite">
+      <div class="bar"><i id="bar"></i></div>
+      <div class="status"><span id="phase">Checking your browser…</span><span id="amount"></span></div>
+    </div>
+    <p class="error" id="error" hidden></p>
+    <div class="keys" aria-label="Controls">
+      <div><kbd>A</kbd><kbd>D</kbd> carve</div>
+      <div><kbd>W</kbd> tuck</div>
+      <div><kbd>S</kbd> hockey stop</div>
+      <div><kbd>Space</kbd> crouch, release to pop</div>
+      <div><kbd>WASD</kbd> pitch / yaw in the air</div>
+      <div><kbd>Q</kbd><kbd>E</kbd> roll in the air</div>
+      <div><kbd>Z</kbd><kbd>X</kbd> grab skis</div>
+      <div><kbd>Mouse</kbd> look around</div>
+      <div><kbd>T</kbd> skis off, walk</div>
+      <div><kbd>G</kbd> ride a chairlift</div>
+      <div><kbd>M</kbd> map · <kbd>B</kbd> marker · <kbd>R</kbd> reset · <kbd>Esc</kbd> pause</div>
+    </div>
+    <button id="play" style="background:#ff7a1a;color:#0b1320;border:0;border-radius:6px;padding:18px;font:700 20px system-ui;cursor:pointer">ENTER THE MOUNTAIN ↗</button>
+    <p class="note" id="note">The first visit downloads the engine and mountain; progress appears above. Play on a computer with a keyboard and mouse (a gamepad also works). Click the game once it opens so it can capture the mouse and keyboard.</p>
+  </div>
+</div>
+
+<script>
+/* Large engine and data files are published in chunks of under 15 MB; this shim reassembles
+   them when the Godot loader asks for SUMMIT.wasm / SUMMIT.pck. */
+const SUMMIT_FILES = {"SUMMIT.wasm": {"parts": ["data/summit-wasm-0.wasm", "data/summit-wasm-1.wasm", "data/summit-wasm-2.wasm"], "size": 37700666, "type": "application/wasm"}, "SUMMIT.pck": {"parts": ["data/summit-pck-25ce902576-0.wasm", "data/summit-pck-25ce902576-1.wasm", "data/summit-pck-25ce902576-2.wasm", "data/summit-pck-25ce902576-3.wasm"], "size": 48037764, "type": "application/octet-stream"}};
+(function () {
+  const realFetch = window.fetch.bind(window);
+  function chunked(spec) {
+    const parts = spec.parts.map(function (p) {
+      return realFetch(p).then(function (r) {
+        if (!r.ok) { throw new Error("Could not download " + p + " (HTTP " + r.status + ")"); }
+        return r;
+      });
+    });
+    let i = 0;
+    let reader = null;
+    const stream = new ReadableStream({
+      async pull(controller) {
+        for (;;) {
+          if (!reader) {
+            if (i >= parts.length) { controller.close(); return; }
+            const r = await parts[i++];
+            reader = r.body.getReader();
+          }
+          const chunk = await reader.read();
+          if (chunk.done) { reader = null; continue; }
+          controller.enqueue(chunk.value);
+          return;
+        }
+      }
+    });
+    return new Response(stream, { status: 200, headers: { "Content-Type": spec.type, "Content-Length": String(spec.size) } });
+  }
+  window.fetch = function (input, init) {
+    const url = typeof input === "string" ? input : (input && input.url) || "";
+    const name = url.split("?")[0].split("#")[0].split("/").pop();
+    if (Object.prototype.hasOwnProperty.call(SUMMIT_FILES, name)) {
+      return Promise.resolve(chunked(SUMMIT_FILES[name]));
+    }
+    return realFetch(input, init);
+  };
+  // Buffered instantiation: avoids MIME-type requirements and surfaces errors instead of hanging.
+  WebAssembly.instantiateStreaming = async function (source, imports) {
+    const r = await source;
+    const buf = await r.arrayBuffer();
+    try {
+      return await WebAssembly.instantiate(buf, imports);
+    } catch (e) {
+      window.__summitFail("The game engine could not start in this browser.\n" + (e && e.message ? e.message : e));
+      throw e;
+    }
+  };
+})();
+</script>
+<script src="SUMMIT.js"></script>
+<script>
+(function () {
+  const loader = document.getElementById("loader");
+  const bar = document.getElementById("bar");
+  const phase = document.getElementById("phase");
+  const amount = document.getElementById("amount");
+  const errorBox = document.getElementById("error");
+  let failed = false;
+
+  window.__summitFail = function (msg) {
+    if (failed) { return; }
+    failed = true;
+    phase.textContent = "Could not start";
+    amount.textContent = "";
+    errorBox.textContent = msg + "\n\nTry the latest Chrome, Edge or Firefox on a computer, and make sure hardware acceleration (WebGL) is enabled.";
+    errorBox.hidden = false;
+  };
+  window.addEventListener("unhandledrejection", function (ev) {
+    const r = ev.reason;
+    if (loader.hidden) { return; }
+    window.__summitFail(r && r.message ? r.message : String(r));
+  });
+
+  function mb(n) { return (n / 1048576).toFixed(0); }
+
+  // WebAssembly must be allowed to compile (tiny empty module).
+  try {
+    new WebAssembly.Module(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]));
+  } catch (e) {
+    window.__summitFail("This page is not allowed to run WebAssembly.\n" + e.message);
+    return;
+  }
+  if (typeof Engine === "undefined") {
+    window.__summitFail("The game engine script did not load.");
+    return;
+  }
+  const GODOT_CONFIG = {"args": [], "canvasResizePolicy": 2, "emscriptenPoolSize": 8, "ensureCrossOriginIsolationHeaders": false, "executable": "SUMMIT", "experimentalVK": false, "fileSizes": {"SUMMIT.pck": 48037764, "SUMMIT.wasm": 37700666}, "focusCanvas": true, "gdextensionLibs": [], "godotPoolSize": 4, "serviceWorker": ""};
+  const missing = Engine.getMissingFeatures({ threads: false });
+  if (missing.length !== 0) {
+    window.__summitFail("Your browser is missing features the game needs:\n" + missing.join("\n"));
+    return;
+  }
+  const total = SUMMIT_FILES["SUMMIT.wasm"].size + SUMMIT_FILES["SUMMIT.pck"].size;
+  phase.textContent = "Downloading the mountains";
+  amount.textContent = "0 / " + mb(total) + " MB";
+  const engine = new Engine(GODOT_CONFIG);
+  async function launch() {
+  document.getElementById("play").hidden = true;
+  engine.startGame({
+    onProgress: function (current, all) {
+      if (current > 0 && all > 0) {
+        bar.style.width = Math.min(100, (current / all) * 100).toFixed(1) + "%";
+        amount.textContent = mb(current) + " / " + mb(all) + " MB";
+        if (current >= all) { phase.textContent = "Building the world…"; amount.textContent = ""; }
+      }
+    }
+  }).then(function () {
+    if (failed) { return; }
+    loader.hidden = true;
+    const c = document.getElementById("canvas");
+    c.focus();
+  }, function (err) {
+    window.__summitFail(err && err.message ? err.message : String(err));
+  });
+  }
+  phase.textContent = "Your mountain. Your line.";
+  document.getElementById("play").addEventListener("click", launch, {once: true});
+})();
+</script>
+
+</body></html>
