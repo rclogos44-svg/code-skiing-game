@@ -274,3 +274,21 @@ Hybrid approach: the proven snow/edge model stays; the body now drives pop and r
 - **Speed streaks** on screen above ~65 km/h (off with Settings > Camera > speed effects).
 - Checked by screenshots of every condition (desktop renderer).
 - Not done in this pass: new tree models, a new skier mesh, jacket flutter, deeper powder trenches.
+
+## Phase 4 wrap-up — races and ghosts
+
+- **Race routes**: routing now heavily penalises uphill (a skier stalls on a climb; Timber Slalom
+  had a 5 m rise) and Widowmaker Line is routed with a 40° limit instead of 46°; trees are
+  cleared 10 m (was 7 m) either side of every race line. Terrain features are unchanged.
+- **Race bot (test only)** tries four strategies (straight at gates, along the routed line,
+  speed-checked on steep ground, slow) and respawns when stuck, like a player would.
+  Result: Village Sprint 1:35 (gold), Powder Rush 3:38 (bronze), Timber Slalom 3:00 (just over
+  bronze), Summit Downhill 2:14 (bronze) are finishable. **Widowmaker Line is not verified**: on
+  its 40-49° sections the bot lands sideways off bumps or skis into a boulder after respawning;
+  a player steering and braking may well get down, but that is untested. Medal times are the
+  generator's estimates; human players were not measured.
+- **Ghost of your best run** in races: positions are recorded every 0.1 s; a new best time is
+  saved (rounded) and replayed as a translucent cyan skier next time. Tested by running a race
+  through the challenge system twice.
+- Challenge list shows the full description (was cut off).
+- Physics suite now 57 checks, all passing.

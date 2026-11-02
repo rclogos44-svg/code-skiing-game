@@ -326,7 +326,8 @@ func show_challenges() -> void:
 			var b := _button(txt, func(): request.emit("challenge", id), list_box)
 			b.disabled = not available
 			b.custom_minimum_size = Vector2(680, 46)
-			b.clip_text = true
+			b.add_theme_font_size_override("font_size", 17)
+			b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			if res.get("completed", false):
 				b.add_theme_color_override("font_color", UITheme.medal_color(int(res.get("medal", 0))).lightened(0.3))
 	cm.free()

@@ -40,6 +40,7 @@ func _reset_save() -> void:
 		"viewpoints": [],
 		"spots": [],
 		"challenges": {},
+		"ghosts": {},
 		"stats": {"top_speed": 0.0, "longest_air": 0.0, "best_trick": 0, "distance": 0.0, "crashes": 0, "best_combo": 0},
 		"last": {},
 	}

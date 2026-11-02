@@ -1169,13 +1169,13 @@ def place_trees(H, slope, surface, X, Z, lay):
         keep &= d > 18
     vx, vz = lay["village"]["x"], lay["village"]["z"]
     keep &= np.hypot(xs - vx, zs - vz) > 260
-    # clear race lines (a few metres either side) so routes stay skiable
+    # clear race lines (a corridor either side) so routes stay skiable at speed
     for chg in lay.get("challenges", []):
         if chg.get("type") != "race":
             continue
         pth = chg["path"]
         for i in range(len(pth) - 1):
-            keep &= seg_dist(xs, zs, pth[i][0], pth[i][1], pth[i + 1][0], pth[i + 1][1]) > 7.0
+            keep &= seg_dist(xs, zs, pth[i][0], pth[i][1], pth[i + 1][0], pth[i + 1][1]) > 10.0
     for f in lay.get("features", []):
         if f["type"] in ("trail", "gully"):
             pth = f["path"]
@@ -1327,7 +1327,7 @@ def finalize_layout(lay, H):
                  ("Powder Bowl", "Powder Rush", None, 20.0, 36.0),
                  ("Pinewood Ridge", "Timber Slalom", None, 17.0, 32.0),
                  ("Summit Peak", "Summit Downhill", None, 26.0, 42.0),
-                 ("Widowmaker", "Widowmaker Line", None, 28.0, 46.0)]
+                 ("Widowmaker", "Widowmaker Line", None, 26.0, 40.0)]
     dz_by = {d["name"]: d for d in drop}
     for dzn, nm, goal, tdeg, mdeg in race_defs:
         if dzn not in dz_by:
@@ -1342,7 +1342,8 @@ def finalize_layout(lay, H):
         if nm == "Village Sprint" and lay["pistes"]:
             pts = [tuple(p) for p in lay["pistes"][min(1, len(lay["pistes"]) - 1)]["pts"]]
         else:
-            pts = route(H, (d["x"], d["z"]), goal, tdeg, mdeg, grid=12.0, pad=600.0)
+            # races must never climb (a skier stalls on an uphill), so uphill is penalised hard
+            pts = route(H, (d["x"], d["z"]), goal, tdeg, mdeg, grid=12.0, pad=600.0, uphill_pen=400.0)
         total = sum(math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]) for i in range(1, len(pts)))
         spacing = max(160.0, total / 15.0)
         cps = []

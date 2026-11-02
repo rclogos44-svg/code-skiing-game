@@ -25,6 +25,12 @@ var _last_cp_yaw := 0.0
 var _gate_mat: StandardMaterial3D
 var _gate_next_mat: StandardMaterial3D
 var _cd_shown := 0
+# ghost of the best race run: [x, y, z, yaw] every GHOST_DT seconds
+const GHOST_DT := 0.1
+var _rec := PackedFloat32Array()
+var _rec_t := 0.0
+var _ghost: MeshInstance3D
+var _ghost_run: Array = []
 
 
 func setup(w: World, t: TrickSystem, h: HUD) -> void:
@@ -125,6 +131,22 @@ func start(id: String) -> void:
 		_build_gates()
 	phase = "countdown"
 	countdown = 3.0
+	_rec.clear()
+	_rec_t = 0.0
+	_ghost_run = Game.save.get("ghosts", {}).get(id, []) if c["type"] == "race" else []
+	if not _ghost_run.is_empty():
+		if _ghost == null:
+			_ghost = MeshInstance3D.new()
+			_ghost.mesh = preload("res://scripts/world/npc_skiers.gd")._skier_mesh()
+			var gm := StandardMaterial3D.new()
+			gm.albedo_color = Color(0.35, 0.9, 1.0, 0.4)
+			gm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			gm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			_ghost.material_override = gm
+			_ghost.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			world.add_child(_ghost)
+		_ghost.visible = true
+		hud.notify("Racing the ghost of your best run", "info")
 	_cd_shown = 0
 	skier.frozen = true
 	_update_hud()
@@ -145,6 +167,8 @@ func stop(show := true) -> void:
 	active = {}
 	phase = ""
 	skier.frozen = false
+	if _ghost:
+		_ghost.visible = false
 	hud.set_challenge("", "")
 
 
@@ -235,6 +259,7 @@ func _process(delta: float) -> void:
 	timer += delta
 	match active["type"]:
 		"race":
+			_record_and_replay(delta)
 			_race_update()
 		"extreme":
 			if start_y - skier.position.y >= float(active["drop_req"]):
@@ -246,6 +271,26 @@ func _process(delta: float) -> void:
 		_time_up()
 		return
 	_update_hud()
+
+
+func _record_and_replay(delta: float) -> void:
+	_rec_t += delta
+	while _rec_t >= GHOST_DT:
+		_rec_t -= GHOST_DT
+		var p := skier.position
+		_rec.append_array([p.x, p.y, p.z, skier.heading])
+	if _ghost_run.is_empty() or _ghost == null:
+		return
+	var n := _ghost_run.size() / 4
+	var f := timer / GHOST_DT
+	var i := mini(int(f), n - 1)
+	var j := mini(i + 1, n - 1)
+	var w := clampf(f - i, 0.0, 1.0)
+	var a := Vector3(_ghost_run[i * 4], _ghost_run[i * 4 + 1], _ghost_run[i * 4 + 2])
+	var b := Vector3(_ghost_run[j * 4], _ghost_run[j * 4 + 1], _ghost_run[j * 4 + 2])
+	var yaw := lerp_angle(float(_ghost_run[i * 4 + 3]), float(_ghost_run[j * 4 + 3]), w)
+	_ghost.global_transform = Transform3D(Basis(Vector3.UP, yaw), a.lerp(b, w))
+	_ghost.visible = i < n - 1
 
 
 func _race_update() -> void:
@@ -325,6 +370,15 @@ func _on_crash(_reason: String, _v: Vector3) -> void:
 func _finish(result: Dictionary) -> void:
 	var id: String = active["id"]
 	var name: String = active["name"]
+	var prev_time := float(Game.challenge_result(id).get("time", INF))
+	if active["type"] == "race" and result.get("completed", false) and float(result.get("time", INF)) < prev_time:
+		# keep the new best run as the ghost (rounded to keep the save small)
+		var run := []
+		for v in _rec:
+			run.append(snappedf(v, 0.01))
+		if not Game.save.has("ghosts"):
+			Game.save["ghosts"] = {}
+		Game.save["ghosts"][id] = run
 	var improved := Game.record_challenge(id, result)
 	var medal := int(result.get("medal", 0))
 	if result.get("completed", false):

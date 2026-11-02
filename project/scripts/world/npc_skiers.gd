@@ -86,7 +86,7 @@ func _process(delta: float) -> void:
 
 ## A skier in a relaxed athletic stance (origin between the boots on the snow, facing -Z).
 ## Vertex alpha 0 marks the jacket (per-instance colour).
-func _skier_mesh() -> ArrayMesh:
+static func _skier_mesh() -> ArrayMesh:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var pants := Color(0.16, 0.18, 0.24)
@@ -109,6 +109,6 @@ func _skier_mesh() -> ArrayMesh:
 	return st.commit()
 
 
-func _cbox(st: SurfaceTool, a: Vector3, b: Vector3, c: Color) -> void:
+static func _cbox(st: SurfaceTool, a: Vector3, b: Vector3, c: Color) -> void:
 	st.set_color(c)
 	SkierModel._box(st, a, b)

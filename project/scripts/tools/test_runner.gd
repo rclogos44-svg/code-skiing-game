@@ -340,6 +340,31 @@ func _on_foot(spot: Dictionary) -> void:
 	check("skis go back on", s.toggle_skis() and s.mode == Skier.Mode.SKI)
 
 
+## Runs Village Sprint through the challenge system (teleporting gate to gate), then starts it
+## again: the first finish stores a ghost, the second run shows it.
+func _ghost_race() -> void:
+	var ch = get_parent().get("challenges")
+	if ch == null:
+		return
+	var s := world.skier
+	Engine.time_scale = 4.0
+	for run in 2:
+		ch.start("race_village_sprint")
+		while ch.phase == "countdown":
+			await get_tree().process_frame
+		if run == 1:
+			await _frames(6)
+			check("second run shows the ghost of the best run", ch._ghost != null and ch._ghost.visible)
+		for cp in ch.active.get("checkpoints", []):
+			s.teleport(Vector3(cp[0], 0, cp[1]), s.heading)
+			await _frames(2)
+		if run == 0:
+			check("finishing a race stores a ghost", Game.save.get("ghosts", {}).get("race_village_sprint", []).size() > 8,
+				"%d samples" % Game.save.get("ghosts", {}).get("race_village_sprint", []).size())
+	ch.stop(false)
+	Engine.time_scale = 1.0
+
+
 func _lift_ride() -> void:
 	var r = world.resort
 	if r == null or r.lifts.is_empty():
@@ -537,6 +562,7 @@ func _physics() -> void:
 	world.body.set_process(true)
 	s.set_physics_process(true)
 	await _lift_ride()
+	await _ghost_race()
 
 
 # ------------------------------------------------------------------ smoke
@@ -570,7 +596,7 @@ func _smoke() -> void:
 
 
 # ------------------------------------------------------------------ gameplay simulation
-func _autopilot_step(s: Skier, target: Vector2) -> Dictionary:
+func _autopilot_step(s: Skier, target: Vector2, vmax := 32.0) -> Dictionary:
 	var p := Vector2(s.position.x, s.position.z)
 	var to := (target - p)
 	var want := Skier.yaw_of(Vector3(to.x, 0, to.y))
@@ -584,7 +610,7 @@ func _autopilot_step(s: Skier, target: Vector2) -> Dictionary:
 		inp["steer_left"] = -steer
 	if absf(err) < 0.25 and s.speed < 28.0:
 		inp["tuck"] = 1.0
-	if s.speed > 32.0 or (absf(err) > 0.9 and s.speed > 14.0):
+	if s.speed > vmax or (absf(err) > 0.9 and s.speed > 14.0):
 		inp["brake"] = 1.0
 	if absf(err) > 1.2 and s.speed > 18.0:
 		inp["carve"] = 1.0
@@ -698,42 +724,95 @@ func _gameplay() -> void:
 				ok360 = true
 				break
 	check("a real 360 can be landed", ok360)
-	# --- autopilot through every race
+	# --- autopilot through every race: straight at each gate, or along the routed line;
+	# the race counts as finishable if either strategy gets through every gate
 	for c in world.terrain.layout.get("challenges", []):
 		if c["type"] != "race":
 			continue
-		s.teleport(Vector3(c["start"][0], 0, c["start"][1]), float(c["yaw"]))
+		var best := {}
+		for mode in ["gates", "line", "careful", "slow"]:
+			var r := _race_attempt(s, c, mode, dt)
+			if best.is_empty() or int(r["idx"]) > int(best["idx"]) or (r["idx"] == best["idx"] and float(r["t"]) < float(best["t"])):
+				best = r
+			if int(r["idx"]) >= c["checkpoints"].size():
+				break
 		var cps: Array = c["checkpoints"]
-		var idx := 0
-		var t := 0.0
-		var crashes := 0
-		var reasons := {}
-		var rcb := func(r, _v): reasons[r] = int(reasons.get(r, 0)) + 1
-		s.crashed.connect(rcb)
-		while idx < cps.size() and t < 600.0:
-			var target := Vector2(cps[idx][0], cps[idx][1])
-			s.scripted_input = _autopilot_step(s, target)
-			s.step(dt)
-			t += dt
-			if s.is_crashed:
-				crashes += 1
-				s.crash_time = 3.0
-				s.respawn()
-			if Vector2(s.position.x, s.position.z).distance_to(target) < 13.0:
-				idx += 1
-			if s.speed < 0.3 and t > 5.0:
-				s.scripted_input = {"tuck": 1.0}
-		s.crashed.disconnect(rcb)
 		var m: Array = c["medals"]
-		print("[TEST] race %-18s autopilot %s  gates %d/%d  crashes %d %s  (gold %s silver %s bronze %s)" % [c["name"],
-			UITheme.format_time(t), idx, cps.size(), crashes, str(reasons), UITheme.format_time(m[0]), UITheme.format_time(m[1]), UITheme.format_time(m[2])])
-		if idx < cps.size():
-			var gate_p := Vector2(cps[idx][0], cps[idx][1])
-			print("[TEST]     stuck near (%.0f, %.0f) h=%.0f slope=%.0f, next gate (%.0f, %.0f) h=%.0f dist %.0f" % [s.position.x, s.position.z, s.position.y,
-				world.terrain.slope_deg(s.position.x, s.position.z), gate_p.x, gate_p.y, world.terrain.height(gate_p.x, gate_p.y), Vector2(s.position.x, s.position.z).distance_to(gate_p)])
-		check("race %s finishable" % c["name"], idx >= cps.size())
+		print("[TEST] race %-18s autopilot (%s) %s  gates %d/%d  crashes %d %s  (gold %s silver %s bronze %s)" % [c["name"], best["mode"],
+			UITheme.format_time(best["t"]), best["idx"], cps.size(), best["crashes"], str(best["reasons"]), UITheme.format_time(m[0]), UITheme.format_time(m[1]), UITheme.format_time(m[2])])
+		if int(best["idx"]) < cps.size():
+			var gate_p := Vector2(cps[best["idx"]][0], cps[best["idx"]][1])
+			var sp: Vector3 = best["pos"]
+			print("[TEST]     stuck near (%.0f, %.0f) h=%.0f slope=%.0f, next gate (%.0f, %.0f) h=%.0f dist %.0f" % [sp.x, sp.z, sp.y,
+				world.terrain.slope_deg(sp.x, sp.z), gate_p.x, gate_p.y, world.terrain.height(gate_p.x, gate_p.y), Vector2(sp.x, sp.z).distance_to(gate_p)])
+		check("race %s finishable" % c["name"], int(best["idx"]) >= cps.size())
 	world.body.set_process(true)
 	s.set_physics_process(true)
+
+
+func _race_attempt(s: Skier, c: Dictionary, mode: String, dt: float) -> Dictionary:
+	s.teleport(Vector3(c["start"][0], 0, c["start"][1]), float(c["yaw"]))
+	var cps: Array = c["checkpoints"]
+	var path: Array = c.get("path", cps)
+	var pi := 0
+	var idx := 0
+	var t := 0.0
+	var crashes := 0
+	var reasons := {}
+	var rcb := func(r, _v): reasons[r] = int(reasons.get(r, 0)) + 1
+	s.crashed.connect(rcb)
+	var stalled := 0.0
+	var braking := false
+	while idx < cps.size() and t < 600.0:
+		var target := Vector2(cps[idx][0], cps[idx][1])
+		var aim_at := target
+		if mode != "gates":
+			var pp := Vector2(s.position.x, s.position.z)
+			var near_i := pi
+			for k in range(maxi(pi - 3, 0), mini(pi + 12, path.size())):
+				if pp.distance_to(Vector2(path[k][0], path[k][1])) < pp.distance_to(Vector2(path[near_i][0], path[near_i][1])):
+					near_i = k
+			pi = near_i
+			var aim := pi
+			while aim < path.size() - 1 and pp.distance_to(Vector2(path[aim][0], path[aim][1])) < (22.0 if mode == "line" else 14.0):
+				aim += 1
+			aim_at = Vector2(path[aim][0], path[aim][1])
+			if pp.distance_to(target) < pp.distance_to(aim_at):
+				aim_at = target
+		var inp := _autopilot_step(s, aim_at)
+		if mode == "careful" or mode == "slow":
+			# speed checks on steep ground (or everywhere when slow), with hysteresis so it never stops dead
+			var cap := lerpf(30.0, 15.0, clampf((world.terrain.slope_deg(s.position.x, s.position.z) - 30.0) / 12.0, 0.0, 1.0))
+			if mode == "slow":
+				cap = 12.5
+			braking = s.speed > cap or (braking and s.speed > cap - 4.0)
+			if braking:
+				inp["brake"] = 1.0
+				inp.erase("tuck")
+		if s.speed < 0.3 and t > 5.0:
+			inp["tuck"] = 1.0
+		# pinned against a tree or stalled for a while: respawn like a player would (R)
+		stalled = stalled + dt if s.speed < 0.6 and t > 5.0 else 0.0
+		if stalled > 4.0:
+			stalled = 0.0
+			reasons["stuck (respawned)"] = int(reasons.get("stuck (respawned)", 0)) + 1
+			s.respawn()
+		s.scripted_input = inp
+		s.step(dt)
+		t += dt
+		if s.is_crashed:
+			crashes += 1
+			if Game.test_args.has("race_debug") and crashes <= 3:
+				print("[DBG] %s/%s crash %d at (%.0f, %.0f, %.0f) %s speed %.1f" % [c["name"], mode, crashes, s.position.x, s.position.z, s.position.y, str(reasons), s.speed])
+				var ob := world.obstacles
+				for oi in ob.query(s.position.x, s.position.z, 4.0):
+					print("[DBG] crash at (%.0f, %.0f) near obstacle kind %d at (%.1f, %.1f) r %.1f" % [s.position.x, s.position.z, ob.kinds[oi], ob.xs[oi], ob.zs[oi], ob.radii[oi]])
+			s.crash_time = 3.0
+			s.respawn()
+		if Vector2(s.position.x, s.position.z).distance_to(target) < 13.0:
+			idx += 1
+	s.crashed.disconnect(rcb)
+	return {"mode": mode, "idx": idx, "t": t, "crashes": crashes, "reasons": reasons, "pos": s.position}
 
 
 # ------------------------------------------------------------------ turn animation frames
