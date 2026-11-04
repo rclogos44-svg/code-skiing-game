@@ -121,8 +121,10 @@ func _start_play(mode: String) -> void:
 	get_tree().paused = false
 	world.skier.frozen = false
 	world.camera.set_mode(CameraRig.Mode.STANDARD)
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if Settings.is_web() else Input.MOUSE_MODE_CAPTURED
 	hud.show_controls_hint()
+	if Settings.is_web():
+		hud.notify("Click the slope to enable mouse look. R: park start · B: retry feature", "info")
 	pois.refresh()
 
 
@@ -141,7 +143,7 @@ func _resume() -> void:
 	map_screen.visible = false
 	hud.visible = true
 	get_tree().paused = false
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if Settings.is_web() else Input.MOUSE_MODE_CAPTURED
 
 
 func _open_map() -> void:

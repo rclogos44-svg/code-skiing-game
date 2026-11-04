@@ -124,7 +124,12 @@ func _build_pause() -> void:
 	shade.set_anchors_preset(Control.PRESET_FULL_RECT)
 	pause_panel.add_child(shade)
 	var v := VBoxContainer.new()
-	v.position = Vector2(90, 140)
+	var fit_pause := func():
+		var factor := clampf(size.y / 900.0, 0.5, 1.0)
+		v.scale = Vector2.ONE * factor
+		v.position = Vector2(90, 75) * factor
+	resized.connect(fit_pause)
+	fit_pause.call()
 	v.add_theme_constant_override("separation", 10)
 	pause_panel.add_child(v)
 	v.add_child(UITheme.label("PAUSED", 56, UITheme.TEXT, 900, 6))

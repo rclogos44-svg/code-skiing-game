@@ -59,3 +59,5 @@ Human gameplay and art review are still needed. The skier is a procedural, rigid
 - Park entrance and three-row layout captured with OpenGL compatibility (`--test=park`). This is visual inspection, not a framerate benchmark.
 - Shutdown still reports CanvasItem/ObjectDB leaks in the test harness. No runtime script errors occurred in passing suites.
 - Actual weak-laptop framerate remains unmeasured. New Low defaults and disabled crowds reduce work, but no 30/60 FPS guarantee is made.
+
+- Browser smoke test: Chromium/WebGL2 loaded the world and rendered the menu and park; Park Practice, R/B input and pause responded. Initial pointer-lock request was rejected because it followed a menu fade; browser entry now waits for a direct click on the slope. Remote font requests were blocked in the cloud; local game rendering continued. Browser hardware acceleration here is SwiftShader, so this is a functional check, not a laptop performance result.
