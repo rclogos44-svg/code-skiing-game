@@ -42,8 +42,8 @@ func setup(td: TerrainData) -> void:
 	env.ambient_light_energy = 1.0
 	env.ambient_light_sky_contribution = 1.0
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
-	env.tonemap_mode = Environment.TONE_MAPPER_AGX
-	env.tonemap_exposure = 1.0
+	env.tonemap_mode = Environment.TONE_MAPPER_LINEAR if RenderingServer.get_current_rendering_method() == "gl_compatibility" else Environment.TONE_MAPPER_AGX
+	env.tonemap_exposure = 0.92
 	env.tonemap_white = 8.0
 	env.fog_enabled = true
 	env.fog_mode = Environment.FOG_MODE_EXPONENTIAL
@@ -56,9 +56,9 @@ func setup(td: TerrainData) -> void:
 	env.fog_height = 900.0
 	env.fog_height_density = 0.0008
 	env.adjustment_enabled = true
-	env.adjustment_contrast = 1.06
-	env.adjustment_saturation = 1.08
-	env.glow_intensity = 0.35
+	env.adjustment_contrast = 1.025
+	env.adjustment_saturation = 1.02
+	env.glow_intensity = 0.22
 	env.glow_bloom = 0.04
 	env.glow_hdr_threshold = 1.4
 	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_SOFTLIGHT
@@ -108,7 +108,10 @@ func _apply_conditions(fog_base: float) -> void:
 	env.fog_height_density = w[3]
 	# valley fog sits in the low valleys; otherwise a thin haze high up
 	env.fog_height = 650.0 if Settings.get_value("world", "weather") == "fog" else 900.0
-	env.ambient_light_energy = t[5]
+	env.ambient_light_energy = float(t[5]) * 0.45
+	if RenderingServer.get_current_rendering_method() == "gl_compatibility":
+		sun.light_energy *= 0.30
+		env.ambient_light_energy *= 0.45
 
 
 func apply_settings() -> void:

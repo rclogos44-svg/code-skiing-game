@@ -5,6 +5,8 @@ extends Node3D
 const TRACK_STEP := 0.45
 const CHUNK_POINTS := 96
 const MAX_CHUNKS := 48
+@export_range(0.0, 2.0) var spray_strength := 1.0
+@export_range(8, 96) var track_chunk_limit := 48
 
 var skier: Skier
 var body: SkierBody
@@ -327,9 +329,10 @@ func _process(_delta: float) -> void:
 		var dir := (Vector3.UP * 0.9 + side_dir * 1.2 + back * 0.4).normalized()
 		pm.direction = dir
 		pm.initial_velocity_max = 2.0 + sp * 0.18 + skier.skid * 4.0
-		ps.amount_ratio = intensity
+		var side_load := clampf(0.65 + (1.0 if i == 0 else -1.0) * skier.edge * 0.6, 0.15, 1.0)
+		ps.amount_ratio = clampf(intensity * skier.ski_support[i] * side_load * spray_strength, 0.0, 1.0)
 	powder.global_position = skier.position + back * 0.6 + Vector3.UP * 0.2
-	powder.amount_ratio = clampf(pdepth * (sp - 3.0) / 10.0, 0.0, 1.0) if grounded else 0.0
+	powder.amount_ratio = clampf(pdepth * (sp - 3.0) / 16.0, 0.0, 0.65) if grounded else 0.0
 	_update_tracks(grounded, pdepth)
 
 
@@ -367,7 +370,8 @@ func _break_tracks() -> void:
 func _update_tracks(grounded: bool, pdepth: float) -> void:
 	for side in ["l", "r"]:
 		var t: Dictionary = _tracks[side]
-		if not grounded or skier.speed < 0.5:
+		var ski_index := 0 if side == "l" else 1
+		if not grounded or skier.ski_support[ski_index] < 0.2 or skier.speed < 0.5:
 			if not (t["points"] as Array).is_empty():
 				_freeze(side)
 			t["last"] = Vector3.INF
@@ -428,7 +432,7 @@ func _freeze(side: String) -> void:
 	if t["mi"] != null:
 		_old_chunks.append(t["mi"])
 		t["mi"] = null
-		while _old_chunks.size() > MAX_CHUNKS:
+		while _old_chunks.size() > mini(track_chunk_limit, [16, 32, 48, 64][clampi(_detail, 0, 3)]):
 			var old: MeshInstance3D = _old_chunks.pop_front()
 			old.queue_free()
 	t["points"] = []

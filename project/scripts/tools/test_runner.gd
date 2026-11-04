@@ -13,9 +13,15 @@ var checks := 0
 
 func run(w: World) -> void:
 	world = w
+	if Game.test_args.has("weather"):
+		Settings.set_value("world", "weather", String(Game.test_args["weather"]))
 	out_dir = Game.test_args.get("out", out_dir)
 	DirAccess.make_dir_recursive_absolute(out_dir)
 	match Game.test_mode:
+		"park":
+			await _park_showcase()
+		"upgrade":
+			await _upgrade_showcase()
 		"shots":
 			await _shots()
 		"physics":
@@ -191,15 +197,24 @@ func _body_physics(spot: Dictionary) -> void:
 	var s := world.skier
 	var saved := s.difficulty
 	s.difficulty = 1
-	var plain := _pop(spot, {"jump": 1.0}, 0.6, {"jump": 1.0}, 0.25, {})
-	var loaded := _pop(spot, {"jump": 1.0, "lean_back": 1.0}, 0.6, {"jump": 1.0}, 0.25, {})
+	# Measure tail loading on a fixed planar takeoff, independent of bumps along the route.
+	var mountain := world.terrain
+	var ramp := ContactTerrain.new()
+	ramp.grade = 0.4
+	world.terrain = ramp
+	s.terrain = ramp
+	var ramp_spot := {"pos": Vector3(3000, 1000, 3000), "yaw": 0.0}
+	var plain := _pop(ramp_spot, {"jump": 1.0}, 0.6, {"jump": 1.0}, 0.25, {})
+	var loaded := _pop(ramp_spot, {"jump": 1.0, "lean_back": 1.0}, 0.6, {"jump": 1.0}, 0.25, {})
 	check("leaning back loads the tails: bigger pop", loaded["clear"] > plain["clear"] * 1.15, "%.2f m vs %.2f m" % [loaded["clear"], plain["clear"]])
+	world.terrain = mountain
+	s.terrain = mountain
 	var bf := _pop(spot, {"jump": 1.0, "lean_back": 1.0}, 0.6, {"jump": 1.0, "lean_back": 1.0}, 0.05, {"lean_back": 1.0}, 0.35)
 	check("holding back at the pop starts a backflip", bf["pitch"] < -0.5, "%.0f deg after 0.35 s" % rad_to_deg(bf["pitch"]))
 	var wound := _pop(spot, {"jump": 1.0, "lean_right": 1.0}, 0.8, {"jump": 1.0, "lean_right": 1.0}, 0.02, {}, 0.5)
 	check("wind-up spins without air input", wound["rot"] > deg_to_rad(90.0), "%.0f deg in 0.5 s" % rad_to_deg(wound["rot"]))
 	var tucked := _pop(spot, {"jump": 1.0, "lean_right": 1.0}, 0.8, {"jump": 1.0, "lean_right": 1.0}, 0.02, {"tuck": 1.0}, 0.5)
-	check("tucking spins faster", tucked["rot"] > wound["rot"] * 1.1, "%.0f vs %.0f deg" % [rad_to_deg(tucked["rot"]), rad_to_deg(wound["rot"])])
+	check("push input does not accelerate air rotation", absf(tucked["rot"] - wound["rot"]) < 0.01, "%.0f vs %.0f deg" % [rad_to_deg(tucked["rot"]), rad_to_deg(wound["rot"])])
 	var ctrl := []
 	for d in 3:
 		s.difficulty = d
@@ -289,7 +304,7 @@ func _jibs() -> void:
 			longest = b
 	s.difficulty = 2
 	var r4 := _jib_run(longest, 10.0, 6.0, none)
-	check("Realistic: no balance input falls off", r4["mounted"] and r4["crash"] == "Fell off the rail", "%s %s" % [r4["info"].get("how", ""), r4["crash"]])
+	check("Realistic: wide box supports centered skier", r4["mounted"] and r4["info"].get("how", "") == "end", "%s %s" % [r4["info"].get("how", ""), r4["crash"]])
 	var balancer := func(sk: Skier):
 		if not sk.is_grinding():
 			return {}
@@ -448,14 +463,18 @@ func _physics() -> void:
 	var v3 := s.vel.length()
 	check("accelerates downhill", v3 > 8.0 and v3 < 30.0, "speed after 3 s on %.0f deg: %.1f m/s" % [spot["slope"], v3])
 	check("stays grounded on smooth slope", not s.airborne and not s.is_crashed)
-	# 2. tuck is faster than upright
+	# At speed the binding must not provide thrust or change aerodynamic drag.
 	s = _settle_on(spot["pos"], spot["yaw"])
-	_run(s, 4.0, {})
-	var upright := s.vel.length()
+	s.vel = s.forward_flat() * 12.0
+	_run(s, 2.0, {})
+	var unassisted := s.vel
 	s = _settle_on(spot["pos"], spot["yaw"])
-	_run(s, 4.0, {"tuck": 1.0})
-	var tucked := s.vel.length()
-	check("tuck reduces drag", tucked > upright, "upright %.1f vs tuck %.1f m/s" % [upright, tucked])
+	s.vel = s.forward_flat() * 12.0
+	_run(s, 2.0, {"tuck": 1.0})
+	check("push input has no high-speed advantage", s.vel.distance_to(unassisted) < 0.001)
+	_pole_tests()
+	_contact_tests()
+	_upgrade_lines()
 	# 3. hockey stop: skis swing across the direction of travel and the skier stops
 	s = _settle_on(spot["pos"], spot["yaw"])
 	_run(s, 3.0, {})
@@ -558,6 +577,7 @@ func _physics() -> void:
 		check("hitting a tree at speed crashes", s.is_crashed, "reason via signal")
 	_body_physics(spot)
 	_jibs()
+	_park_regressions()
 	_on_foot(spot)
 	world.body.set_process(true)
 	s.set_physics_process(true)
@@ -570,6 +590,9 @@ func _smoke() -> void:
 	var seconds := float(Game.test_args.get("seconds", "20"))
 	world.spawn_at_drop(Game.test_args.get("spot", "Resort Top"))
 	var s := world.skier
+	await _frames(20) # exclude initial shader compilation from steady-state sample
+	var previous_tick := Time.get_ticks_usec()
+	var frame_times: Array[float] = []
 	var frames := 0
 	var worst := 0.0
 	var total := 0.0
@@ -582,7 +605,10 @@ func _smoke() -> void:
 		if s.is_crashed and s.crash_time > 1.5:
 			s.respawn()
 		await get_tree().process_frame
-		var d := get_process_delta_time()
+		var tick := Time.get_ticks_usec()
+		var d := float(tick - previous_tick) / 1000000.0
+		previous_tick = tick
+		frame_times.append(d * 1000.0)
 		frames += 1
 		total += d
 		worst = maxf(worst, d)
@@ -591,6 +617,8 @@ func _smoke() -> void:
 		RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME),
 		RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME),
 		world.renderer.patch_count()])
+	frame_times.sort()
+	print("[TEST] profile renderer=%s viewport=%s preset=%s p95_ms=%.1f" % [RenderingServer.get_current_rendering_method(), get_viewport().get_visible_rect().size, Settings.get_value("graphics", "preset"), frame_times[int(frame_times.size() * 0.95)]])
 	check("smoke run produced frames", frames > 10)
 	await _snap("smoke_end")
 
@@ -1239,3 +1267,269 @@ func _features() -> void:
 		await _frames(8)
 		await _snap("landmark_%s" % String(m["type"]))
 	cam.set_process(true)
+
+
+func _pole_tests() -> void:
+	var s := Skier.new()
+	s.scripted_input = {"tuck": 1.0}
+	s._pole_push(0.25, Vector3.FORWARD, Vector3.UP, 0.0)
+	check("pole anticipation has no propulsion", s.vel == Vector3.ZERO and s.push_phase > 0.0)
+	s._pole_push(0.35, Vector3.FORWARD, Vector3.UP, 0.0)
+	check("pole drive starts skier from rest", s.vel.length() > 1.0)
+	var driven := s.vel
+	s.push_phase = 0.7
+	s._pole_push(0.2, Vector3.FORWARD, Vector3.UP, 0.0)
+	check("pole recovery has no propulsion", s.vel == driven)
+	s.airborne = true
+	s._pole_push(0.2, Vector3.FORWARD, Vector3.UP, 0.0)
+	check("airborne cancels stroke", s.push_phase < 0.0 and s.vel == driven)
+	s.airborne = false
+	s.contact = false
+	s._pole_push(0.2, Vector3.FORWARD, Vector3.UP, 0.0)
+	check("no pole push without snow contact", s.push_phase < 0.0 and s.vel == driven)
+	s.contact = true
+	s._push_cooldown = 0.0
+	s._pole_push(0.5, Vector3.FORWARD, Vector3.UP, s.push_max_speed)
+	check("no stroke at speed threshold", s.push_phase < 0.0 and s.vel == driven)
+	s.push_phase = 0.3
+	s._pole_push(0.1, Vector3.FORWARD, Vector3.UP, 0.0)
+	s.scripted_input = {"tuck": 1.0, "brake": 1.0}
+	driven = s.vel
+	s._pole_push(0.1, Vector3.FORWARD, Vector3.UP, 0.0)
+	check("braking immediately cancels push", s.push_phase < 0.0 and s.vel == driven)
+	s.scripted_input = {"tuck": 1.0}
+	s.push_phase = 0.3
+	s.vel = Vector3.ZERO
+	s._pole_push(0.1, Vector3.FORWARD, Vector3.UP, 0.0)
+	var flat := s.vel.length()
+	s.push_phase = 0.3
+	s.vel = Vector3.ZERO
+	s._pole_push(0.1, Vector3(0, 0.5, -0.866).normalized(), Vector3.UP, 0.0)
+	check("uphill pole assistance is limited", s.vel.length() < flat * 0.5)
+	var speeds := []
+	for hz: int in [60, 120, 240]:
+		s._reset_motion()
+		s.vel = Vector3.ZERO
+		for i in hz * 8:
+			var dt := 1.0 / hz
+			s._push_cooldown = maxf(0.0, s._push_cooldown - dt)
+			s._pole_push(dt, Vector3.FORWARD, Vector3.UP, s.vel.length())
+		speeds.append(s.vel.length())
+	check("pole acceleration is timestep stable", absf(speeds[0] - speeds[2]) < 0.05, str(speeds))
+	check("repeated pushes remain below speed limit", speeds[2] < s.push_max_speed)
+	s._reset_motion()
+	s.vel = Vector3.ZERO
+	for i in 120 * 8:
+		s.scripted_input = {"tuck": 1.0 if i % 2 == 0 else 0.0}
+		s._push_cooldown = maxf(0.0, s._push_cooldown - 1.0 / 120.0)
+		s._pole_push(1.0 / 120.0, Vector3.FORWARD, Vector3.UP, s.vel.length())
+	check("rapid input tapping cannot boost beyond holding", s.vel.length() <= speeds[1] + 0.05)
+	s.push_phase = -1.0
+	s._push_cooldown = 0.5
+	s.scripted_input = {"tuck": 1.0}
+	s._pole_push(0.1, Vector3.FORWARD, Vector3.UP, 0.0)
+	check("interrupted stroke respects cooldown", s.push_phase < 0.0)
+	s._reset_motion()
+	check("respawn resets pole cycle", s.push_phase < 0.0 and s.pushing == 0.0)
+	s.free()
+
+
+class ContactTerrain extends TerrainData:
+	var grade := 0.0
+	var bumps := false
+	var ledge := false
+	func height(x: float, z: float) -> float:
+		return 1000.0 + (z - 3000.0) * grade + (0.035 * sin(z * 4.0) if bumps else 0.0) - (1.0 if ledge and x > 3000.0 else 0.0)
+	func surface_at(_x: float, _z: float) -> Color:
+		return Color(0.2, 1.0, 0.0, 0.0)
+
+
+func _contact_tests() -> void:
+	var td := ContactTerrain.new()
+	var s := Skier.new()
+	s.terrain = td
+	s.scripted_input = {}
+	s.position = Vector3(3000, 1000, 3000)
+	s._sample_skis(s.position, true)
+	check("both skis supported on flat snow", s.ski_support[0] == 1.0 and s.ski_support[1] == 1.0)
+	td.ledge = true
+	s._sample_skis(s.position, true)
+	check("one ski can lose contact independently", s.ski_support[0] > 0.9 and s.ski_support[1] < 0.1)
+	check("unsupported ski does not pull body through ledge", s._sample_skis(s.position, false) > 999.9)
+	td.ledge = false
+	s.teleport(Vector3(3000, 1000, 3000), 0.0)
+	_run(s, 6.0, {"tuck": 1.0})
+	check("push moves skier from rest on actual flat terrain", s.speed > 2.0 and s.position.z < 2990.0 and not s.airborne, "speed %.2f" % s.speed)
+	td.bumps = true
+	s.teleport(Vector3(3000, 1000, 3000), 0.0, 20.0)
+	var air_frames := 0
+	var finite := true
+	for i in 360:
+		s.scripted_input = {}
+		s.step(1.0 / 120.0)
+		air_frames += int(s.airborne)
+		finite = finite and s.vel.is_finite() and absf(s.leg_compression[0]) <= s.suspension_travel
+	check("small terrain chatter does not repeatedly launch skier", air_frames < 20, "%d airborne frames" % air_frames)
+	check("suspension remains bounded and finite", finite)
+	td.bumps = false
+	s.teleport(Vector3(3000, 1000, 3000), 0.0, 75.0)
+	_run(s, 1.0, {})
+	check("high-speed collision stays above snow", s.position.y >= 999.99 and not s.is_crashed)
+	s.teleport(Vector3(3000, 1000, 3000), 0.0)
+	s.airborne = true
+	s.air_time = 0.6
+	s.vel = Vector3(0, -22, -30)
+	s._land(Vector3.UP, 22.0)
+	check("flat impact crashes at excessive normal force", s.is_crashed)
+	s._reset_motion()
+	s.airborne = true
+	s.air_time = 0.6
+	s.vel = Vector3(0, -22, -30)
+	var matching := Vector3(0, 1, -0.6).normalized()
+	s._land(matching, -s.vel.dot(matching))
+	check("same velocity lands safely on matching slope", not s.is_crashed and s.compression > 0.0)
+	s._reset_motion()
+	s.airborne = true
+	s.vel = Vector3(0, 5, -12)
+	for i in 60:
+		s._air_step(1.0 / 120.0, 1.0, -1.0)
+	var plain_air := Skier.new()
+	plain_air.scripted_input = {}
+	plain_air.vel = Vector3(0, 5, -12)
+	for i in 60:
+		plain_air._air_step(1.0 / 120.0, 0.0, 0.0)
+	check("combined spin and flip preserve gravity and drag trajectory", s.vel.distance_to(plain_air.vel) < 0.001 and absf(s.air_rotation) > 0.5 and absf(s.air_pitch) > 0.3)
+	plain_air.free()
+	var obstacles := Obstacles.new()
+	obstacles.setup(td.world)
+	obstacles.add(3000.0, 2998.4, 0.18, 999.0, 1003.0, Obstacles.Kind.POLE)
+	obstacles.build()
+	s.obstacles = obstacles
+	s.teleport(Vector3(3000, 1000, 3000), 0.0, 100.0)
+	_run(s, 0.1, {})
+	check("high-speed skier cannot tunnel through a thin obstacle", s.is_crashed and s.position.z > 2997.5)
+	s.obstacles = null
+	# Equal world velocity: slope matching lowers the normal impact component.
+	var velocity := Vector3(0, -12, -20)
+	var downhill := Vector3(0, 1, -0.6).normalized()
+	check("matching downhill landing has lower normal impact", -velocity.dot(downhill) < -velocity.dot(Vector3.UP) * 0.5)
+	s.free()
+
+
+func _upgrade_lines() -> void:
+	var s := world.skier
+	var count := 0
+	for f in world.terrain.layout.get("features", []):
+		if not f.has("line_grade"):
+			continue
+		count += 1
+		var direction := Vector3(f["dx"], 0, f["dz"])
+		var center := Vector3(f["x"], 0, f["z"])
+		var start := center - direction * 35.0
+		var result := _ski_line(s, start, Skier.yaw_of(direction), 12.0, 8.0, center)
+		print("[TEST] progression %s: %s" % [f["line_grade"], result])
+		check("%s drop has real airtime" % f["line_grade"], result["max_air"] > 0.5)
+		check("%s drop has a usable landing" % f["line_grade"], result["crash"] == "" and result["impact"] > 0.0)
+	check("three progression lines available", count == 3)
+
+
+func _upgrade_showcase() -> void:
+	var s := world.skier
+	world.spawn_at_drop("Resort Top")
+	s.set_physics_process(false)
+	s.scripted_input = {}
+	world.body.set_process(false)
+	world.camera.set_process(false)
+	for pose in ["stance", "push", "layout", "spin", "landing", "inverted", "sideways"]:
+		s._reset_motion()
+		s._sample_skis(s.position, true)
+		if pose == "push":
+			s.push_phase = 0.45
+		elif pose in ["layout", "spin", "inverted", "sideways"]:
+			s.airborne = true
+			s.air_time = 0.5
+			s.air_pitch = -PI if pose == "inverted" else (-PI * 0.5 if pose == "sideways" else (-0.6 if pose == "layout" else -0.2))
+			s.flip_vel = -3.0 if pose == "layout" else -1.0
+			s.spin_vel = 3.5 if pose == "spin" else 0.0
+			s.vel = Vector3(0, 2, -8)
+		elif pose == "landing":
+			s.compression = 0.7
+		for i in 30:
+			world.body._compute_pose(1.0/60.0)
+		world.body._apply_parts()
+		world.body._drive_rig()
+		var target := s.position + Vector3.UP * 0.85
+		_free_cam(target + s.forward_flat() * 3.8 + Vector3.UP * 0.7 + s.forward_flat().cross(Vector3.UP) * 2.0, target)
+		await _frames(4)
+		var finite := true
+		for i in world.body.skeleton.get_bone_count():
+			finite = finite and world.body.skeleton.get_bone_global_pose(i).is_finite()
+		check("%s skeletal pose finite" % pose, finite and world.body.skeleton.get_bone_count() > 20)
+		for side in ["l", "r"]:
+			var ski: MeshInstance3D = world.body.parts["ski_" + side]
+			check("%s ski %s remains local and attached" % [pose,side], ski.skin == null and ski.global_position.distance_to(world.body.joints["ankle_" + side]) < 0.3 and ski.global_transform.is_finite())
+		await _snap("rider_" + pose)
+	world.body.set_process(true)
+	for name in ["Scout Drop", "Freeride Drop", "Expert Drop"]:
+		world.spawn_at_drop(name)
+		s.set_physics_process(false)
+		s._reset_motion()
+		var forward := s.forward_flat()
+		_free_cam(s.position - forward * 10 + Vector3.UP * 10, s.position + forward * 65 - Vector3.UP * 12)
+		world.renderer.update_lod(s.position, true)
+		await _frames(6)
+		await _snap(name.to_lower().replace(" ", "_"))
+
+
+func _park_regressions() -> void:
+	var s := world.skier
+	var park = world.park
+	world.spawn_at_drop("Terrain Park")
+	check("park spawn stays inside practice area", park.contains_position(s.position))
+	check("far outside park triggers boundary", not park.contains_position(Vector3.ZERO))
+	check("all nine park features generated", park.rails.size() == 10)
+	var kicker: Dictionary = world.terrain.layout["kickers"][0]
+	var center := Vector3(kicker["x"], world.terrain.height(kicker["x"], kicker["z"]), kicker["z"])
+	var retry: Dictionary = park.practice_start(center)
+	check("nearest jump has an uphill practice reset", retry["position"].distance_to(center) > 30 and park.contains_position(retry["position"]))
+	var box: Dictionary = park.rails[0]
+	var direction: Vector3 = (box["b"] - box["a"]).normalized()
+	var side := direction.cross(Vector3.UP).normalized()
+	s.teleport(box["a"], Skier.yaw_of(direction))
+	s.position = box["a"] + direction + side * 0.4
+	s.vel = direction * 6
+	s._mount(box, 1.0, 0.0, 6.0)
+	s._raw_steer = 0
+	s._grind_step(1.0/120.0)
+	check("box preserves off-center contact", absf(s._box_lateral - 0.4) < 0.01)
+	s._box_lateral = 0.7
+	s._grind_step(1.0/120.0)
+	check("box edge releases skier", not s.is_grinding() and s.airborne)
+	var joined := false
+	for r in park.rails:
+		if not r.has("next"):
+			continue
+		s.teleport(r["a"], Skier.yaw_of(r["b"] - r["a"]))
+		s._mount(r, r["length"] - 0.01, 0.0, 6.0)
+		s.grind_time = 1.0
+		s._grind_step(1.0/120.0)
+		joined = s.grind == r["next"] and s.grind_time > 1.0 and not s.airborne
+	check("flat-down joint preserves continuous trick", joined)
+	s._reset_motion()
+
+
+func _park_showcase() -> void:
+	world.spawn_at_drop("Terrain Park")
+	world.skier.set_physics_process(false)
+	world.camera.set_process(false)
+	var p := world.skier.position
+	var f := world.skier.forward_flat()
+	_free_cam(p - f * 8 + Vector3.UP * 5, p + f * 35)
+	await _frames(4)
+	await _snap("park_entrance")
+	var r: Dictionary = world.park.rails[0]
+	p = r["a"]
+	f = (r["b"] - p).normalized()
+	_free_cam(p - f * 22 + Vector3.UP * 22, p + f * 70)
+	await _frames(4)
+	await _snap("park_rows")

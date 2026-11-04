@@ -38,6 +38,26 @@ func setup(td: TerrainData, obs: Obstacles, resort_node: Node) -> void:
 			"ruin":
 				_ruin(p, m["name"])
 
+	for feature in td.layout.get("features", []):
+		if not feature.has("line_grade"):
+			continue
+		var f := Vector3(feature["dx"], 0, feature["dz"])
+		var p := Vector3(feature["x"], 0, feature["z"]) - f * 48.0 + f.cross(Vector3.UP) * 6.0
+		p.y = td.height(p.x, p.z)
+		var marker := Node3D.new()
+		add_child(marker)
+		marker.position = p
+		_cyl(0.06, 2.4, dark_wood, Vector3.UP * 1.2, marker)
+		var label := Label3D.new()
+		label.text = "%s DROP\n%.0f m · %s\nApproach slowly" % [String(feature["line_grade"]).to_upper(), feature["drop"], feature["name"]]
+		label.font_size = 48
+		label.pixel_size = 0.009
+		label.outline_size = 8
+		label.modulate = Color(0.95, 0.65, 0.15)
+		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		label.position = Vector3.UP * 2.5
+		marker.add_child(label)
+
 
 func _mat(c: Color, rough := 0.8, metal_v := 0.0) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()

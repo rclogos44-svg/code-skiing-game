@@ -222,10 +222,10 @@ func _pine_mesh(variant: int, detailed: bool, lod_layers := 2, lod_segs := 5) ->
 			st.add_vertex(p)
 	# branch layers: drooping skirts, dark green underneath, snow on top
 	var layers := (7 + variant) if detailed else lod_layers
-	var segs := 11 if detailed else lod_segs
+	var segs := 15 if detailed else lod_segs
 	var green := Color(0.10, 0.20, 0.14)
 	var green2 := Color(0.13, 0.25, 0.17)
-	var snow := Color(0.93, 0.95, 0.98)
+	var snow := Color(0.82, 0.88, 0.94)
 	for l in layers:
 		var t := float(l) / layers
 		var base_y := lerpf(1.1, height * 0.86, t)
@@ -256,6 +256,15 @@ func _pine_mesh(variant: int, detailed: bool, lod_layers := 2, lod_segs := 5) ->
 				st.add_vertex(tri[1])
 				st.set_color(tip_col)
 				st.add_vertex(tri[2])
+			# Separate drooping branch fans break the solid skirt silhouette up close.
+			if detailed:
+				var root := Vector3(a.x * 0.16, base_y + 0.65, a.z * 0.16)
+				var side := Vector3(-a.z, 0, a.x).normalized() * r * 0.13
+				var tip := a * Vector3(1.12, 1.0, 1.12) - Vector3.UP * 0.16
+				for tri in [[root, tip-side, tip], [root, tip, tip+side]]:
+					for vertex in tri:
+						st.set_color(green2.lerp(snow, 0.35 if vertex == tip else 0.6))
+						st.add_vertex(vertex)
 			# underside (dark)
 			if not detailed:
 				continue

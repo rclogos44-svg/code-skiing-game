@@ -32,7 +32,7 @@ on laptops or integrated graphics.
 
 CONTROLS (keyboard & mouse, all rebindable in Settings)
 --------
-W            Tuck (less air resistance) / pole-push on flat ground
+W            Pole push at low speed (hold for repeated strokes)
 S            Hockey stop (tap: check speed, hold: stop; + A/D picks the side)
 A / D        Carve left / right
 Left Shift   Aggressive edge carving (tighter turns, scrubs speed)
@@ -42,7 +42,7 @@ Up / Down    Shift your weight forward / back. Crouch with Down held to load the
              keep holding Down (or Up) as you pop for a backflip (front flip).
              In the air: Up / Down keep flipping.
 Left / Right On the ground: wind up a spin (release Space while winding). In the
-             air: spin. Q / E also spin. Tucking (W) or grabbing spins faster.
+             air: spin. Q / E also spin. Grabbing spins faster; W has no effect in the air.
 Z / X + Up   Tip grab, Z / X + Down tail grab
 Difficulty   Settings > Controls: Easy (lots of air control, forgiving),
              Normal, Realistic (rotation only from your takeoff, edges catch)
@@ -58,7 +58,7 @@ G            Ride a chairlift: stand on the blue LOAD mat, the next chair picks
 Tab          Mountain map (click a drop zone to travel there, click anywhere
              else to set a waypoint - shown on the minimap and as a light beam)
 P / Esc      Pause & settings
-A gamepad also works: left stick steer/tuck/brake, A jump, LB/RB spin,
+A gamepad also works: left stick steer/push/brake, A jump, LB/RB spin,
 X/B grabs, Y respawn, right stick camera, Start pause, Back map,
 D-pad up ride lift, D-pad down skis off/on.
 
@@ -78,8 +78,18 @@ HOW TO PLAY
   multiplier; a combo is banked after ~3.5 s on the snow and lost if you
   crash. Land straight (or fully switch) - sideways landings crash.
 - Physics tips: steep slopes accelerate you, deep powder slows you, ice has
-  little grip, tucking is fastest, tight carving scrubs speed, and you can
+  little grip, your stance lowers automatically at speed, carving scrubs speed, and you can
   launch off any cliff or lip - but very hard landings end in a crash.
+
+
+OVERHAUL NOTES
+--------------
+- W now performs timed low-speed pole strokes; it cannot boost speed or rotation in the air.
+- Skis sample snow separately, with leg suspension and partial-contact grip.
+- New characters default to black technical gear; saved gear choices are kept.
+- Scout Drop, Freeride Drop, and Expert Drop add signed progression approaches.
+- Graphics quality controls cap vegetation, shadows, particles, and track persistence.
+- For test evidence and performance limits, see UPGRADE_VALIDATION.md in the source tree.
 
 SAVE FILES
 ----------
@@ -102,3 +112,8 @@ CREDITS & LICENSES
 All terrain, textures, 3D models, animation and sounds in SUMMIT were
 generated procedurally for this game (see LICENSES/SUMMIT_CONTENT.txt).
 Built with Godot Engine (MIT license) - see LICENSES/.
+
+TERRAIN PARK UPDATE
+Start or Park Practice enters above the kicker line. R returns to the park entrance.
+B retries the nearest jump or jib. Three jib rows include boxes, rails, a tube and a flat-down.
+For slower laptops, choose the Low graphics preset; browser first-run defaults already use Low.

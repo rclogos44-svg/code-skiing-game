@@ -23,6 +23,9 @@ const PANTS := [["Charcoal", Color(0.16, 0.18, 0.23)], ["Black", Color(0.06, 0.0
 const HELMETS := [["White", Color(0.94, 0.95, 0.97)], ["Black", Color(0.08, 0.08, 0.09)], ["Orange", Color(1.0, 0.45, 0.08)],
 	["Blue", Color(0.15, 0.4, 0.9)], ["Mint", Color(0.55, 0.9, 0.75)]]
 
+var skeleton: Skeleton3D
+var rig_skin: Skin
+var _rig_parts: Array[String] = []
 var skier: Skier
 var parts := {}
 var head_parts: Array[MeshInstance3D] = []
@@ -48,6 +51,8 @@ var _absorb_v := 0.0
 var _prev_root := Vector3.ZERO
 var _prev_rv := 0.0
 var _pole_plant := 0.0
+var _push_tips := {}
+var _last_push_phase := -1.0
 var _plant_side := 1.0
 var _last_steer_sign := 0.0
 var _stop_pop := 0.0
@@ -60,6 +65,7 @@ func setup(s: Skier) -> void:
 	top_level = true
 	global_transform = Transform3D.IDENTITY
 	_build()
+	_build_rig()
 	ragdoll.terrain = s.terrain
 	for k in ["pelvis_h", "pelvis_z", "pitch", "counter", "hand_spread", "plow", "feet_up", "arms_air", "tuck", "grab_l", "grab_r", "brake", "edgeb"]:
 		_p[k] = 0.0
@@ -70,16 +76,30 @@ func _build() -> void:
 	var jacket := SkierModel.mat(jacket_color, 0.55, 0.0, {"rim": 0.2})
 	var jacket_dark := SkierModel.mat(Color(0.12, 0.13, 0.16), 0.6)
 	var pants := SkierModel.mat(Color(0.16, 0.18, 0.23), 0.75)
+	var weave := NoiseTexture2D.new()
+	weave.width = 128
+	weave.height = 128
+	weave.seamless = true
+	weave.as_normal_map = true
+	weave.bump_strength = 0.18
+	var noise := FastNoiseLite.new()
+	noise.frequency = 0.8
+	weave.noise = noise
+	for cloth in [jacket, pants]:
+		cloth.normal_enabled = true
+		cloth.normal_texture = weave
+		cloth.normal_scale = 0.2
+		cloth.uv1_scale = Vector3(6.0, 6.0, 1.0)
 	var helmet := SkierModel.mat(Color(0.94, 0.95, 0.97), 0.25, 0.0, {"clearcoat": 0.8})
 	var skin := SkierModel.mat(Color(0.85, 0.66, 0.55), 0.6)
 	var lens := SkierModel.mat(Color(1.0, 0.55, 0.12), 0.06, 0.9)
 	var strap := SkierModel.mat(Color(0.08, 0.08, 0.09), 0.7)
 	var glove := SkierModel.mat(Color(0.06, 0.06, 0.07), 0.55)
-	var boot := SkierModel.mat(Color(0.18, 0.32, 0.55), 0.35, 0.0, {"clearcoat": 0.5})
+	var boot := SkierModel.mat(Color(0.045, 0.05, 0.06), 0.28, 0.0, {"clearcoat": 0.5})
 	var bind := SkierModel.mat(Color(0.12, 0.12, 0.13), 0.4, 0.4)
 	var pole_m := SkierModel.mat(Color(0.75, 0.77, 0.8), 0.3, 0.8)
 	var grip_m := SkierModel.mat(Color(0.1, 0.1, 0.1), 0.6)
-	var accent := SkierModel.mat(Color(1.0, 0.45, 0.05), 0.4)
+	var accent := SkierModel.mat(Color(0.11, 0.12, 0.14), 0.65)
 	_add("pelvis", SkierModel.pelvis(), pants)
 	_add("torso", SkierModel.torso(), jacket)
 	_add("collar", SkierModel.lathe([Vector2(0.0, -0.01), Vector2(0.085, -0.01), Vector2(0.08, 0.06), Vector2(0.0, 0.06)], 1.0, 1.0, 12), jacket_dark)
@@ -90,12 +110,12 @@ func _build() -> void:
 	_add("goggle_band", g[0], strap, true)
 	_add("goggle_lens", g[1], lens, true)
 	for side in ["l", "r"]:
-		_add("uarm_" + side, SkierModel.limb(0.058, 0.05, UPPER_ARM), jacket)
-		_add("farm_" + side, SkierModel.limb(0.05, 0.043, FOREARM), jacket)
+		_add("uarm_" + side, SkierModel.clothing(0.074, 0.064, UPPER_ARM), jacket)
+		_add("farm_" + side, SkierModel.clothing(0.064, 0.049, FOREARM), jacket)
 		_add("cuff_" + side, SkierModel.limb(0.047, 0.047, 0.05), accent)
 		_add("hand_" + side, SkierModel.sphere(0.05, 0.85, 1.4, 1.0), glove)
-		_add("thigh_" + side, SkierModel.limb(0.088, 0.066, THIGH), pants)
-		_add("shin_" + side, SkierModel.limb(0.066, 0.058, SHIN), pants)
+		_add("thigh_" + side, SkierModel.clothing(0.112, 0.094, THIGH), pants)
+		_add("shin_" + side, SkierModel.clothing(0.094, 0.083, SHIN), pants)
 		_add("boot_" + side, SkierModel.boot(), boot)
 		var sk := SkierModel.ski()
 		var flex := ShaderMaterial.new()
@@ -108,6 +128,16 @@ func _build() -> void:
 		_add("basket_" + side, pl[2], grip_m)
 	# a stripe of accent colour on the jacket
 	_add("stripe", SkierModel.lathe([Vector2(0.0, 0.0), Vector2(0.18, 0.0), Vector2(0.183, 0.035), Vector2(0.0, 0.035)], 1.19, 0.73, 18), accent)
+	# Raised zipper, pocket flaps, boot hardware, and a relaxed jacket hem.
+	for name in ["zip", "pocket_l", "pocket_r"]:
+		var box := BoxMesh.new()
+		box.size = Vector3(0.009, 0.39, 0.008) if name == "zip" else Vector3(0.085, 0.015, 0.012)
+		_add(name, box, jacket_dark)
+	for sd in ["l", "r"]:
+		for j in 3:
+			var buckle := BoxMesh.new()
+			buckle.size = Vector3(0.095, 0.012, 0.02)
+			_add("buckle_%s%d" % [sd, j], buckle, bind)
 	_apply_gear()
 	Settings.changed.connect(func(section: String, _k: String):
 		if section == "gear":
@@ -162,6 +192,7 @@ func _process(delta: float) -> void:
 			_:
 				_compute_pose(dt)
 	_apply_parts()
+	_drive_rig()
 
 
 func _physics_process(dt: float) -> void:
@@ -225,6 +256,9 @@ func _compute_pose(dt: float) -> void:
 	var w_t := 7.0
 	_torso_yaw_v += (w_t * w_t * (torso_t - _torso_yaw) - 2.0 * w_t * _torso_yaw_v) * dt
 	_torso_yaw = clampf(_torso_yaw + _torso_yaw_v * dt, -0.9, 0.9)
+	if s.airborne:
+		torso_t = clampf(-s.spin_vel * 0.045, -0.5, 0.5)
+		_torso_yaw = lerpf(_torso_yaw, torso_t, 1.0 - exp(-5.0 * dt))
 	var turn_amt := absf(_lean)
 
 	# ---- targets
@@ -241,23 +275,30 @@ func _compute_pose(dt: float) -> void:
 	var gl := _sm("grab_l", s.grab_l, 10.0, dt)
 	var gr := _sm("grab_r", s.grab_r, 10.0, dt)
 	var grab := maxf(gl, gr)
+	var closing := maxf(-s.vel.dot(s.terrain.normal(s.position.x, s.position.z)), 0.0)
+	var clearance := maxf(s.position.y - s.terrain.height(s.position.x, s.position.z), 0.0)
+	var spot_land := (1.0 - smoothstep(0.15, 0.65, clearance / maxf(closing, 0.1))) if s.airborne and closing > 1.0 else 0.0
+	var layout := air * smoothstep(0.08, 0.25, s.air_time) * (1.0 - grab) * smoothstep(0.8, 2.5, absf(s.flip_vel)) * (1.0 - spot_land)
 	var ph := 0.90 - 0.22 * tuck - 0.24 * s.charge - 0.30 * s.compression + _absorb - 0.15 * edgeb + 0.07 * _stop_pop - 0.3 * gear
 	# flex through the turn, extend through the edge change (pelvis rises as the lean passes zero)
 	ph -= 0.12 * turn_amt
-	if s.pushing > 0.5:
-		ph = 0.86 + sin(s.time * 7.0) * 0.03
+	ph += 0.06 * layout - 0.12 * spot_land
+	if s.push_phase >= 0.0:
+		ph -= 0.07 * sin(s.push_phase * PI)
 	ph = _sm("pelvis_h", ph, 14.0, dt)
 	# weight shift: forward drives the shins and chest over the tips, back sits on the tails
 	var lf := s.lean_fa
 	var pz := _sm("pelvis_z", 0.06 + 0.10 * tuck + 0.05 * s.charge + 0.05 * edgeb + 0.13 * maxf(-lf, 0.0) - 0.05 * maxf(lf, 0.0), 10.0, dt)
 	var pitch := deg_to_rad(22.0 + 38.0 * tuck + 22.0 * s.charge + 25.0 * s.compression + 32.0 * grab * air + 4.0 * edgeb + 30.0 * gear + 12.0 * lf * (1.0 - air))
-	if s.pushing > 0.5:
-		pitch += deg_to_rad(18.0 + sin(s.time * 7.0) * 12.0)
+	if s.push_phase >= 0.0:
+		pitch += deg_to_rad(20.0 * sin(s.push_phase * PI))
+	pitch = lerpf(pitch, deg_to_rad(-8.0), layout)
+	pitch = lerpf(pitch, deg_to_rad(24.0), spot_land)
 	pitch = _sm("pitch", pitch, 10.0, dt)
 	# angulation: legs take the full inclination, the torso stays much more upright
 	var counter := _lean * 0.58
 	var plow := _sm("plow", 0.0, 8.0, dt)
-	var feet_up := _sm("feet_up", air * (0.06 + 0.26 * grab + 0.22 * clampf(absf(s.flip_vel) / 4.0, 0.0, 1.0)), 8.0, dt)
+	var feet_up := _sm("feet_up", air * (0.06 + 0.26 * grab + 0.22 * clampf(absf(s.flip_vel) / 4.0, 0.0, 1.0) * (1.0 - layout)), 8.0, dt)
 	var arms_air := _sm("arms_air", air * (1.0 - grab), 5.0, dt)
 
 	# ---- feet / skis
@@ -266,15 +307,18 @@ func _compute_pose(dt: float) -> void:
 	for side: float in [-1.0, 1.0]:
 		# the inside ski leads a little (right turn: right ski ahead)
 		var lead := (-0.12 * side * _lean) if not s.airborne else 0.0
-		var foot := L * Vector3(side * stance, feet_up, fwd_off + lead)
+		var grab_lift := (gl if side < 0.0 else gr) * 0.14
+		var scissor := air * clampf(absf(s.spin_vel) / 5.0, 0.0, 1.0) * side * 0.045
+		var extension := air * (1.0 - smoothstep(0.0, 0.16, s.air_time))
+		var foot := L * Vector3(side * stance, feet_up * (1.0 - extension) + grab_lift + scissor, fwd_off + lead)
+		var ski_index := 0 if side < 0.0 else 1
 		if not s.airborne:
-			# both skis stay on the snow: raise/lower each foot onto the ground plane
-			var dy := (foot - root.origin).dot(up)
-			var lup := L.basis.y
-			foot -= lup * (dy / maxf(lup.dot(up), 0.3))
+			var terrain_y := s.terrain.height(foot.x, foot.z)
+			var leg_y := root.origin.y + s.leg_compression[ski_index]
+			foot.y = lerpf(leg_y, terrain_y, s.ski_support[ski_index])
 		var yaw := plow * side
 		var sb := L.basis * Basis(Vector3.UP, yaw)
-		if not s.airborne:
+		if not s.airborne and s.ski_support[ski_index] > 0.1:
 			# pitch each ski to the snow under its own tip and tail (uneven ground)
 			var tip := foot - sb.z * 0.85
 			var tail := foot + sb.z * 0.85
@@ -321,6 +365,9 @@ func _compute_pose(dt: float) -> void:
 	joints["head"] = chest + hb.y * 0.19
 	# ---- arms
 	var plant_side := _update_pole_plant(dt)
+	if s.push_phase < 0.2 or s.push_phase > 0.65 or s.push_phase < _last_push_phase:
+		_push_tips.clear()
+	_last_push_phase = s.push_phase
 	for sd in ["l", "r"]:
 		var sgn := -1.0 if sd == "l" else 1.0
 		var sh := chest - tb.y * 0.07 + tb.x * (sgn * SHOULDER_HALF)
@@ -341,6 +388,14 @@ func _compute_pose(dt: float) -> void:
 			# close call: arms windmill to catch the balance
 			var a := s.time * 13.0 + (0.0 if sgn > 0.0 else PI)
 			hand_local = hand_local.lerp(Vector3(sgn * 0.5, -0.05 + 0.25 * sin(a), -0.15 + 0.25 * cos(a)), clampf(s.sketchy / 0.3, 0.0, 1.0))
+		if s.push_phase >= 0.0:
+			var stroke := smoothstep(0.25, 0.65, s.push_phase) - smoothstep(0.70, 1.0, s.push_phase)
+			var blend := smoothstep(0.0, 0.2, s.push_phase) * (1.0 - smoothstep(0.8, 1.0, s.push_phase))
+			hand_local = hand_local.lerp(Vector3(sgn * 0.22, -0.32 - 0.12 * stroke, -0.48 + 0.8 * stroke), blend)
+		if s.airborne:
+			hand_local += Vector3(sgn * 0.12, 0.18, 0.14) * layout
+			hand_local += Vector3(0, 0.045 * sgn * sin(s.air_rotation), -0.06 * sgn) * clampf(absf(s.spin_vel) / 4.0, 0.0, 1.0)
+			hand_local = hand_local.lerp(Vector3(sgn * 0.27, -0.25, -0.35), spot_land)
 		var hand := sh + tb * hand_local
 		var g := gl if sd == "l" else gr
 		if g > 0.01:
@@ -349,6 +404,18 @@ func _compute_pose(dt: float) -> void:
 			var along := {"tip": -0.72, "tail": 0.62}.get(kind, -0.12) as float
 			var grab_pt := sxf.origin + sxf.basis * Vector3(sgn * 0.07, 0.10, along)
 			hand = hand.lerp(grab_pt, g)
+		var pole_planted := s.push_phase >= 0.2 and s.push_phase <= 0.65 and not s.airborne
+		if pole_planted:
+			if not _push_tips.has(sd):
+				var tip := hand + s.forward_flat() * 0.65
+				tip.y = s.terrain.height(tip.x, tip.z)
+				_push_tips[sd] = tip
+			var tip: Vector3 = _push_tips[sd]
+			var desired := tip + (hand - tip).normalized() * 1.13
+			if desired.distance_to(sh) < UPPER_ARM + FOREARM:
+				hand = desired
+			else:
+				pole_planted = false # release rather than stretching the arm
 		var elbow_pole := sh + tb * Vector3(sgn * 0.5, -0.2, 0.45)
 		var el := ik2(sh, hand, UPPER_ARM, FOREARM, elbow_pole)
 		joints["elbow_" + sd] = el
@@ -363,9 +430,12 @@ func _compute_pose(dt: float) -> void:
 		pd = pd.lerp(Vector3(sgn * 0.3, -0.8, 0.45), edgeb)
 		if plant_side == sgn:
 			pd = pd.lerp(Vector3(sgn * 0.1, -0.96, -0.15), _pole_plant)
+		if s.push_phase >= 0.0:
+			var drive := smoothstep(0.25, 0.65, s.push_phase)
+			pd = pd.lerp(Vector3(sgn * 0.08, -0.96, 0.1 + 0.65 * drive), sin(s.push_phase * PI))
 		if g > 0.01:
 			pd = pd.lerp(Vector3(sgn * 0.6, 0.2, 0.7), g)
-		joints["pole_dir_" + sd] = (tb * pd).normalized()
+		joints["pole_dir_" + sd] = ((_push_tips[sd] as Vector3) - hand).normalized() if pole_planted else (tb * pd).normalized()
 		joints["pole_grip_" + sd] = hand - joints["pole_dir_" + sd] * 0.06
 
 
@@ -614,6 +684,13 @@ func _apply_parts() -> void:
 	parts["pelvis"].global_transform = Transform3D(tb, joints["pelvis"])
 	parts["torso"].global_transform = Transform3D(tb, joints["waist"])
 	parts["stripe"].global_transform = Transform3D(tb, joints["waist"] + tb.y * 0.27)
+	parts["zip"].global_transform = Transform3D(tb, joints["waist"] + tb * Vector3(0.0, 0.23, -0.135))
+	for sd in ["l", "r"]:
+		var sign_side := -1.0 if sd == "l" else 1.0
+		parts["pocket_" + sd].global_transform = Transform3D(tb * Basis(Vector3.FORWARD, sign_side * 0.2), joints["waist"] + tb * Vector3(sign_side * 0.12, 0.17, -0.12))
+		var boot_basis := boot_l if sd == "l" else boot_r
+		for j in 3:
+			parts["buckle_%s%d" % [sd, j]].global_transform = Transform3D(boot_basis, joints["ankle_" + sd] + boot_basis * Vector3(0.0, -0.04 + j * 0.05, -0.095))
 	parts["collar"].global_transform = Transform3D(tb, joints["chest"] - tb.y * 0.02)
 	parts["neck"].global_transform = Transform3D(head_basis, joints["chest"])
 	var hb := head_basis
@@ -659,3 +736,78 @@ static func _basis_y(y: Vector3, hint: Vector3) -> Basis:
 func set_first_person(on: bool) -> void:
 	for mi in head_parts:
 		mi.visible = not on
+
+
+## Hierarchical skeletal rig. Procedural IK computes targets; rigid-weighted clothing and
+## equipment meshes are transformed by the real Skeleton3D, also during ragdoll recovery.
+func _build_rig() -> void:
+	skeleton = Skeleton3D.new()
+	skeleton.name = "RiderRig"
+	add_child(skeleton)
+	for key in parts:
+		# Flex is evaluated in ski-local space, never on skinned/world coordinates.
+		if String(key).begins_with("ski_") or String(key).begins_with("bind_"):
+			continue
+		_rig_parts.append(String(key))
+		skeleton.add_bone(String(key))
+	for i in _rig_parts.size():
+		var key := _rig_parts[i]
+		var parent := "torso"
+		if key == "pelvis":
+			continue
+		if key in ["helmet", "goggle_band", "goggle_lens"]:
+			parent = "head"
+		elif key == "head":
+			parent = "neck"
+		elif key.begins_with("buckle_"):
+			parent = "boot_" + key.substr(7, 1)
+		elif key == "torso" or key.begins_with("thigh_"):
+			parent = "pelvis"
+		elif key.ends_with("_l") or key.ends_with("_r"):
+			var side := key.right(1)
+			if key.begins_with("shin_"):
+				parent = "thigh_" + side
+			elif key.begins_with("boot_") or key.begins_with("ski_") or key.begins_with("bind_"):
+				parent = "shin_" + side
+			elif key.begins_with("farm_"):
+				parent = "uarm_" + side
+			elif key.begins_with("hand_") or key.begins_with("pole_") or key.begins_with("grip_") or key.begins_with("basket_"):
+				parent = "farm_" + side
+		skeleton.set_bone_parent(i, skeleton.find_bone(parent))
+	rig_skin = Skin.new()
+	for i in _rig_parts.size():
+		rig_skin.add_bind(i, Transform3D.IDENTITY)
+	for i in _rig_parts.size():
+		var mi: MeshInstance3D = parts[_rig_parts[i]]
+		var source := mi.mesh
+		var mesh := ArrayMesh.new()
+		for surface_id in source.get_surface_count():
+			var arrays := source.surface_get_arrays(surface_id)
+			var count: int = arrays[Mesh.ARRAY_VERTEX].size()
+			var bones := PackedInt32Array()
+			var weights := PackedFloat32Array()
+			bones.resize(count * 4)
+			weights.resize(count * 4)
+			for v in count:
+				bones[v * 4] = i
+				weights[v * 4] = 1.0
+			arrays[Mesh.ARRAY_BONES] = bones
+			arrays[Mesh.ARRAY_WEIGHTS] = weights
+			mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		mi.mesh = mesh
+		mi.skin = rig_skin
+		mi.skeleton = mi.get_path_to(skeleton)
+		# Poses use world-space coordinates because this body is top-level.
+		mi.custom_aabb = AABB(skier.position - Vector3.ONE * 4.0, Vector3.ONE * 8.0)
+
+
+func _drive_rig() -> void:
+	var targets: Array[Transform3D] = []
+	for key in _rig_parts:
+		targets.append(parts[key].global_transform)
+	for i in _rig_parts.size():
+		var parent := skeleton.get_bone_parent(i)
+		var local := targets[i] if parent < 0 else targets[parent].affine_inverse() * targets[i]
+		skeleton.set_bone_pose(i, local)
+		parts[_rig_parts[i]].global_transform = Transform3D.IDENTITY
+		parts[_rig_parts[i]].custom_aabb = AABB(skier.position - Vector3.ONE * 6.0, Vector3.ONE * 12.0)

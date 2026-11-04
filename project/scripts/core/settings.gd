@@ -8,7 +8,8 @@ const PATH := "user://settings.cfg"
 
 ## Rebindable gameplay actions. "keys" are physical keycodes or mouse buttons (negative = mouse button).
 const ACTIONS := {
-	"tuck": {"label": "Tuck / Pole push", "keys": [KEY_W]},
+	"practice_reset": {"label": "Restart nearest park feature", "keys": [KEY_B]},
+	"tuck": {"label": "Pole push", "keys": [KEY_W]},
 	"brake": {"label": "Brake (hockey stop)", "keys": [KEY_S]},
 	"steer_left": {"label": "Carve left", "keys": [KEY_A]},
 	"steer_right": {"label": "Carve right", "keys": [KEY_D]},
@@ -75,7 +76,7 @@ var _defaults := {
 		"minimap": true, "minimap_rotate": true},
 	"audio": {"master": 0.8, "sfx": 1.0, "ambience": 0.8, "ui": 0.7},
 	"world": {"time_of_day": "day", "weather": "snowing"},
-	"gear": {"jacket": 0, "pants": 0, "helmet": 0},
+	"gear": {"jacket": 5, "pants": 1, "helmet": 1},
 }
 var _save_pending := false
 
@@ -84,8 +85,8 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	if is_web():
 		# browser (WebGL 2) build: start windowed in the page, lighter defaults
-		_defaults["graphics"].merge({"preset": "medium", "window_mode": "windowed", "shadows": 2, "view_distance": 1,
-			"aa": "off", "ssao": false, "detail": 1, "render_scale": 1.0}, true)
+		_defaults["graphics"].merge({"preset": "low", "window_mode": "windowed", "resolution": "1280x720", "shadows": 1, "view_distance": 0,
+			"aa": "off", "ssao": false, "glow": false, "detail": 0, "render_scale": 0.85}, true)
 	load_settings()
 	apply_input()
 	apply_audio()
@@ -199,7 +200,7 @@ func apply_display() -> void:
 		if screen2.x > 0:
 			scale *= clampf(float(size.x) / float(screen2.x), 0.25, 1.0)
 	vp.scaling_3d_scale = clampf(scale, 0.25, 1.0)
-	vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR if scale < 0.99 else Viewport.SCALING_3D_MODE_BILINEAR
+	vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR if scale < 0.99 and RenderingServer.get_current_rendering_method() != "gl_compatibility" else Viewport.SCALING_3D_MODE_BILINEAR
 	var aa: String = get_value("graphics", "aa")
 	vp.msaa_3d = Viewport.MSAA_DISABLED
 	vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED
@@ -318,6 +319,6 @@ static func code_label(code: int) -> String:
 				return "Mouse M"
 			_:
 				return "Mouse %d" % (-code)
-	var kc := 0 if OS.has_feature("web") else DisplayServer.keyboard_get_keycode_from_physical(code)
+	var kc := 0 if OS.has_feature("web") or DisplayServer.get_name() == "headless" else DisplayServer.keyboard_get_keycode_from_physical(code)
 	var s := OS.get_keycode_string(kc if kc != 0 else code)
 	return s if s != "" else "?"

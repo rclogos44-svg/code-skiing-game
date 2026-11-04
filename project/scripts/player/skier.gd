@@ -4,11 +4,11 @@ extends Node3D
 ##
 ## Ground model: gravity along the slope, sidecut carving (turn radius = R_sidecut * cos(edge))
 ## limited by edge grip, lossless redirection while the edge holds and friction when it skids,
-## snow friction per surface type, powder drag, aerodynamic drag (tuck vs upright) and the hockey
+## snow friction per surface type, powder drag, aerodynamic drag (automatic speed stance) and the hockey
 ## stop.  The body's weight shifts fore/aft (arrow keys): leaning back loads the tails for a bigger
 ## pop, and a spin is wound up on the ground.  Air: ballistic flight; spin and flip rotation come
 ## from takeoff (wind-up, leaning at the pop, the lip itself) and change speed with body shape
-## (tucked or grabbing spins faster); in-air control depends on the difficulty.  Landings are
+## (compact poses and grabs spin faster); in-air control depends on the difficulty.  Landings are
 ## judged on yaw, pitch and impact.  Takeoff happens naturally when the terrain falls away faster
 ## than gravity can follow (ballistic ground constraint).
 ## Rails and boxes: ride onto a box or pop onto a rail, slide it (balance with A/D, press the
@@ -46,6 +46,20 @@ const DIFFICULTY := [
 	{"name": "Normal", "air_spin": 11.0, "spin_damp": 3.0, "air_flip": 6.0, "level": 1.8, "land_tol": 50.0, "impact": 20.0, "edge_catch": false, "rail": 2.0, "rail_assist": 1.2},
 	{"name": "Realistic", "air_spin": 4.5, "spin_damp": 0.8, "air_flip": 3.0, "level": 0.0, "land_tol": 40.0, "impact": 17.0, "edge_catch": true, "rail": 3.2, "rail_assist": 0.0},
 ]
+
+@export_range(0.05, 0.4) var suspension_travel := 0.22
+@export_range(20.0, 180.0) var suspension_stiffness := 80.0
+@export_range(4.0, 30.0) var suspension_damping := 16.0
+@export_range(0.25, 2.0) var air_control := 1.0
+@export_range(0.3, 1.8) var edge_grip := 1.0
+var ski_support := PackedFloat32Array([1.0, 1.0])
+var ski_heights := PackedFloat32Array([0.0, 0.0])
+var ski_normals := [Vector3.UP, Vector3.UP]
+var leg_compression := PackedFloat32Array([0.0, 0.0])
+var leg_velocity := PackedFloat32Array([0.0, 0.0])
+
+var _box_lateral := 0.0
+var _box_lateral_speed := 0.0
 
 var terrain: TerrainData
 var obstacles: Obstacles
@@ -89,6 +103,12 @@ var input_enabled := true
 var revert := 0.0
 var takeoff_pos := Vector3.ZERO
 var max_air_height := 0.0
+# Pole stroke: anticipation (0-.20), plant (.20-.30), drive (.30-.65), recovery.
+@export_range(0.1, 15.0) var push_max_speed := 7.0
+@export_range(0.2, 3.0) var push_duration := 1.05
+@export_range(0.0, 15.0) var push_acceleration := 8.0
+var push_phase := -1.0
+var _push_cooldown := 0.0
 var pushing := 0.0
 var steep_time := 0.0
 var carving := false
@@ -220,6 +240,9 @@ func _reset_motion() -> void:
 	edge_brake = 0.0
 	brake = 0.0
 	tuck = 0.0
+	push_phase = -1.0
+	_push_cooldown = 0.0
+	pushing = 0.0
 	lean_fa = 0.0
 	wind = 0.0
 	tail_load = 0.0
@@ -229,6 +252,9 @@ func _reset_motion() -> void:
 	sketchy = 0.0
 	_ground_pitch_rate = 0.0
 	grind = {}
+	leg_compression.fill(0.0)
+	leg_velocity.fill(0.0)
+	ski_support.fill(1.0)
 
 
 # ------------------------------------------------------------------ input
@@ -268,13 +294,21 @@ func _physics_process(dt: float) -> void:
 
 ## One physics step (public for automated tests).
 func step(dt: float) -> void:
+	# Bound travel per collision query at high speed, retaining the fixed 120 Hz clock.
+	var steps := clampi(int(ceil(vel.length() * dt / 0.65)), 1, 8)
+	for i in steps:
+		_step_contact(dt / steps)
+		if is_crashed:
+			break
+
+
+func _step_contact(dt: float) -> void:
 	if mode == Mode.WALK:
 		_walk_step(dt)
 		return
 	var raw_steer := _in("steer_right") - _in("steer_left")
 	_raw_steer = raw_steer
 	aggressive = _pressed("carve")
-	var want_tuck := _pressed("tuck")
 	var want_brake := _pressed("brake")
 	var jump_held := _pressed("jump")
 	# arrows: body lean fore/aft and wind-up / spin (Q/E still spin as well)
@@ -291,7 +325,12 @@ func step(dt: float) -> void:
 	# smooth inputs (no instant redirection)
 	var srate := 3.2 * steer_sens if absf(raw_steer) > absf(steer) else 5.0
 	steer = move_toward(steer, clampf(raw_steer, -1.0, 1.0), srate * dt)
-	tuck = move_toward(tuck, 1.0 if want_tuck and not want_brake else 0.0, 3.0 * dt)
+	# Athletic stance follows speed; the push binding never changes drag or air rotation.
+	tuck = move_toward(tuck, smoothstep(8.0, 22.0, vel.length()) if not airborne and not want_brake else 0.0, 3.0 * dt)
+	_push_cooldown = maxf(0.0, _push_cooldown - dt)
+	if airborne or mode != Mode.SKI or not grind.is_empty():
+		push_phase = -1.0
+		pushing = 0.0
 	brake = move_toward(brake, 1.0 if want_brake else 0.0, 4.0 * dt)
 	# jump charge
 	if jump_held:
@@ -313,12 +352,17 @@ func step(dt: float) -> void:
 		return
 
 	var p := position
-	ground_h = terrain.height(p.x, p.z)
-	var n := terrain.normal(p.x, p.z, 1.2)
+	ground_h = _sample_skis(p, true)
+	var n: Vector3 = (ski_normals[0] + ski_normals[1]).normalized()
 	var gap := p.y - ground_h
-	contact = gap < CONTACT_EPS
+	contact = gap < CONTACT_EPS and ski_support[0] + ski_support[1] > 0.0
 	# skis just above the snow after a small bump still steer partially (legs absorb the bump)
 	var cf := 1.0 if contact else clampf(1.0 - (gap - CONTACT_EPS) / 0.3, 0.0, 1.0)
+	cf *= clampf((ski_support[0] + ski_support[1]) * 0.5, 0.0, 1.0)
+	for i in 2:
+		var target := clampf(ski_heights[i] - p.y, -suspension_travel, suspension_travel) if not airborne else 0.0
+		leg_velocity[i] += ((target - leg_compression[i]) * suspension_stiffness - leg_velocity[i] * suspension_damping) * dt
+		leg_compression[i] = clampf(leg_compression[i] + leg_velocity[i] * dt, -suspension_travel, suspension_travel)
 	if contact:
 		ground_n = n
 		surface = terrain.surface_at(p.x, p.z)
@@ -332,7 +376,7 @@ func step(dt: float) -> void:
 
 	# integrate
 	p += vel * dt
-	var h2 := terrain.height(p.x, p.z)
+	var h2 := _sample_skis(p, false)
 	var n2 := terrain.normal(p.x, p.z, 1.2)
 	if p.y <= h2:
 		p.y = h2
@@ -388,10 +432,12 @@ func _ground_step(dt: float, n: Vector3, cf: float) -> void:
 	# so the skier leaves the ground exactly when the terrain curves away faster than gravity.
 	vel += g * dt
 	if cf <= 0.0:
+		push_phase = -1.0
+		pushing = 0.0
 		return
 	if cf < 1.0 and vel.dot(n) < 2.5:
 		# knees absorb small bumps: press the skis back onto the snow
-		vel -= n * 16.0 * dt
+		vel -= n * minf(16.0, maxf(gap_to_snow(), 0.0) * suspension_stiffness) * cf * dt
 	var f := forward_flat()
 	f = (f - n * f.dot(n)).normalized()
 	var vn := vel.dot(n)
@@ -401,7 +447,7 @@ func _ground_step(dt: float, n: Vector3, cf: float) -> void:
 	var powder := surface.r * (1.0 - surface.g)
 	var groomed := surface.g
 	var ice := surface.b * (1.0 - groomed)
-	var grip := 1.0 - 0.45 * ice - 0.15 * powder - 0.6 * rock
+	var grip := (1.0 - 0.45 * ice - 0.15 * powder - 0.6 * rock) * edge_grip
 	if aggressive:
 		grip = minf(grip * 1.35 + ice * 0.15, 1.45)
 	# weight back on the tails: the tips wash out (less grip); forward: crisper turn entry
@@ -484,12 +530,8 @@ func _ground_step(dt: float, n: Vector3, cf: float) -> void:
 		sp = maxf(sp - dec2 * dt, 0.0)
 		vt = vdir * sp
 	vel = vt + n * vn
-	# --- pole push / skating on the flats
-	pushing = 0.0
-	if tuck > 0.5 and sp < 7.0 and brake < 0.1:
-		var acc := 2.4 * (1.0 - sp / 7.0)
-		vel += f * acc * dt
-		pushing = 1.0
+	# A stroke only propels during pole drive, with assistance fading at speed.
+	_pole_push(dt, f, n, sp)
 	# --- static friction when nearly stopped
 	var gt := (g - n * g.dot(n))
 	if (vel - n * vel.dot(n)).length() < 0.35 and (absf(gt.dot(f)) < 0.06 * G or brake > 0.5) and pushing == 0.0:
@@ -503,6 +545,30 @@ func _ground_step(dt: float, n: Vector3, cf: float) -> void:
 		steep_time = maxf(steep_time - dt, 0.0)
 
 
+## Kept separate so stroke timing can be tested without render or terrain dependencies.
+func _pole_push(dt: float, forward: Vector3, _normal: Vector3, tangent_speed: float) -> void:
+	pushing = 0.0
+	var allowed := contact and not airborne and not is_crashed and mode == Mode.SKI and grind.is_empty() and brake < 0.1 and not _pressed("brake") and tangent_speed < push_max_speed
+	if not allowed:
+		push_phase = -1.0
+		return
+	if push_phase < 0.0:
+		if not _pressed("tuck") or _push_cooldown > 0.0:
+			return
+		push_phase = 0.0
+		_push_cooldown = maxf(push_duration, 0.2)
+	# Integrate the drive interval overlap, so boundary crossings don't depend on FPS.
+	var next_phase := push_phase + dt / maxf(push_duration, 0.2)
+	var drive_time := maxf(0.0, minf(next_phase, 0.65) - maxf(push_phase, 0.30)) * maxf(push_duration, 0.2)
+	if drive_time > 0.0:
+		var fade := 1.0 - smoothstep(0.0, maxf(push_max_speed, 0.1), tangent_speed)
+		var uphill := 1.0 - 0.65 * clampf(forward.y / 0.5, 0.0, 1.0)
+		var impulse := minf(push_acceleration * fade * uphill * drive_time, maxf(0.0, push_max_speed - tangent_speed))
+		vel += forward * impulse
+		pushing = 1.0
+	push_phase = next_phase if next_phase < 1.0 else -1.0
+
+
 func _air_step(dt: float, spin_in: float, flip_in: float) -> void:
 	vel += Vector3(0, -G, 0) * dt
 	var sp := vel.length()
@@ -512,16 +578,16 @@ func _air_step(dt: float, spin_in: float, flip_in: float) -> void:
 	var d := diff()
 	# body english: how much you can change your rotation once airborne depends on the difficulty
 	if absf(spin_in) > 0.1:
-		spin_vel = move_toward(spin_vel, signf(spin_in) * SPIN_MAX, float(d["air_spin"]) * dt)
+		spin_vel = move_toward(spin_vel, signf(spin_in) * SPIN_MAX, float(d["air_spin"]) * air_control * dt)
 	else:
 		spin_vel = move_toward(spin_vel, 0.0, float(d["spin_damp"]) * dt)
 	if absf(flip_in) > 0.1:
-		flip_vel = move_toward(flip_vel, signf(flip_in) * SPIN_MAX * 0.7, float(d["air_flip"]) * dt)
+		flip_vel = move_toward(flip_vel, signf(flip_in) * SPIN_MAX * 0.7, float(d["air_flip"]) * air_control * dt)
 	elif float(d["level"]) > 0.0 and absf(roundf(air_pitch / TAU) * TAU - air_pitch) < deg_to_rad(60.0):
 		# assist: settle a small tilt toward a clean landing (it cannot rescue an upside-down one)
 		var target := roundf(air_pitch / TAU) * TAU
 		flip_vel += ((target - air_pitch) * float(d["level"]) * 2.0 - flip_vel * float(d["level"])) * dt
-	# tucked or grabbing: smaller moment of inertia, faster rotation
+	# Compact poses and grabs: smaller moment of inertia, faster rotation
 	var w_mul := 1.0 + 0.3 * compact
 	heading = wrapf(heading - spin_vel * w_mul * dt, -PI, PI)
 	air_rotation += spin_vel * w_mul * dt
@@ -531,7 +597,7 @@ func _air_step(dt: float, spin_in: float, flip_in: float) -> void:
 	var hv := Vector3(vel.x, 0, vel.z)
 	if hv.length() > 1.0:
 		var right := hv.normalized().cross(Vector3.UP)
-		vel += right * steer * 1.1 * dt
+		vel += right * steer * 1.1 * air_control * dt
 	var gl := _pressed("grab_left")
 	var gr := _pressed("grab_right")
 	# where the hand goes: leaning forward reaches the tip, leaning back the tail
@@ -568,6 +634,8 @@ func _do_jump() -> void:
 
 
 func _take_off(from_jump := false) -> void:
+	push_phase = -1.0
+	pushing = 0.0
 	if airborne:
 		return
 	airborne = true
@@ -650,6 +718,8 @@ func _land(n: Vector3, impact: float) -> void:
 
 
 func crash(reason: String) -> void:
+	push_phase = -1.0
+	pushing = 0.0
 	if is_crashed:
 		return
 	is_crashed = true
@@ -837,6 +907,8 @@ func toggle_skis() -> bool:
 	if not can_toggle_skis():
 		return false
 	if mode == Mode.SKI:
+		push_phase = -1.0
+		pushing = 0.0
 		mode = Mode.WALK
 		heading = travel_yaw if speed > 0.5 else heading
 	else:
@@ -972,7 +1044,7 @@ func _try_mount() -> void:
 		var top := a + dir * t
 		var side := dir.cross(Vector3.UP).normalized()
 		var lat := (position - top).dot(side)
-		if absf(lat) > float(r["width"]) * 0.5 + 0.3:
+		if absf(lat) > float(r["width"]) * 0.5 + 0.12:
 			continue
 		var dy := position.y - top.y
 		if dy < (-0.42 if r["kind"] == "box" else -0.1) or dy > 0.45:
@@ -989,6 +1061,9 @@ func _mount(r: Dictionary, t: float, lat01: float, vh: float) -> void:
 		crash("Missed the rail")
 		return
 	grind = r
+	var along: Vector3 = (r["b"] - r["a"]).normalized()
+	_box_lateral = (position - (r["a"] + along * t)).dot(along.cross(Vector3.UP).normalized())
+	_box_lateral_speed = vel.dot(along.cross(Vector3.UP).normalized())
 	_grind_dir = signf(vh)
 	_grind_t = t
 	_grind_v = absf(vh) * 0.95
@@ -1035,12 +1110,22 @@ func _grind_step(dt: float) -> void:
 	var top := a + dir * _grind_t
 	position = top
 	vel = axis * _grind_v
+	if r["kind"] == "box":
+		var across := dir.cross(Vector3.UP).normalized()
+		_box_lateral_speed = move_toward(_box_lateral_speed, _raw_steer * 1.6, 2.5 * dt)
+		_box_lateral += _box_lateral_speed * dt
+		position += across * _box_lateral
+		vel += across * _box_lateral_speed
+		if absf(_box_lateral) > float(r["width"]) * 0.5:
+			_leave_rail("edge")
+			_take_off()
+			return
 	speed = _grind_v
 	contact = false
 	ground_n = Vector3.UP
 	travel_yaw = yaw_of(Vector3(axis.x, 0.0, axis.z))
 	lat_acc = 0.0
-	if absf(rail_balance) >= 1.0:
+	if r["kind"] != "box" and absf(rail_balance) >= 1.0:
 		var side := dir.cross(Vector3.UP).normalized() * signf(rail_balance)
 		_leave_rail("fall")
 		if bool(d["edge_catch"]):
@@ -1049,6 +1134,10 @@ func _grind_step(dt: float) -> void:
 		position += side * 0.35
 		vel += side * 1.5 + Vector3.UP * 1.0
 		_take_off()
+	elif _grind_t > float(r["length"]) and r.has("next") and _grind_dir > 0.0:
+		# Continue the same trick across the joint without resetting balance or score.
+		_grind_t -= float(r["length"])
+		grind = r["next"]
 	elif _grind_t < 0.0 or _grind_t > float(r["length"]) or _grind_v < 0.3:
 		_leave_rail("end" if _grind_v >= 0.3 else "stall")
 		vel += Vector3.UP * 0.4
@@ -1061,3 +1150,41 @@ func _leave_rail(how: String) -> void:
 	_rail_cd = 0.4
 	jibbed.emit({"kind": r["kind"], "time": grind_time, "slide": grind_slide, "switch": grind_switch,
 		"press": grind_press, "entry_rot": _grind_entry, "how": how})
+
+
+func gap_to_snow() -> float:
+	return position.y - ground_h
+
+
+## Three longitudinal samples per ski. A ski bridges small hollows; a whole unsupported
+## ski loses grip independently. The finite footprint filters chatter without moving the map.
+func _sample_skis(at: Vector3, update_support: bool) -> float:
+	var f := forward_flat()
+	var right := f.cross(Vector3.UP)
+	var center_n := terrain.normal(at.x, at.z, 1.2)
+	var sum_height := 0.0
+	var high_support := -INF
+	var low_support := INF
+	for i in 2:
+		var off := right * (-0.15 if i == 0 else 0.15)
+		var c := at + off
+		var tip := c + f * 0.72
+		var tail := c - f * 0.72
+		var ht := terrain.height(tip.x, tip.z)
+		var hc := terrain.height(c.x, c.z)
+		var hb := terrain.height(tail.x, tail.z)
+		var h := (ht + 2.0 * hc + hb) * 0.25
+		var lateral := -(center_n.x * off.x + center_n.z * off.z) / maxf(center_n.y, 0.2)
+		sum_height += h - lateral
+		high_support = maxf(high_support, h - lateral)
+		low_support = minf(low_support, h - lateral)
+		if update_support:
+			ski_heights[i] = h
+			var along := (f * 1.44 + Vector3.UP * (ht - hb)).normalized()
+			var rn := terrain.normal(c.x, c.z, 0.6)
+			var across := (right - rn * right.dot(rn)).normalized()
+			ski_normals[i] = across.cross(along).normalized()
+			var clearance := at.y + lateral - h
+			ski_support[i] = 1.0 - smoothstep(CONTACT_EPS, suspension_travel, clearance)
+	# A ski hanging over a ledge cannot pull the supported ski through the snow.
+	return high_support if high_support - low_support > suspension_travel else sum_height * 0.5

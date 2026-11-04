@@ -743,6 +743,9 @@ def main():
     layout["landmarks"] = marks
     log("features: " + ", ".join("%d %s" % (sum(1 for f in feats if f["type"] == t), t) for t in ("cliff", "lip", "gully", "lake", "moguls", "trail")))
 
+    import polish_mountain
+    H2 = polish_mountain.polish(sys.modules[__name__], H2, layout)
+
     log("surface maps")
     nx, ny, nz = normals(H2, SP)
     slope2 = np.degrees(np.arccos(np.clip(ny, -1, 1)))
@@ -754,6 +757,8 @@ def main():
     log("vegetation")
     trees = place_trees(H2, slope2, surface, X2, Z2, layout)
     rocks = place_rocks(H2, slope2, W2, X2, Z2, layout, fmasks)
+    trees = polish_mountain.dress_lines(trees, layout)
+    rocks = polish_mountain.dress_lines(rocks, layout, True)
     log("trees: %d  rocks: %d" % (len(trees), len(rocks)))
 
     log("writing")

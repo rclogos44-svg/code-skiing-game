@@ -83,19 +83,24 @@ func _build_main() -> void:
 	tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	main_panel.add_child(tr)
 	var v := VBoxContainer.new()
-	v.position = Vector2(90, 110)
+	var fit_menu := func():
+		var factor := clampf(size.y / 900.0, 0.5, 1.0)
+		v.scale = Vector2.ONE * factor
+		v.position = Vector2(90, 75) * factor
+	resized.connect(fit_menu)
+	fit_menu.call()
 	v.add_theme_constant_override("separation", 10)
 	main_panel.add_child(v)
 	var title := UITheme.label("SUMMIT", 112, UITheme.TEXT, 900, 10)
 	v.add_child(title)
-	var sub := UITheme.label("OPEN-WORLD MOUNTAIN SKIING", 22, UITheme.ACCENT, 700, 4)
+	var sub := UITheme.label("TERRAIN PARK · FREESTYLE SKIING", 22, UITheme.ACCENT, 700, 4)
 	v.add_child(sub)
 	var spacer := Control.new()
 	spacer.custom_minimum_size = Vector2(0, 30)
 	v.add_child(spacer)
 	_button("Start Game", func(): _maybe_new_game(), v)
 	continue_btn = _button("Continue", func(): request.emit("continue", ""), v)
-	_button("Free Ride", func(): show_drop_list(true), v)
+	_button("Park Practice", func(): request.emit("freeride_drop", "Terrain Park"), v)
 	_button("Challenges", func(): show_challenges(), v)
 	_button("Settings", func(): show_settings(), v)
 	if not Settings.is_web():
@@ -277,6 +282,8 @@ func show_drop_list(freeride: bool) -> void:
 		ch.queue_free()
 	var by_region := {}
 	for d in terrain.layout.get("drop_zones", []):
+		if Game.test_mode == "" and d["name"] != "Terrain Park":
+			continue
 		by_region[int(d["region"])] = by_region.get(int(d["region"]), []) + [d]
 	for r in terrain.layout.get("regions", []):
 		var list: Array = by_region.get(int(r["id"]), [])
@@ -304,6 +311,8 @@ func show_challenges() -> void:
 	for group in ["RACES", "FREESTYLE", "EXTREME"]:
 		var added := false
 		for c in terrain.layout.get("challenges", []):
+			if Game.test_mode == "" and c["id"] != "jib_session":
+				continue
 			if types.get(c["type"], "") != group:
 				continue
 			if not added:
@@ -311,7 +320,7 @@ func show_challenges() -> void:
 				added = true
 			var res := Game.challenge_result(c["id"])
 			var drop: String = c.get("drop", "")
-			var available := drop == "" or Game.is_drop_unlocked(drop) or not Game.has_save()
+			var available := drop == "" or drop == "Terrain Park" or Game.is_drop_unlocked(drop) or not Game.has_save()
 			var status := ""
 			if res.get("completed", false):
 				status = "   ✔ " + UITheme.medal_name(int(res.get("medal", 0)))

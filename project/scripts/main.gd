@@ -102,7 +102,7 @@ func _enter_menu() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	# cinematic backdrop: the skier waiting at a scenic drop zone, camera orbiting
 	var d := world.terrain.drop_zone("Resort Top")
-	world.spawn_at_drop("Resort Top")
+	world.spawn_at_drop("Terrain Park")
 	world.skier.frozen = true
 	var cam := world.camera
 	cam.orbit_center = world.skier.position
@@ -169,16 +169,16 @@ func _on_menu_request(action: String, arg: String) -> void:
 		"new_game":
 			Game.new_game()
 			_fade_then(func():
-				world.spawn_at_drop("Resort Top")
+				world.spawn_at_drop("Terrain Park")
 				_start_play("career")
-				hud.notify("Welcome to SUMMIT. Ride the lifts, spot distant drop zones by looking at them, and find viewpoints to unlock the mountains.", "info"))
+				hud.notify("Welcome to SUMMIT PARK. Follow the kicker line into the jib lanes. R: park start. B: retry nearest feature.", "info"))
 		"continue":
 			_fade_then(func():
 				var last: Dictionary = Game.save.get("last", {})
 				if last.has("x"):
-					world.spawn(Vector3(last["x"], 0, last["z"]), float(last.get("yaw", 0.0)))
+					world.spawn_at_drop("Terrain Park")
 				else:
-					world.spawn_at_drop("Resort Top")
+					world.spawn_at_drop("Terrain Park")
 				_start_play("career"))
 		"freeride_drop":
 			_fade_then(func():
@@ -222,6 +222,9 @@ func _travel_drop(name: String) -> void:
 
 
 func _start_challenge(id: String) -> void:
+	if Game.test_mode == "" and id != "jib_session":
+		hud.notify("Park practice is active. Choose Rail Session or Free Ride.", "info")
+		return
 	var mode := Game.mode
 	if mode == "menu":
 		mode = "career" if Game.has_save() else "freeride"
@@ -246,6 +249,10 @@ func _unhandled_input(event: InputEvent) -> void:
 				world.camera.cycle_mode()
 			elif event.is_action("first_person"):
 				world.camera.toggle_first_person()
+			elif event.is_action("practice_reset"):
+				var practice: Dictionary = world.park.practice_start(world.skier.position)
+				if not practice.is_empty():
+					world.spawn(practice["position"], practice["yaw"])
 			elif event.is_action("respawn"):
 				_respawn()
 			elif event.is_action("interact"):
@@ -273,6 +280,9 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _respawn() -> void:
+	if Game.test_mode == "":
+		world.spawn_at_drop("Terrain Park")
+		return
 	if challenges.respawn_in_challenge():
 		return
 	world.skier.respawn()
@@ -283,6 +293,9 @@ func _process(delta: float) -> void:
 	if state != State.PLAYING:
 		return
 	var s := world.skier
+	if Game.test_mode == "" and not world.park.contains_position(s.position):
+		world.spawn_at_drop("Terrain Park")
+		hud.notify("Back to the park — R restarts your run", "info")
 	# automatic respawn a few seconds after a crash
 	if s.is_crashed and s.crash_time > 3.2 and (world.body.ragdoll.settled_time > 0.5 or s.crash_time > 6.0):
 		_respawn()

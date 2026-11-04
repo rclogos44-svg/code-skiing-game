@@ -28,11 +28,11 @@ uniform vec3 lod_cam = vec3(0.0);
 uniform vec2 morph_ranges[10];
 uniform float shadow_fade_start = 250.0;
 uniform float shadow_fade_end = 450.0;
-uniform vec3 snow_tint : source_color = vec3(0.93, 0.955, 1.0);
+uniform vec3 snow_tint : source_color = vec3(0.84, 0.89, 0.95);
 uniform vec3 shade_tint : source_color = vec3(0.80, 0.86, 0.98);
 uniform vec3 ice_tint : source_color = vec3(0.70, 0.82, 0.95);
 uniform vec3 rock_tint : source_color = vec3(0.42, 0.40, 0.38);
-uniform float sparkle_strength = 1.0;
+uniform float sparkle_strength = 0.45;
 
 varying vec3 v_world;
 varying float v_sun;
@@ -182,7 +182,10 @@ void fragment() {
 	snow = mix(snow, ice_tint, ice * 0.55);
 	// forest floor: needles and shade
 	snow = mix(snow, snow * vec3(0.86, 0.88, 0.9), surf.a * 0.55);
-	float rough = mix(0.82, 0.70, groomed);
+	// Wind-combed snow and powder retain distinct microstructure, with distance filtering.
+	float wind_ripple = sin(dot(p, vec2(0.75, 0.66)) * 2.4 + nz2.g * 4.0);
+	snow *= 1.0 + wind_ripple * 0.025 * ice * detail_fade;
+	float rough = mix(0.88, 0.68, groomed) + (nz2.r - 0.5) * 0.08;
 	rough = mix(rough, 0.32, ice * 0.8);
 	vec3 rn;
 	vec3 rcol = triplanar_rock(wp, n, rn) * rock_tint * 2.6;
@@ -222,7 +225,7 @@ void fragment() {
 	vec2 sg = p * 22.0;
 	vec2 cell = floor(sg);
 	vec2 cf = fract(sg) - 0.5;
-	float hsh = hash12(cell + floor(VIEW.xy * 5.0) * 17.0);
+	float hsh = hash12(cell + vec2(0.0));
 	float dotm = smoothstep(0.32, 0.08, length(cf));
 	v_sparkle = step(0.994, hsh) * dotm * (1.0 - rock_mask) * (1.0 - smoothstep(3.0, 18.0, cam_dist)) * sparkle_strength * (1.0 - groomed * 0.6);
 	v_wrap = (1.0 - rock_mask) * 0.25;
@@ -241,5 +244,5 @@ void light() {
 	float a2 = r * r * r * r;
 	float dd = ndh * ndh * (a2 - 1.0) + 1.0;
 	float spec = a2 / (PI * dd * dd) * 0.06;
-	SPECULAR_LIGHT += (spec * clamp(ndl, 0.0, 1.0) + v_sparkle * 3.0 * step(0.0, ndl)) * sh * LIGHT_COLOR / PI;
+	SPECULAR_LIGHT += (spec * clamp(ndl, 0.0, 1.0) + v_sparkle * pow(clamp(dot(NORMAL, h), 0.0, 1.0), 64.0) * 2.0 * step(0.0, ndl)) * sh * LIGHT_COLOR / PI;
 }

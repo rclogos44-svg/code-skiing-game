@@ -63,7 +63,7 @@ func build() -> bool:
 		lm.name = "Landmarks"
 		add_child(lm)
 		lm.setup(terrain, obstacles, resort)
-	if resort and ResourceLoader.exists("res://scripts/world/npc_skiers.gd"):
+	if resort and Game.test_mode != "" and ResourceLoader.exists("res://scripts/world/npc_skiers.gd"):
 		var npc = load("res://scripts/world/npc_skiers.gd").new()
 		npc.name = "NPCSkiers"
 		add_child(npc)
@@ -116,6 +116,8 @@ func build() -> bool:
 
 
 func spawn_at_drop(name: String) -> void:
+	if Game.test_mode == "":
+		name = "Terrain Park"
 	var d := terrain.drop_zone(name)
 	if d.is_empty():
 		return

@@ -353,7 +353,7 @@ func show_controls_hint() -> void:
 	if skier and skier.mode == Skier.Mode.LIFT:
 		hint_label.text = "Mouse: look around · hold %s to skip to the top · %s map" % [b.call("interact"), b.call("map")]
 		return
-	hint_label.text = "%s/%s carve · %s tuck · %s hockey stop · %s crouch, release to pop · %s/%s lean (lean back = bigger pop / backflip) · %s/%s wind up & spin · %s/%s grab · %s skis off · %s map" % [
+	hint_label.text = "%s/%s carve · %s pole push · %s hockey stop · %s crouch, release to pop · %s/%s lean (lean back = bigger pop / backflip) · %s/%s wind up & spin · %s/%s grab · %s skis off · %s map" % [
 		b.call("steer_left"), b.call("steer_right"), b.call("tuck"), b.call("brake"), b.call("jump"), b.call("lean_forward"),
 		b.call("lean_back"), b.call("lean_left"), b.call("lean_right"), b.call("grab_left"), b.call("grab_right"),
 		b.call("skis"), b.call("map")]

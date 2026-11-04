@@ -81,8 +81,8 @@ static func sphere(r: float, sx := 1.0, sy := 1.0, sz := 1.0, rings := 8) -> Arr
 static func torso() -> ArrayMesh:
 	# waist (y=0) to neck base (y=0.52); wider at the chest, jacket hem flare at bottom
 	var pts := [
-		Vector2(0.0, -0.06), Vector2(0.13, -0.055), Vector2(0.165, -0.02), Vector2(0.158, 0.06),
-		Vector2(0.162, 0.18), Vector2(0.178, 0.30), Vector2(0.182, 0.40), Vector2(0.165, 0.47),
+		Vector2(0.0, -0.06), Vector2(0.13, -0.055), Vector2(0.165, -0.02), Vector2(0.173, 0.06),
+		Vector2(0.17, 0.12), Vector2(0.18, 0.15), Vector2(0.17, 0.18), Vector2(0.178, 0.30), Vector2(0.182, 0.40), Vector2(0.165, 0.47),
 		Vector2(0.11, 0.515), Vector2(0.075, 0.535), Vector2(0.0, 0.54),
 	]
 	return lathe(pts, 1.18, 0.72, 18)
@@ -237,3 +237,13 @@ static func pole() -> Array:
 	var grip := lathe(capsule_profile(0.019, 0.017, 0.13, 2), 1.0, 1.0, 10)
 	var basket := lathe([Vector2(0.0, 1.06), Vector2(0.05, 1.075), Vector2(0.052, 1.085), Vector2(0.0, 1.09)], 1.0, 1.0, 12)
 	return [shaft, grip, basket]
+
+
+static func clothing(r0: float, r1: float, length: float) -> ArrayMesh:
+	# Fabric gathers at elbows/knees and the cuff, rather than smooth capsule limbs.
+	var mid := []
+	for i in range(1, 10):
+		var t := float(i) / 10.0
+		var gather := 1.0 + 0.075 * sin(t * TAU * 3.5) * smoothstep(0.2, 0.9, t)
+		mid.append(Vector2(lerpf(r0, r1, t) * gather, length * t))
+	return lathe(capsule_profile(r0, r1, length, 4, mid), 1.0, 0.95, 18)

@@ -4783,6 +4783,33 @@
    "y": 354.4276428222656,
    "yaw": 2.4748041810936217,
    "unlocked": true
+  },
+  {
+   "name": "Scout Drop",
+   "region": 1,
+   "x": 2572.7832959539764,
+   "z": 4103.0796425219305,
+   "y": 561.0188598632812,
+   "yaw": -3.0920846771777963,
+   "unlocked": true
+  },
+  {
+   "name": "Freeride Drop",
+   "region": 0,
+   "x": 2476.0984967418703,
+   "z": 745.8143740111227,
+   "y": 815.5958862304688,
+   "yaw": -2.5564349925802032,
+   "unlocked": true
+  },
+  {
+   "name": "Expert Drop",
+   "region": 5,
+   "x": 4880.3620301632845,
+   "z": 2664.377794178618,
+   "y": 844.6707763671875,
+   "yaw": 1.049367134505673,
+   "unlocked": true
   }
  ],
  "viewpoints": [
@@ -6960,7 +6987,10 @@
    "dz": -0.4981199104402785,
    "width": 109.50165110668479,
    "drop": 16.8,
-   "region": 5
+   "region": 5,
+   "line_grade": "expert",
+   "approach_length": 70,
+   "landing_clearance": 100
   },
   {
    "type": "cliff",
@@ -7015,7 +7045,10 @@
    "dz": 0.8336250152134971,
    "width": 98.15939974518503,
    "drop": 9.7,
-   "region": 0
+   "region": 0,
+   "line_grade": "freeride",
+   "approach_length": 70,
+   "landing_clearance": 100
   },
   {
    "type": "cliff",
@@ -7048,7 +7081,10 @@
    "dz": 0.998774730431834,
    "width": 31.07589309497549,
    "drop": 3.2,
-   "region": 1
+   "region": 1,
+   "line_grade": "scout",
+   "approach_length": 70,
+   "landing_clearance": 100
   },
   {
    "type": "cliff",
@@ -7964,8 +8000,8 @@
    0.4989781411445852
   ],
   "surface_n": 1537,
-  "tree_count": 75257,
-  "rock_count": 3152,
+  "tree_count": 75237,
+  "rock_count": 3163,
   "core_min": 305.0,
   "core_scale": 0.025055313954375526,
   "far_min": 143.0,
@@ -7976,31 +8012,31 @@
    "name": "Pic Blanc",
    "x": 5248.0,
    "z": 1072.0,
-   "y": 1852.3
+   "y": 1852.2
   },
   {
    "name": "Grand Givre",
    "x": 944.0,
    "z": 1296.0,
-   "y": 1621.5
+   "y": 1621.1
   },
   {
    "name": "Dent du Loup",
    "x": 3360.0,
    "z": 528.0,
-   "y": 1606.2
+   "y": 1605.8
   },
   {
    "name": "Corne Noire",
    "x": 5360.0,
    "z": 2128.0,
-   "y": 1364.2
+   "y": 1363.8
   },
   {
    "name": "Tete Rousse",
    "x": 5184.0,
    "z": 2768.0,
-   "y": 1147.7
+   "y": 1147.3
   },
   {
    "name": "Pointe Bleue",
@@ -8012,13 +8048,14 @@
    "name": "Le Clocher",
    "x": 2256.0,
    "z": 3696.0,
-   "y": 814.0
+   "y": 813.6
   },
   {
    "name": "Aiguille Grise",
    "x": 3200.0,
    "z": 4000.0,
-   "y": 687.1
+   "y": 686.7
   }
- ]
+ ],
+ "ski_overhaul": 1
 }
