@@ -44,7 +44,7 @@ Each cloud task is isolated; use the existing checkout. Progress cannot resume a
 
 User authorized publishing updates. Verified official Godot 4.6.3 export-template SHA512, installed Web templates, exported Web successfully, and packaged `dist/web_artifact/` plus `dist/SUMMIT-web.zip` (51 MiB compressed). ZIP integrity test passes. Chromium fetched all engine/game chunks from a local HTTP server; full interactive browser validation is not established by those downloads.
 
-Publishing access recovered: api.github.com is now allowed and repository API confirms push/admin access. Existing GitHub Pages source is gh-pages (/). Published the updated web package to that branch in commit baf72eb1d597e486f289c566fd325b204af5c551; deployment run 41792317421. Play URL: https://rclogos44-svg.github.io/code-skiing-game/ . This publishes web assets; source edits in the main development checkout remain uncommitted/unpushed. Old hashed pack assets were retained to avoid breaking cached pages.
+Publishing access recovered: api.github.com is now allowed and repository API confirms push/admin access. Existing GitHub Pages source is gh-pages (/). Published the updated web package to that branch in commit baf72eb1d597e486f289c566fd325b204af5c551; deployment run 41792317421. Play URL: https://rclogos44-svg.github.io/code-skiing-game/ . That initial release published web assets only; the park follow-up subsequently committed and pushed the complete source overhaul to main. Old hashed pack assets were retained to avoid breaking cached pages.
 
 
 ## Park follow-up (November 4)
@@ -56,3 +56,9 @@ Publishing access recovered: api.github.com is now allowed and repository API co
 - Boxes preserve lateral entry position, lateral momentum and physical edge exits. Their wide deck supports a centered skier without the narrow-rail balance-failure rule. Flat-down joins preserve accumulated trick time and balance.
 - New browser defaults use Low graphics and 85% render scale; existing saved settings remain. Compatibility uses supported bilinear scaling. Crowds are disabled in park play. Physics stays at 120 Hz.
 - Compatibility lighting is tuned separately because the previous tone mapping clipped the snow into a uniform grey surface. Native Forward+ keeps its tone mapping.
+
+## Park release
+
+Source implementation: `4b3212e` on `main` (including overhaul commit `a6d07b6`). Web release: `d442534` on `gh-pages`, pack `acb10640e2`, GitHub Pages deployment run `41887037555`. Prior hashed packs remain available for cached pages.
+
+Play: https://rclogos44-svg.github.io/code-skiing-game/
