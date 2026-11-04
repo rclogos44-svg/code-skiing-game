@@ -1,6 +1,8 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><link rel="icon" href="data:,"></head><body>
-<title>SUMMIT · Your mountain. Your line.</title>
-<link rel="icon" href="data:,">
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"></head><body>
+<title>SUMMIT</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;800&family=Barlow:wght@400;500;600&display=swap">
 <style>
 /* Layout: one-screen game. The canvas fills the viewport; the loader is a full-bleed overlay
    styled like a trail-map sign. Single dark theme by design (it frames a game). */
@@ -163,7 +165,7 @@ kbd {
     <ul class="facts">
       <li><b>6.1 × 6.1 km</b> of mountains</li>
       <li><b>1,640 m</b> vertical</li>
-      <li><b>15</b> drop zones</li>
+      <li><b>13</b> drop zones</li>
       <li><b>13</b> challenges</li>
     </ul>
     <div class="progress" role="status" aria-live="polite">
@@ -176,23 +178,22 @@ kbd {
       <div><kbd>W</kbd> tuck</div>
       <div><kbd>S</kbd> hockey stop</div>
       <div><kbd>Space</kbd> crouch, release to pop</div>
-      <div><kbd>WASD</kbd> pitch / yaw in the air</div>
-      <div><kbd>Q</kbd><kbd>E</kbd> roll in the air</div>
+      <div><kbd>↑</kbd><kbd>↓</kbd> lean · flip in the air</div>
+      <div><kbd>←</kbd><kbd>→</kbd> wind up · spin</div>
       <div><kbd>Z</kbd><kbd>X</kbd> grab skis</div>
       <div><kbd>Mouse</kbd> look around</div>
       <div><kbd>T</kbd> skis off, walk</div>
       <div><kbd>G</kbd> ride a chairlift</div>
-      <div><kbd>M</kbd> map · <kbd>B</kbd> marker · <kbd>R</kbd> reset · <kbd>Esc</kbd> pause</div>
+      <div><kbd>Tab</kbd> map · <kbd>Esc</kbd> pause</div>
     </div>
-    <button id="play" style="background:#ff7a1a;color:#0b1320;border:0;border-radius:6px;padding:18px;font:700 20px system-ui;cursor:pointer">ENTER THE MOUNTAIN ↗</button>
-    <p class="note" id="note">The first visit downloads the engine and mountain; progress appears above. Play on a computer with a keyboard and mouse (a gamepad also works). Click the game once it opens so it can capture the mouse and keyboard.</p>
+    <p class="note" id="note">The first visit downloads about 85 MB, so it can take a minute. Play on a computer with a keyboard and mouse (a gamepad also works). Click the game once it opens so it can capture the mouse and keyboard.</p>
   </div>
 </div>
 
 <script>
 /* Large engine and data files are published in chunks of under 15 MB; this shim reassembles
    them when the Godot loader asks for SUMMIT.wasm / SUMMIT.pck. */
-const SUMMIT_FILES = {"SUMMIT.wasm": {"parts": ["data/summit-wasm-0.wasm", "data/summit-wasm-1.wasm", "data/summit-wasm-2.wasm"], "size": 37700666, "type": "application/wasm"}, "SUMMIT.pck": {"parts": ["data/summit-pck-cbf726c677-0.wasm", "data/summit-pck-cbf726c677-1.wasm", "data/summit-pck-cbf726c677-2.wasm", "data/summit-pck-cbf726c677-3.wasm"], "size": 48044100, "type": "application/octet-stream"}};
+const SUMMIT_FILES = {"SUMMIT.wasm": {"parts": ["data/summit-wasm-0.wasm", "data/summit-wasm-1.wasm", "data/summit-wasm-2.wasm"], "size": 37700666, "type": "application/wasm"}, "SUMMIT.pck": {"parts": ["data/summit-pck-7bf9155d1d-0.wasm", "data/summit-pck-7bf9155d1d-1.wasm", "data/summit-pck-7bf9155d1d-2.wasm", "data/summit-pck-7bf9155d1d-3.wasm"], "size": 46249948, "type": "application/octet-stream"}};
 (function () {
   const realFetch = window.fetch.bind(window);
   function chunked(spec) {
@@ -257,7 +258,7 @@ const SUMMIT_FILES = {"SUMMIT.wasm": {"parts": ["data/summit-wasm-0.wasm", "data
     failed = true;
     phase.textContent = "Could not start";
     amount.textContent = "";
-    errorBox.textContent = msg;
+    errorBox.textContent = msg + "\n\nTry the latest Chrome, Edge or Firefox on a computer, and make sure hardware acceleration (WebGL) is enabled.";
     errorBox.hidden = false;
   };
   window.addEventListener("unhandledrejection", function (ev) {
@@ -265,13 +266,6 @@ const SUMMIT_FILES = {"SUMMIT.wasm": {"parts": ["data/summit-wasm-0.wasm", "data
     if (loader.hidden) { return; }
     window.__summitFail(r && r.message ? r.message : String(r));
   });
-
-  if (location.protocol === "file:") {
-    window.__summitFail("This game cannot load by double-clicking index.html.\n\nExtract the entire ZIP, then use START-WINDOWS.bat on Windows, or run python3 start_game.py in the extracted folder on macOS/Linux. The launcher requires Python 3 and opens the correct browser address automatically.\n\nSee START-HERE.txt, or play through the hosted GitHub Pages site once enabled.");
-    phase.textContent = "Start the local launcher";
-    document.getElementById("play").hidden = true;
-    return;
-  }
 
   function mb(n) { return (n / 1048576).toFixed(0); }
 
@@ -286,7 +280,7 @@ const SUMMIT_FILES = {"SUMMIT.wasm": {"parts": ["data/summit-wasm-0.wasm", "data
     window.__summitFail("The game engine script did not load.");
     return;
   }
-  const GODOT_CONFIG = {"args": [], "canvasResizePolicy": 2, "emscriptenPoolSize": 8, "ensureCrossOriginIsolationHeaders": false, "executable": "SUMMIT", "experimentalVK": false, "fileSizes": {"SUMMIT.pck": 48044100, "SUMMIT.wasm": 37700666}, "focusCanvas": true, "gdextensionLibs": [], "godotPoolSize": 4, "serviceWorker": ""};
+  const GODOT_CONFIG = {"args": [], "canvasResizePolicy": 2, "emscriptenPoolSize": 8, "ensureCrossOriginIsolationHeaders": false, "executable": "SUMMIT", "experimentalVK": false, "fileSizes": {"SUMMIT.pck": 46249948, "SUMMIT.wasm": 37700666}, "focusCanvas": true, "gdextensionLibs": [], "godotPoolSize": 4, "serviceWorker": ""};
   const missing = Engine.getMissingFeatures({ threads: false });
   if (missing.length !== 0) {
     window.__summitFail("Your browser is missing features the game needs:\n" + missing.join("\n"));
@@ -296,8 +290,6 @@ const SUMMIT_FILES = {"SUMMIT.wasm": {"parts": ["data/summit-wasm-0.wasm", "data
   phase.textContent = "Downloading the mountains";
   amount.textContent = "0 / " + mb(total) + " MB";
   const engine = new Engine(GODOT_CONFIG);
-  async function launch() {
-  document.getElementById("play").hidden = true;
   engine.startGame({
     onProgress: function (current, all) {
       if (current > 0 && all > 0) {
@@ -314,9 +306,6 @@ const SUMMIT_FILES = {"SUMMIT.wasm": {"parts": ["data/summit-wasm-0.wasm", "data
   }, function (err) {
     window.__summitFail(err && err.message ? err.message : String(err));
   });
-  }
-  phase.textContent = "Your mountain. Your line.";
-  document.getElementById("play").addEventListener("click", launch, {once: true});
 })();
 </script>
 
