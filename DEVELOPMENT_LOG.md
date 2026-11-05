@@ -410,3 +410,14 @@ no map, parks, keep the ragdoll crashes, black baggy gear, only flips, spins and
   to the game's left-hand mute (the photo is right-handed). It is now the in-game Mute.
 - V toggles a skeleton view (bones + joints, clothes hidden); B toggles quarter-speed slow motion.
 - Physics 89/89, including all seven grabs off the medium kicker (held, named, clean landing).
+
+## Grab timing and the mute's crossing animation
+
+- Grabs take time: the pose starts on the key press and eases in (smoothstep) over 0.55 s
+  (the mute 0.75 s), and lets go over 0.35 s. A grab scores once the hand is on the ski.
+- Grabs run in stages: knees come up with the skis still parallel, then the hips sweep the skis
+  across into the X (joint angles interpolated, so the skis visibly swing), then the hand reaches
+  the ski as the cross completes; spine curve, twist and the off-axis tilt build throughout.
+- `--test=grab_anim` renders the live grab every 0.1 s. Physics 91/91, including the timing
+  (mute 0.27 in at 0.25 s, fully in at 0.78 s, out 0.37 s after letting go) and the cross
+  (skis 0 deg apart at 0.2 s, 18 at 0.4 s, 45 at 0.6 s).

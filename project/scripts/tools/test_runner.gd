@@ -42,6 +42,8 @@ func run(w: World) -> void:
 			await _park_shots()
 		"grabs":
 			await _grab_shots()
+		"grab_anim":
+			await _grab_anim()
 		_:
 			print("[TEST] unknown test mode ", Game.test_mode)
 			failures += 1
@@ -275,6 +277,49 @@ func _park_kickers() -> void:
 	check("pole push: tips plant in the snow and hold still", plants >= 4 and worst_h < 0.12 and worst_slide < 0.05,
 		"%d plants, tip height off the snow %.2f m, tip slide %.3f m" % [plants, worst_h, worst_slide])
 	check("pole push: three seconds of pushing gets you rolling", s.speed > 3.5, "%.1f m/s (%.0f km/h)" % [s.speed, s.speed * 3.6])
+	# grab timing: the pose eases in over ~0.55 s and out over ~0.35 s (it takes time irl)
+	var gbody = world.body
+	s.teleport(stp["pos"], stp["yaw"])
+	s.position.y += 40.0
+	s.airborne = true
+	s.vel = Vector3.ZERO
+	var w_at := {}
+	for i in 150:
+		s.scripted_input = {"grab_left": 1.0} if i < 96 else {}      # the mute takes 0.75 s to get into
+		s.step(1.0 / 120.0)
+		s._cur_xform = s._compose_xform()
+		s._prev_xform = s._cur_xform
+		gbody._compute_pose(1.0 / 120.0)
+		if i in [12, 30, 94, 140]:
+			w_at[i] = gbody._gw
+	check("grabs ease in (mute ~0.75 s) and let go smoothly (~0.35 s)",
+		w_at[12] < 0.08 and w_at[30] > 0.1 and w_at[30] < 0.5 and w_at[94] > 0.97 and w_at[140] < 0.05,
+		"pose %.2f at 0.1 s, %.2f at 0.25 s, %.2f at 0.78 s, %.2f 0.37 s after letting go" % [w_at[12], w_at[30], w_at[94], w_at[140]])
+	# the mute's skis start parallel and swing across into the X over time (not crossed at once)
+	s.teleport(stp["pos"], stp["yaw"])
+	s.position.y += 40.0
+	s.airborne = true
+	s.vel = Vector3.ZERO
+	var cross_at := {}
+	for i in 110:
+		s.scripted_input = {"grab_left": 1.0}
+		s.step(1.0 / 120.0)
+		s._cur_xform = s._compose_xform()
+		s._prev_xform = s._cur_xform
+		gbody._compute_pose(1.0 / 120.0)
+		if i in [6, 24, 48, 72, 109]:
+			# angle between the two skis, seen from above
+			var a: Vector3 = -gbody.ski_l.basis.z
+			var b: Vector3 = -gbody.ski_r.basis.z
+			cross_at[i] = rad_to_deg(Vector2(a.x, a.z).angle_to(Vector2(b.x, b.z)))
+	var c0: float = absf(cross_at[6])
+	var c1: float = absf(cross_at[24])
+	var c2: float = absf(cross_at[48])
+	var c3: float = absf(cross_at[72])
+	var c4: float = absf(cross_at[109])
+	check("mute: skis swing across into the X gradually", c0 < 6.0 and c1 < 15.0 and c2 > c1 + 5.0 and c3 > c2 and c4 > 35.0,
+		"angle between the skis %.0f / %.0f / %.0f / %.0f / %.0f deg at 0.05 / 0.2 / 0.4 / 0.6 / 0.9 s" % [c0, c1, c2, c3, c4])
+	s.airborne = false
 	# grabs off the medium kicker: grab after takeoff, let go ~0.4 s before touching down
 	# [name, keys from the start of the grab, extra keys pressed 0.2 s later (as a player would)]
 	for gt in [["Mute", {"grab_left": 1.0}, {}], ["Safety", {"grab_right": 1.0}, {}],
@@ -1239,6 +1284,43 @@ func _showcase4() -> void:
 		await _frames(3)
 		await _snap(sh[2])
 	s.scripted_input = null
+	s.set_physics_process(true)
+
+
+## The live grab animation frame by frame: hold the key in the air, snap every 0.1 s, then let go.
+func _grab_anim() -> void:
+	var s := world.skier
+	var body = world.body
+	var st: Dictionary = world.park.park_start(0)
+	world.spawn(st["pos"], st["yaw"])
+	await _frames(10)
+	s.set_physics_process(false)
+	body.skeleton_view = Game.test_args.get("skeleton", "0") == "1"
+	body.set_process(false)            # the pose only advances with the simulated time below
+	var key: String = Game.test_args.get("key", "grab_left")
+	s.teleport(st["pos"], st["yaw"])
+	s.position.y += 30.0
+	s.airborne = true
+	s.vel = Vector3.ZERO
+	var fz: Vector3 = Vector3(-sin(s.heading), 0, -cos(s.heading))
+	var view: String = Game.test_args.get("view", "front")
+	var rt := fz.cross(Vector3.UP)
+	var cdir: Vector3 = {"front": -fz * 2.4 + rt * 0.5, "side": rt * 2.4, "front3q": (-fz + rt * 0.8).normalized() * 2.4}[view]
+	var shot := 0
+	for i in 160:
+		s.scripted_input = {key: 1.0} if i < 108 else {}
+		s.step(1.0 / 120.0)
+		s.time += 1.0 / 120.0
+		s._cur_xform = s._compose_xform()
+		s._prev_xform = s._cur_xform
+		body._compute_pose(1.0 / 120.0)
+		if i % 12 == 0:
+			body._apply_parts()
+			var c: Vector3 = body.joints["pelvis"] + Vector3.UP * 0.15
+			_free_cam(c + cdir + Vector3.UP * 0.3, c)
+			await _frames(2)
+			await _snap("anim_%02d" % shot)
+			shot += 1
 	s.set_physics_process(true)
 
 

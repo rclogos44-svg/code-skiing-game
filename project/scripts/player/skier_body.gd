@@ -66,7 +66,8 @@ const GRAB_POSES := {
 	"Mute": {"l": ["r", -0.3, 1.0], "free": {"r": Vector3(0.1, 0.56, 0.06)},
 		"legs": {"l": [105.0, 15.0, 10.0, 118.0], "r": [112.0, -20.0, 25.0, 122.0]}, "pitch": 12.0, "pitch_w": 25.0, "legs_w": 0.15,
 		"twist": 0.4, "side": 0.08, "curve": 0.62,
-		"skis": {"yaw": {"l": 28.0, "r": -28.0}, "gap": 0.06, "stack": 0.07, "side_off": -0.15}, "hips_yaw": 0.1, "roll": -0.38},
+		"skis": {"yaw": {"l": 28.0, "r": -28.0}, "gap": 0.06, "stack": 0.07, "side_off": -0.15}, "hips_yaw": 0.1, "roll": -0.38,
+		"time_in": 0.75},
 	"Safety": {"r": ["r", -0.02, 1.0], "free": {"l": Vector3(-0.45, 0.05, -0.1)},
 		"legs": {"l": [70.0, 6.0, 5.0, 100.0], "r": [88.0, 12.0, -5.0, 108.0]}, "pitch": 28.0, "twist": 0.12, "side": 0.12},
 	"Japan": {"l": ["r", 0.0, 1.0], "free": {"r": Vector3(0.4, 0.22, -0.05)},
@@ -218,7 +219,12 @@ const BONES := [["pelvis", "hip_l"], ["pelvis", "hip_r"], ["hip_l", "knee_l"], [
 const SK_JOINTS := ["pelvis", "hip_l", "hip_r", "knee_l", "knee_r", "ankle_l", "ankle_r", "waist", "lumbar", "thoracic", "chest",
 	"shoulder_l", "shoulder_r", "elbow_l", "elbow_r", "hand_l", "hand_r"]
 var _ag := ""                     # grab pose being shown (preview or the skier's live grab)
-var _gw := 0.0                    # how far into it (blends in and out)              # spring-smoothed hand offsets: arms settle after the body
+var _gw := 0.0                    # how far into it, eased (blends in and out)
+var _gp := 0.0                    # linear progress behind _gw
+var _gw_legs := 0.0               # grab stages (see _compute_pose): knees up,
+var _gw_cross := 0.0              # skis swing across into the X,
+var _gw_hand := 0.0               # hand reaches the ski,
+var _gw_body := 0.0               # spine curve / twist / tilt              # spring-smoothed hand offsets: arms settle after the body
 
 
 func setup(s: Skier) -> void:
@@ -408,13 +414,13 @@ func _compute_pose(dt: float) -> void:
 	_lean = clampf(_lean + _lean_v * dt, -0.9, 0.9)
 	var L := Transform3D(root.basis * Basis(Vector3(0, 0, 1), -_lean), root.origin)
 	# off-axis grab: the whole body tilts in the air (legs and skis swing out to one side)
-	var g_roll := float(GRAB_POSES[_ag].get("roll", 0.0)) * _gw if GRAB_POSES.has(_ag) else 0.0
+	var g_roll := float(GRAB_POSES[_ag].get("roll", 0.0)) * _gw_body if GRAB_POSES.has(_ag) else 0.0
 	if absf(g_roll) > 0.0001:
 		var piv := L.origin + L.basis.y * 0.9
 		var R := Basis(L.basis.z.normalized(), g_roll)
 		L = Transform3D(R * L.basis, piv + R * (L.origin - piv))
 	# a tweaked grab twists the hips and legs against the chest (skis go across, chest faces on)
-	var hips_yaw := float(GRAB_POSES[_ag].get("hips_yaw", 0.0)) * _gw if GRAB_POSES.has(_ag) else 0.0
+	var hips_yaw := float(GRAB_POSES[_ag].get("hips_yaw", 0.0)) * _gw_cross if GRAB_POSES.has(_ag) else 0.0
 	var LH := Transform3D(L.basis * Basis(Vector3.UP, hips_yaw), L.origin)
 	# upper body faces the direction of travel: when the skis pivot underneath, the torso lags
 	# behind instead of snapping, and it counter-rotates slightly toward the outside of the turn
@@ -462,19 +468,31 @@ func _compute_pose(dt: float) -> void:
 	var pitch := deg_to_rad(27.0 + 38.0 * tuck + 22.0 * s.charge + 25.0 * s.compression + 32.0 * grab * air + 4.0 * edgeb + 30.0 * gear + 12.0 * lf * (1.0 - air))
 	pitch += deg_to_rad(8.0 + 40.0 * drive) * _push_amt
 	# grab pose: the preview, or the live grab while airborne; blends in/out with the hold
-	var live := s.grab_name if s.airborne and (s.grab_l > 0.3 or s.grab_r > 0.3) else ""
+	var live := s.grab_name if s.airborne and s.grab_held else ""
 	var want := preview_grab if preview_grab != "" else live
 	if want != "":
 		if _ag != "" and want != _ag and preview_grab == "":
-			_gw *= 0.6                      # switching grabs: ease out of the old one, into the new
+			_gp *= 0.6                      # switching grabs: ease out of the old one, into the new
 		_ag = want
-	_gw = 1.0 if preview_grab != "" else lerpf(_gw, 1.0 if want != "" else 0.0, 1.0 - exp(-7.0 * dt))
-	if _gw < 0.01:
+	# reaching a grab takes Skier.GRAB_IN, letting go Skier.GRAB_OUT (quicker once he has landed);
+	# smoothstep eases the start and the end so the body moves into it rather than snapping
+	var t_in := float(GRAB_POSES[want].get("time_in", Skier.GRAB_IN)) if GRAB_POSES.has(want) else Skier.GRAB_IN
+	var g_rate := 1.0 / t_in if want != "" else (1.0 / Skier.GRAB_OUT if s.airborne else 6.0)
+	_gp = move_toward(_gp, 1.0 if want != "" else 0.0, g_rate * dt)
+	_gw = 1.0 if preview_grab != "" else smoothstep(0.0, 1.0, _gp)
+	# stages of a grab: knees come up first (skis still parallel), then the skis swing across,
+	# and the hand arrives on the ski as the cross finishes; the spine and tilt build throughout.
+	# Letting go runs the same stages backwards.
+	_gw_legs = _gw if preview_grab != "" else smoothstep(0.0, 0.45, _gp)
+	_gw_cross = _gw if preview_grab != "" else smoothstep(0.3, 0.88, _gp)
+	_gw_hand = _gw if preview_grab != "" else smoothstep(0.4, 1.0, _gp)
+	_gw_body = _gw if preview_grab != "" else smoothstep(0.1, 0.95, _gp)
+	if _gp < 0.005 and preview_grab == "":
 		_ag = ""
 	if GRAB_POSES.has(_ag):
 		if not _solved.has(_ag):
 			_solved[_ag] = _solve_grab(_ag, 0.86, 0.06)
-		pitch = lerpf(pitch, deg_to_rad(float(_solved[_ag]["pitch"])), _gw)
+		pitch = lerpf(pitch, deg_to_rad(float(_solved[_ag]["pitch"])), _gw_body)
 	pitch = _sm("pitch", pitch, 10.0, dt) + deg_to_rad(45.0) * _p["ftuck"]
 	# angulation: legs take the full inclination, the torso stays much more upright
 	var counter := _lean * 0.58
@@ -505,13 +523,17 @@ func _compute_pose(dt: float) -> void:
 		var fk := []
 		if not gp.is_empty():
 			var hip_local := Vector3(side * HIP_HALF, ph - 0.04, pz)
-			fk = _leg_fk(hip_local, side, _solved[_ag]["legs"][sd_key])
-			pass
+			# the cross happens in the hips: sweep from a tucked, parallel-ski leg (same hip and
+			# knee bend, no side swing or rotation) to the grab's angles, so the skis visibly
+			# swing across into the X instead of appearing crossed
+			var la: Array = _solved[_ag]["legs"][sd_key]
+			var ang := [la[0], lerpf(0.0, float(la[1]), _gw_cross), lerpf(0.0, float(la[2]), _gw_cross), la[3]]
+			fk = _leg_fk(hip_local, side, ang)
 			_fk["hip_" + sd_key] = LH * hip_local
 			_fk["knee_" + sd_key] = LH * (fk[0] as Vector3)
 		var foot := L * foot_local
 		if not fk.is_empty():
-			foot = (L * foot_local).lerp(LH * (fk[2] as Vector3), _gw)
+			foot = (L * foot_local).lerp(LH * (fk[2] as Vector3), _gw_legs)
 		if not s.airborne:
 			# both skis stay on the snow: raise/lower each foot onto the ground plane
 			var dy := (foot - root.origin).dot(up)
@@ -520,7 +542,7 @@ func _compute_pose(dt: float) -> void:
 		var yaw := plow * side
 		var sb := L.basis * Basis(Vector3.UP, yaw) * Basis(Vector3(1, 0, 0), -PI * 0.5 * layout)
 		if not gp.is_empty():
-			sb = sb.orthonormalized().slerp((LH.basis * (fk[1] as Basis)).orthonormalized(), _gw)
+			sb = sb.orthonormalized().slerp((LH.basis * (fk[1] as Basis)).orthonormalized(), _gw_legs)
 		if not s.airborne:
 			# pitch each ski to the snow under its own tip and tail (uneven ground)
 			var tip := foot - sb.z * 0.85
@@ -555,9 +577,9 @@ func _compute_pose(dt: float) -> void:
 	var pelvis := L * Vector3(0.0, ph, pz)
 	joints["pelvis"] = pelvis
 	var gpt: Dictionary = _solved.get(_ag, {})
-	var g_twist := float(gpt.get("twist", 0.0)) * _gw
-	var g_side := float(gpt.get("side", 0.0)) * _gw
-	var g_curve := float(GRAB_POSES[_ag].get("curve", 0.0)) * _gw if GRAB_POSES.has(_ag) else 0.0
+	var g_twist := float(gpt.get("twist", 0.0)) * _gw_body
+	var g_side := float(gpt.get("side", 0.0)) * _gw_body
+	var g_curve := float(GRAB_POSES[_ag].get("curve", 0.0)) * _gw_body if GRAB_POSES.has(_ag) else 0.0
 	var spine := spine_bases(L.basis * Basis(Vector3.UP, _torso_yaw + g_twist), counter + g_side, g_curve, pitch)
 	var tb: Basis = spine[2]
 	pelvis_basis = (spine[0] as Basis).orthonormalized()
@@ -578,7 +600,7 @@ func _compute_pose(dt: float) -> void:
 		if GRAB_POSES.has(_ag) and _fk.has("knee_" + sd):
 			# knees point where the hip rotation puts them (the grab's joint angles)
 			var fkk: Vector3 = _fk["knee_" + sd]
-			pole_pt = pole_pt.lerp(fkk + (fkk - (hip + ank) * 0.5), _gw)
+			pole_pt = pole_pt.lerp(fkk + (fkk - (hip + ank) * 0.5), _gw_legs)
 		joints["knee_" + sd] = ik2(hip, ank, THIGH, SHIN, pole_pt)
 	pelvis = (joints["hip_l"] + joints["hip_r"]) * 0.5 + hip_basis.y * 0.04
 	joints["pelvis"] = pelvis
@@ -641,9 +663,9 @@ func _compute_pose(dt: float) -> void:
 		var g := gl if sd == "l" else gr
 		var gpose: Dictionary = GRAB_POSES.get(_ag, {})
 		if not gpose.is_empty():
-			g = _gw if gpose.has(sd) else 0.0
+			g = _gw_hand if gpose.has(sd) else 0.0
 			if gpose.has("free") and gpose["free"].has(sd):
-				hand = hand.lerp(sh + tb * (gpose["free"][sd] as Vector3), _gw)   # the free arm styles it out
+				hand = hand.lerp(sh + tb * (gpose["free"][sd] as Vector3), _gw_body)   # the free arm styles it out
 		if g > 0.01 and gpose.has(sd):
 			var spec: Array = gpose[sd]
 			var gs := -1.0 if spec[0] == "l" else 1.0
