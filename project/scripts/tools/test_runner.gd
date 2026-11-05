@@ -1268,18 +1268,33 @@ func _grab_shots() -> void:
 			body._compute_pose(0.03)
 		var kl: float = rad_to_deg((body.joints["hip_l"] - body.joints["knee_l"]).angle_to(body.joints["ankle_l"] - body.joints["knee_l"]))
 		var kr: float = rad_to_deg((body.joints["hip_r"] - body.joints["knee_r"]).angle_to(body.joints["ankle_r"] - body.joints["knee_r"]))
-		var mid_ank: Vector3 = (body.joints["ankle_l"] + body.joints["ankle_r"]) * 0.5 - body.joints["pelvis"]
-		print("[TEST] grab %-12s skis sideways from the pelvis %.2f m (+ = his right)" % [gname, mid_ank.dot(body.torso_basis.x)])
 		print("[TEST] grab %-12s hand-to-ski gap %s  extra spine bend %.0f deg  knee angles %.0f / %.0f" % [gname,
 			str(body.grab_gap), rad_to_deg(body._grab_bend), kl, kr])
 		body._apply_parts()
-		var fwd := Vector3(sin(s.heading), 0, cos(s.heading))       # toward the chest (camera "front")
+		var fz: Vector3 = -body.pelvis_basis.z                # the way his hips face
+		var fwd := Vector3(fz.x, 0, fz.z).normalized()
 		var rt := fwd.cross(Vector3.UP)
 		var c: Vector3 = body.joints["pelvis"]
 		var tag := String(gname).replace(" ", "_")
+		var mid_ank: Vector3 = (body.joints["ankle_l"] + body.joints["ankle_r"]) * 0.5 - body.joints["pelvis"]
+		var up_spine: Vector3 = (body.joints["chest"] - body.joints["pelvis"]).normalized()
+		var sv: Dictionary = body._solved.get(gname, {})
+		print("[TEST] grab %-12s skis sideways from the pelvis %.2f m (+ = his right), %.2f m below it; chest leans %.0f deg forward, %.0f deg to his %s; solved pitch %.0f deg" % [
+			gname, mid_ank.dot(rt), -mid_ank.y, rad_to_deg(asin(clampf(up_spine.dot(fwd), -1, 1))), absf(rad_to_deg(asin(clampf(up_spine.dot(rt), -1, 1)))),
+			"right" if up_spine.dot(rt) > 0.0 else "left", float(sv.get("pitch", 0.0))])
 		c += Vector3.UP * 0.15
-		for v in [["front", fwd * 2.5 + rt * 0.5 + Vector3.UP * 0.3], ["side", rt * 2.5 + Vector3.UP * 0.2],
-				["back", -fwd * 2.4 - rt * 1.0 + Vector3.UP * 0.4], ["above", -rt * 1.6 + fwd * 1.0 + Vector3.UP * 1.9]]:
+		var views := [["front", fwd * 2.5 + Vector3.UP * 0.3], ["side", rt * 2.5 + Vector3.UP * 0.2],
+				["back", -fwd * 2.4 + Vector3.UP * 0.4], ["above", -rt * 1.6 + fwd * 1.0 + Vector3.UP * 1.9]]
+		if Game.test_args.get("angles", "4") == "8":
+			views = []
+			for k in 8:
+				var a := TAU * k / 8.0
+				views.append(["view%d" % k, (fwd * cos(a) + rt * sin(a)) * 2.3 + Vector3.UP * (0.25 if k % 2 == 0 else 0.9)])
+			# like the reference photo (mirrored): low in front, a little to his left (the grab side),
+			# looking up at him
+			var pd := (fwd * cos(deg_to_rad(60.0)) - rt * sin(deg_to_rad(60.0))) * cos(deg_to_rad(12.0)) + Vector3.DOWN * sin(deg_to_rad(12.0))
+			views.append(["photo", pd * 2.0 + Vector3.UP * 0.25])
+		for v in views:
 			_free_cam(c + v[1], c)
 			await _frames(3)
 			await _snap("grab_%s_%s" % [tag, v[0]])

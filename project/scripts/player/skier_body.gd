@@ -65,6 +65,13 @@ const GRAB_POSES := {
 	"Mute": {"l": ["r", -0.06, 1.0], "free": {"r": Vector3(0.3, 0.42, 0.05)},
 		"legs": {"l": [80.0, 40.0, 10.0, 105.0], "r": [85.0, -24.0, 20.0, 108.0]}, "pitch": 30.0, "twist": -0.2, "side": 0.3,
 		"skis": {"yaw": {"l": 28.0, "r": -28.0}, "gap": 0.06, "stack": 0.07, "side_off": -0.55}, "hips_yaw": 0.15, "roll": -0.45},
+	# preview only (not mapped to a key yet): upright spine curving to his LEFT (C-shape), legs
+	# curving left as well, skis tucked up close under him in a flat X, left hand down the left
+	# side onto the right ski by the boot, right arm up
+	"MuteNew": {"l": ["r", -0.3, 1.0], "free": {"r": Vector3(0.1, 0.56, 0.06)},
+		"legs": {"l": [105.0, 15.0, 10.0, 118.0], "r": [112.0, -20.0, 25.0, 122.0]}, "pitch": 12.0, "pitch_w": 25.0, "legs_w": 0.15,
+		"twist": 0.4, "side": 0.08, "curve": 0.62,
+		"skis": {"yaw": {"l": 28.0, "r": -28.0}, "gap": 0.06, "stack": 0.07, "side_off": -0.15}, "hips_yaw": 0.1},
 	"Safety": {"r": ["r", -0.02, 1.0], "free": {"l": Vector3(-0.45, 0.05, -0.1)},
 		"legs": {"l": [70.0, 6.0, 5.0, 100.0], "r": [88.0, 12.0, -5.0, 108.0]}, "pitch": 28.0, "twist": 0.12, "side": 0.12},
 	"Japan": {"l": ["r", 0.0, 1.0], "free": {"r": Vector3(0.4, 0.22, -0.05)},
@@ -89,11 +96,10 @@ const SPINE_LIMITS := {"pitch": [0.0, 70.0], "twist": [-0.45, 0.45], "side": [-0
 
 ## Body-frame geometry of a grab pose: returns the total hand-to-grab-point gap (m) beyond arm reach.
 func _grab_gap(g: Dictionary, legs: Dictionary, sp: Array, ph: float, pz: float) -> float:
-	var tb := Basis(Vector3.UP, sp[1] - float(g.get("hips_yaw", 0.0))) * Basis(Vector3(0, 0, 1), sp[2]) * Basis(Vector3(1, 0, 0), -deg_to_rad(sp[0]))
+	var sb3 := spine_bases(Basis(Vector3.UP, sp[1] - float(g.get("hips_yaw", 0.0))), sp[2], float(g.get("curve", 0.0)), deg_to_rad(sp[0]))
+	var tb: Basis = sb3[2]
 	var pelvis := Vector3(0, ph, pz)
-	var pr := deg_to_rad(sp[0])
-	var chest := pelvis + tb.y * 0.07 + (tb * Basis(Vector3(1, 0, 0), pr * 0.6)).y * 0.16 \
-		+ (tb * Basis(Vector3(1, 0, 0), pr * 0.25)).y * 0.16 + tb.y * (TORSO_LEN - 0.32)
+	var chest := pelvis + (sb3[0] as Basis).y * 0.23 + (sb3[1] as Basis).y * 0.16 + tb.y * (TORSO_LEN - 0.32)
 	var total := 0.0
 	for sd in ["l", "r"]:
 		if not g.has(sd):
@@ -130,8 +136,8 @@ func _solve_grab(name: String, ph: float, pz: float) -> Dictionary:
 			c += _ski_target_cost(g["skis"], lg, ph, pz)
 		for side in ["l", "r"]:
 			for i in 4:
-				c += pow((float(lg[side][i]) - float(legs0[side][i])) / 40.0, 2.0) * 1.0
-		c += pow((s2[0] - sp0[0]) / 40.0, 2.0) * 0.12 + pow((s2[1] - sp0[1]) / 0.6, 2.0) * 0.25 + pow((s2[2] - sp0[2]) / 0.5, 2.0) * 0.25
+				c += pow((float(lg[side][i]) - float(legs0[side][i])) / 40.0, 2.0) * float(g.get("legs_w", 1.0))
+		c += pow((s2[0] - sp0[0]) / 40.0, 2.0) * float(g.get("pitch_w", 0.12)) + pow((s2[1] - sp0[1]) / 0.6, 2.0) * 0.25 + pow((s2[2] - sp0[2]) / 0.5, 2.0) * 0.25
 		return c
 	var best: float = cost.call(legs, sp)
 	for step in [12.0, 6.0, 3.0, 1.5]:
@@ -556,7 +562,10 @@ func _compute_pose(dt: float) -> void:
 	var gpt: Dictionary = _solved.get(_ag, {})
 	var g_twist := float(gpt.get("twist", 0.0)) * _gw
 	var g_side := float(gpt.get("side", 0.0)) * _gw
-	var tb := L.basis * Basis(Vector3.UP, _torso_yaw + g_twist) * Basis(Vector3(0, 0, 1), counter + g_side) * Basis(Vector3(1, 0, 0), -pitch)
+	var g_curve := float(GRAB_POSES[_ag].get("curve", 0.0)) * _gw if GRAB_POSES.has(_ag) else 0.0
+	var spine := spine_bases(L.basis * Basis(Vector3.UP, _torso_yaw + g_twist), counter + g_side, g_curve, pitch)
+	var tb: Basis = spine[2]
+	pelvis_basis = (spine[0] as Basis).orthonormalized()
 	torso_basis = tb.orthonormalized()
 	var hip_basis := (LH.basis * Basis(Vector3.UP, _torso_yaw * 0.45) * Basis(Vector3(0, 0, 1), counter * 0.3)).orthonormalized()
 	var max_leg := (THIGH + SHIN) * 0.985
@@ -578,12 +587,12 @@ func _compute_pose(dt: float) -> void:
 		joints["knee_" + sd] = ik2(hip, ank, THIGH, SHIN, pole_pt)
 	pelvis = (joints["hip_l"] + joints["hip_r"]) * 0.5 + hip_basis.y * 0.04
 	joints["pelvis"] = pelvis
-	var waist := pelvis + tb.y * 0.07
+	var waist := pelvis + (spine[0] as Basis).y * 0.07
 	joints["waist"] = waist
 	# a spine, not a plank: the lower back takes a little of the bend, the mid back more, the upper
 	# back the rest, so a bent-over skier curves instead of hinging at the waist
-	var tb_low := tb * Basis(Vector3(1, 0, 0), pitch * 0.6)
-	var tb_mid := tb * Basis(Vector3(1, 0, 0), pitch * 0.25)
+	var tb_low: Basis = spine[0]
+	var tb_mid: Basis = spine[1]
 	var lumbar := waist + tb_low.y * 0.16
 	var thoracic := lumbar + tb_mid.y * 0.16
 	var chest := thoracic + tb.y * (TORSO_LEN - 0.32)
@@ -957,8 +966,14 @@ func _apply_parts() -> void:
 	for sd in ["l", "r"]:
 		(parts["ski_" + sd].material_override as ShaderMaterial).set_shader_parameter("bend", bend)
 	var tb := torso_basis
-	parts["pelvis"].global_transform = Transform3D(tb, joints["pelvis"])
-	parts["torso"].global_transform = Transform3D(tb, joints["waist"])
+	parts["pelvis"].global_transform = Transform3D(pelvis_basis, joints["pelvis"])
+	# the jacket follows the spine's chord (waist to chest), so a curved back doesn't leave the
+	# shoulders hanging off the side of a rigid torso
+	var chord: Vector3 = joints["chest"] - joints.get("waist", joints["pelvis"])
+	var torso_b := tb
+	if chord.length() > 0.05:
+		torso_b = _basis_y(chord.normalized(), tb.x)
+	parts["torso"].global_transform = Transform3D(torso_b, joints.get("waist", joints["pelvis"]))
 	parts["stripe"].global_transform = Transform3D(tb, joints["waist"] + tb.y * 0.27)
 	parts["collar"].global_transform = Transform3D(tb, joints["chest"] - tb.y * 0.02)
 	parts["hood"].global_transform = Transform3D(tb, joints["chest"] - tb.y * 0.07 + tb.z * 0.05)
@@ -1014,6 +1029,16 @@ func _apply_parts() -> void:
 
 
 var _sk_shown := false
+var pelvis_basis := Basis.IDENTITY
+
+
+## Spine as three segments on top of a base frame: lower back, mid back, upper back.  The forward
+## bend (pitch) and the sideways bend (curve, + = top goes to his left) are shared out so the spine
+## curves instead of hinging; `side` tilts the whole spine.  Returns [low, mid, top] bases.
+static func spine_bases(base: Basis, side: float, curve: float, pitch: float) -> Array:
+	return [base * Basis(Vector3(0, 0, 1), side + curve * 0.2) * Basis(Vector3(1, 0, 0), -pitch * 0.4),
+		base * Basis(Vector3(0, 0, 1), side + curve * 0.55) * Basis(Vector3(1, 0, 0), -pitch * 0.75),
+		base * Basis(Vector3(0, 0, 1), side + curve) * Basis(Vector3(1, 0, 0), -pitch)]
 
 
 func _set_skeleton(on: bool) -> void:
