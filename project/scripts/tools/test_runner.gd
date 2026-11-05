@@ -1250,7 +1250,10 @@ func _grab_shots() -> void:
 	world.spawn(st["pos"], st["yaw"])
 	await _frames(10)
 	s.set_physics_process(false)
+	var only: String = Game.test_args.get("only", "")
 	for gname in body.GRAB_POSES:
+		if only != "" and gname != only:
+			continue
 		s.teleport(st["pos"], st["yaw"])
 		s.position.y += 2.5
 		s.airborne = true

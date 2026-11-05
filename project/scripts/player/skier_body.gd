@@ -59,8 +59,10 @@ const BOOT_LEAN := 15.0        # shin leans this far forward of the boot's up ax
 const GRAB_POSES := {
 	# relaxed, real-world shapes: knees tucked ~90-110 deg, skis close to parallel with a light
 	# tweak, a little twist toward the grab, free arm out to the side for balance
-	"Mute": {"l": ["r", -0.08, 1.0], "free": {"r": Vector3(0.45, 0.05, -0.1)},
-		"legs": {"l": [70.0, 5.0, 10.0, 100.0], "r": [85.0, -8.0, 15.0, 105.0]}, "pitch": 30.0, "twist": -0.2, "side": -0.12},
+	# reference photo: both skis pulled out to the left side and crossed, knees bent, the upper
+	# body counter-leaning right, left hand across onto the right ski by the boot, right arm high
+	"Mute": {"l": ["r", -0.06, 1.0], "free": {"r": Vector3(0.3, 0.42, 0.05)},
+		"legs": {"l": [70.0, 32.0, 20.0, 100.0], "r": [82.0, -22.0, 28.0, 108.0]}, "pitch": 26.0, "twist": -0.3, "side": 0.28},
 	"Safety": {"r": ["r", -0.02, 1.0], "free": {"l": Vector3(-0.45, 0.05, -0.1)},
 		"legs": {"l": [70.0, 6.0, 5.0, 100.0], "r": [88.0, 12.0, -5.0, 108.0]}, "pitch": 28.0, "twist": 0.12, "side": 0.12},
 	"Japan": {"l": ["r", 0.0, 1.0], "free": {"r": Vector3(0.4, 0.22, -0.05)},
