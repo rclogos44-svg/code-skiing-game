@@ -1308,7 +1308,11 @@ func _grab_anim() -> void:
 	var cdir: Vector3 = {"front": -fz * 2.4 + rt * 0.5, "side": rt * 2.4, "front3q": (-fz + rt * 0.8).normalized() * 2.4}[view]
 	var shot := 0
 	for i in 160:
-		s.scripted_input = {key: 1.0} if i < 108 else {}
+		var keys := {}
+		if i < 108:
+			for k in key.split(","):
+				keys[k] = 1.0
+		s.scripted_input = keys
 		s.step(1.0 / 120.0)
 		s.time += 1.0 / 120.0
 		s._cur_xform = s._compose_xform()
@@ -1374,7 +1378,9 @@ func _grab_shots() -> void:
 				views.append(["view%d" % k, (fwd * cos(a) + rt * sin(a)) * 2.3 + Vector3.UP * (0.25 if k % 2 == 0 else 0.9)])
 			# like the reference photo (mirrored): low in front, a little to his left (the grab side),
 			# looking up at him
-			var pd := (fwd * cos(deg_to_rad(60.0)) - rt * sin(deg_to_rad(60.0))) * cos(deg_to_rad(12.0)) + Vector3.DOWN * sin(deg_to_rad(12.0))
+			var az := deg_to_rad(float(Game.test_args.get("photo_az", "60")))     # from his front toward his left
+			var el := deg_to_rad(float(Game.test_args.get("photo_el", "12")))     # camera below him
+			var pd := (fwd * cos(az) - rt * sin(az)) * cos(el) + Vector3.DOWN * sin(el)
 			views.append(["photo", pd * 2.0 + Vector3.UP * 0.25])
 		for v in views:
 			_free_cam(c + v[1], c)

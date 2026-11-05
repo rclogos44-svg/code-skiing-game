@@ -421,3 +421,14 @@ no map, parks, keep the ragdoll crashes, black baggy gear, only flips, spins and
 - `--test=grab_anim` renders the live grab every 0.1 s. Physics 91/91, including the timing
   (mute 0.27 in at 0.25 s, fully in at 0.78 s, out 0.37 s after letting go) and the cross
   (skis 0 deg apart at 0.2 s, 18 at 0.4 s, 45 at 0.6 s).
+
+## Skeleton feet; tail grab copied from photos
+
+- Skeleton view shows feet: heel and toe joints on each boot (foot triangle). Legs gain an optional
+  fifth joint, ankle boot flex (-5..15 deg on top of the boot's 15 deg lean).
+- Tail grab rebuilt from three reference photos (skeleton + feet drawn on each,
+  `build/pose_fit/tail_keypoints.py`): knees up in front, shins folded back (knee ~140 deg) so the
+  skis hang nearly vertical tips-down with the tails up behind at chest height; right hand on the
+  end of the right tail with the shoulder pulled back; left arm forward and up; torso upright.
+  Compared side by side with the photos from a matching side camera. Eases in over 0.6 s.
+- Physics 91/91 (tail grab off the medium kicker held, named, clean landing).

@@ -74,8 +74,13 @@ const GRAB_POSES := {
 		"legs": {"l": [70.0, 6.0, 5.0, 100.0], "r": [88.0, 12.0, -5.0, 108.0]}, "pitch": 28.0, "twist": 0.12, "side": 0.12},
 	"Japan": {"l": ["r", 0.0, 1.0], "free": {"r": Vector3(0.4, 0.22, -0.05)},
 		"legs": {"l": [45.0, 5.0, 10.0, 118.0], "r": [55.0, -6.0, 18.0, 125.0]}, "pitch": 22.0, "twist": -0.2, "side": -0.1},
-	"Tail": {"r": ["r", 0.6, 1.0], "free": {"l": Vector3(-0.42, 0.08, -0.2)},
-		"legs": {"l": [75.0, 5.0, 5.0, 100.0], "r": [92.0, 8.0, -5.0, 95.0]}, "pitch": 24.0, "twist": 0.25, "side": 0.12},
+	# copied from three reference photos (skeletons drawn on them): knees up in front, shins folded
+	# right back so the skis hang nearly vertical, tips down, tails up behind at chest height; the
+	# right hand reaches back to the end of the right tail (shoulder pulled back), left arm reaches
+	# forward and up, torso nearly upright
+	"Tail": {"r": ["r", 0.68, 1.0], "free": {"l": Vector3(-0.1, 0.25, -0.48)},
+		"legs": {"l": [50.0, 8.0, 0.0, 138.0, 0.0], "r": [48.0, 16.0, -6.0, 140.0, 0.0]}, "pitch": 14.0, "pitch_w": 6.0,
+		"legs_w": 3.0, "twist": -0.35, "side": 0.05, "time_in": 0.6},
 	"Tip": {"l": ["l", -0.52, 1.0], "free": {"r": Vector3(0.42, 0.08, 0.05)},
 		"legs": {"l": [100.0, 6.0, 0.0, 80.0], "r": [72.0, 5.0, 5.0, 100.0]}, "pitch": 38.0, "twist": 0.12, "side": -0.08},
 	"Truck Driver": {"l": ["l", -0.3, 1.0], "r": ["r", -0.3, 1.0],
