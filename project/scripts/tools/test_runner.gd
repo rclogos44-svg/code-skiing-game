@@ -1272,12 +1272,12 @@ func _grab_shots() -> void:
 		var rt := fwd.cross(Vector3.UP)
 		var c: Vector3 = body.joints["pelvis"]
 		var tag := String(gname).replace(" ", "_")
-		_free_cam(c + rt * 2.6 + fwd * 0.4 + Vector3.UP * 0.2, c)
-		await _frames(3)
-		await _snap("grab_%s_side" % tag)
-		_free_cam(c + fwd * 2.2 - rt * 1.3 + Vector3.UP * 0.5, c)
-		await _frames(3)
-		await _snap("grab_%s_front" % tag)
+		c += Vector3.UP * 0.15
+		for v in [["front", fwd * 2.5 + rt * 0.5 + Vector3.UP * 0.3], ["side", rt * 2.5 + Vector3.UP * 0.2],
+				["back", -fwd * 2.4 - rt * 1.0 + Vector3.UP * 0.4], ["above", -rt * 1.6 + fwd * 1.0 + Vector3.UP * 1.9]]:
+			_free_cam(c + v[1], c)
+			await _frames(3)
+			await _snap("grab_%s_%s" % [tag, v[0]])
 	body.preview_grab = ""
 	s.set_physics_process(true)
 

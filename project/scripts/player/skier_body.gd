@@ -57,20 +57,22 @@ var _hands := {}
 const LEG_LIMITS := {"flex": [-15.0, 125.0], "abd": [-25.0, 45.0], "rot": [-40.0, 40.0], "knee": [0.0, 140.0]}
 const BOOT_LEAN := 15.0        # shin leans this far forward of the boot's up axis (deg)
 const GRAB_POSES := {
-	"Mute": {"l": ["r", -0.2, 1.0], "free": {"r": Vector3(0.32, 0.42, 0.05)},
-		"legs": {"l": [65.0, 8.0, 35.0, 105.0], "r": [95.0, -15.0, 32.0, 112.0]}, "pitch": 32.0, "twist": -0.4, "side": -0.25},
-	"Safety": {"r": ["r", -0.02, 1.0], "free": {"l": Vector3(-0.45, 0.25, -0.15)},
-		"legs": {"l": [55.0, 5.0, 10.0, 95.0], "r": [92.0, 28.0, -10.0, 122.0]}, "pitch": 30.0, "twist": 0.2, "side": 0.3},
-	"Japan": {"l": ["r", -0.1, 1.0], "free": {"r": Vector3(0.28, 0.45, -0.1)},
-		"legs": {"l": [25.0, 5.0, 18.0, 125.0], "r": [38.0, -12.0, 30.0, 135.0]}, "pitch": 18.0, "twist": -0.35, "side": -0.2},
-	"Tail": {"r": ["r", 0.6, 1.0], "free": {"l": Vector3(-0.35, 0.3, -0.3)},
-		"legs": {"l": [70.0, 5.0, 5.0, 95.0], "r": [100.0, 12.0, -5.0, 82.0]}, "pitch": 26.0, "twist": 0.35, "side": 0.25},
-	"Tip": {"l": ["l", -0.7, 1.0], "free": {"r": Vector3(0.38, 0.3, 0.2)},
-		"legs": {"l": [118.0, 10.0, 0.0, 62.0], "r": [70.0, 5.0, 5.0, 100.0]}, "pitch": 40.0, "twist": 0.2, "side": -0.15},
-	"Truck Driver": {"l": ["l", -0.45, 1.0], "r": ["r", -0.45, 1.0],
-		"legs": {"l": [110.0, 8.0, 0.0, 88.0], "r": [110.0, 8.0, 0.0, 88.0]}, "pitch": 40.0, "twist": 0.0, "side": 0.0},
-	"Blunt": {"r": ["r", 0.72, 1.0], "free": {"l": Vector3(-0.32, 0.45, 0.0)},
-		"legs": {"l": [30.0, 5.0, 5.0, 120.0], "r": [32.0, 15.0, -10.0, 135.0]}, "pitch": 16.0, "twist": 0.4, "side": 0.25},
+	# relaxed, real-world shapes: knees tucked ~90-110 deg, skis close to parallel with a light
+	# tweak, a little twist toward the grab, free arm out to the side for balance
+	"Mute": {"l": ["r", -0.08, 1.0], "free": {"r": Vector3(0.45, 0.05, -0.1)},
+		"legs": {"l": [70.0, 5.0, 10.0, 100.0], "r": [85.0, -8.0, 15.0, 105.0]}, "pitch": 30.0, "twist": -0.2, "side": -0.12},
+	"Safety": {"r": ["r", -0.02, 1.0], "free": {"l": Vector3(-0.45, 0.05, -0.1)},
+		"legs": {"l": [70.0, 6.0, 5.0, 100.0], "r": [88.0, 12.0, -5.0, 108.0]}, "pitch": 28.0, "twist": 0.12, "side": 0.12},
+	"Japan": {"l": ["r", 0.0, 1.0], "free": {"r": Vector3(0.4, 0.22, -0.05)},
+		"legs": {"l": [45.0, 5.0, 10.0, 118.0], "r": [55.0, -6.0, 18.0, 125.0]}, "pitch": 22.0, "twist": -0.2, "side": -0.1},
+	"Tail": {"r": ["r", 0.6, 1.0], "free": {"l": Vector3(-0.42, 0.08, -0.2)},
+		"legs": {"l": [75.0, 5.0, 5.0, 100.0], "r": [92.0, 8.0, -5.0, 95.0]}, "pitch": 24.0, "twist": 0.25, "side": 0.12},
+	"Tip": {"l": ["l", -0.52, 1.0], "free": {"r": Vector3(0.42, 0.08, 0.05)},
+		"legs": {"l": [100.0, 6.0, 0.0, 80.0], "r": [72.0, 5.0, 5.0, 100.0]}, "pitch": 38.0, "twist": 0.12, "side": -0.08},
+	"Truck Driver": {"l": ["l", -0.3, 1.0], "r": ["r", -0.3, 1.0],
+		"legs": {"l": [95.0, 8.0, 0.0, 95.0], "r": [95.0, 8.0, 0.0, 95.0]}, "pitch": 38.0, "twist": 0.0, "side": 0.0},
+	"Blunt": {"r": ["r", 0.72, 1.0], "free": {"l": Vector3(-0.4, 0.22, -0.05)},
+		"legs": {"l": [55.0, 5.0, 5.0, 115.0], "r": [55.0, 10.0, -8.0, 128.0]}, "pitch": 18.0, "twist": 0.25, "side": 0.12},
 }
 var _grab_bend := 0.0            # extra spine bend (rad) so an out-of-reach hand gets to the ski
 var grab_gap := {}               # hand-to-ski distance per hand (m), for checking the poses
@@ -78,7 +80,7 @@ var _fk := {}                    # leg forward kinematics for the current grab: 
 
 
 var _solved := {}                # grab name -> pose solved so the hand really holds the ski
-const SPINE_LIMITS := {"pitch": [0.0, 85.0], "twist": [-0.75, 0.75], "side": [-0.55, 0.55]}
+const SPINE_LIMITS := {"pitch": [0.0, 70.0], "twist": [-0.45, 0.45], "side": [-0.3, 0.3]}
 
 
 ## Body-frame geometry of a grab pose: returns the total hand-to-grab-point gap (m) beyond arm reach.
@@ -118,8 +120,8 @@ func _solve_grab(name: String, ph: float, pz: float) -> Dictionary:
 		var c := pow(_grab_gap(g, lg, s2, ph, pz), 2.0) * 400.0
 		for side in ["l", "r"]:
 			for i in 4:
-				c += pow((float(lg[side][i]) - float(legs0[side][i])) / 40.0, 2.0) * 0.25
-		c += pow((s2[0] - sp0[0]) / 40.0, 2.0) * 0.05 + pow((s2[1] - sp0[1]) / 0.6, 2.0) * 0.05 + pow((s2[2] - sp0[2]) / 0.5, 2.0) * 0.05
+				c += pow((float(lg[side][i]) - float(legs0[side][i])) / 40.0, 2.0) * 1.0
+		c += pow((s2[0] - sp0[0]) / 40.0, 2.0) * 0.12 + pow((s2[1] - sp0[1]) / 0.6, 2.0) * 0.25 + pow((s2[2] - sp0[2]) / 0.5, 2.0) * 0.25
 		return c
 	var best: float = cost.call(legs, sp)
 	for step in [12.0, 6.0, 3.0, 1.5]:
@@ -397,9 +399,9 @@ func _compute_pose(dt: float) -> void:
 	var want := preview_grab if preview_grab != "" else live
 	if want != "":
 		if _ag != "" and want != _ag and preview_grab == "":
-			_gw *= 0.35                     # switching grabs: ease out of the old one, into the new
+			_gw *= 0.6                      # switching grabs: ease out of the old one, into the new
 		_ag = want
-	_gw = 1.0 if preview_grab != "" else lerpf(_gw, 1.0 if want != "" else 0.0, 1.0 - exp(-12.0 * dt))
+	_gw = 1.0 if preview_grab != "" else lerpf(_gw, 1.0 if want != "" else 0.0, 1.0 - exp(-7.0 * dt))
 	if _gw < 0.01:
 		_ag = ""
 	if GRAB_POSES.has(_ag):
