@@ -352,3 +352,17 @@ no map, parks, keep the ragdoll crashes, black baggy gear, only flips, spins and
 - Tests: physics 80/80; gameplay includes a right 360 off the medium kicker done the player's way
   (hold Left, pop, Right in the air) - lands clean. Powder Rush / Widowmaker race bots fail (they
   relied on the tuck; races aren't reachable in the park game).
+
+## Layout flip, pole push, helmet and goggles, wider skis
+
+- **Layout backflip:** while flipping (not tucked), the knees bend so the shins and boots fold
+  back behind the thighs and the skis run parallel to the body; arms go wide. Near the end of
+  the rotation the legs swing back under for a flat landing. Pulling into more flips still tucks.
+- **Pole push:** a real double-pole cycle (quick reach, plant ahead with baskets angled back,
+  crunch and drive the hands down past the hips until the poles trail, recover) instead of a bob.
+- **Helmet & goggles** after the player's reference photo: grey matte shell down over the ears,
+  curved brim, flush black vents, black ear pads and chin strap; big cylindrical blue-tinted
+  lens in a black frame, black strap round the helmet. (The curved goggle/brim bands were wound
+  inward and invisible from outside - now double-sided.)
+- **Skis** wider: ~126 mm tips, ~104 mm underfoot.
+- Physics 80/80. Checked by screenshots: helmet front/side, push strokes, double backflip frames.

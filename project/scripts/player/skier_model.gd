@@ -141,70 +141,80 @@ static func pelvis() -> ArrayMesh:
 
 ## Park helmet: round shell, the back drops lower than the front, with a short brim over the
 ## goggles.  Origin at the head centre.
+## Park helmet like a modern in-mould shell: smooth and round, sides down over the ears, the back
+## lower still.  Origin at the head centre.
 static func helmet() -> ArrayMesh:
-	var rings := []
-	for i in 10:
-		var t := float(i) / 9.0
-		var a := lerpf(-0.42, PI * 0.5, t)
-		var r := 0.137 * cos(a)
-		var y := 0.142 * sin(a) + 0.01
-		var back_drop := (1.0 - t) * 0.03
-		rings.append([y - back_drop * 0.5, r * 0.98, r * 1.04, r * 1.1, 0.004])
-	rings.append([0.152, 0.0, 0.0, 0.0])
-	rings[0] = [rings[0][0] - 0.02, rings[0][1] * 0.97, rings[0][2] * 0.92, rings[0][3] * 1.06, 0.01]
-	rings.insert(0, [rings[0][0], 0.0, 0.0, 0.0])
-	return shell(rings, 24)
+	var rings := [[-0.09, 0.0, 0.0, 0.0, 0.012]]
+	for i in 12:
+		var t := float(i) / 11.0
+		var a := lerpf(-0.55, PI * 0.5, t)
+		var r := 0.142 * cos(a)
+		var y := 0.15 * sin(a) + 0.012
+		rings.append([y, r * 0.99, r * 1.05, r * 1.12, 0.006 * (1.0 - t)])
+	rings.append([0.162, 0.0, 0.0, 0.0])
+	return shell(rings, 28)
 
 
-## Helmet details: brim, ear pads, chin strap, vents.  Returns [brim+pads (shell colour), vents+strap].
 static func helmet_details() -> Array:
+	# brim: a curved peak over the goggles, in the shell colour
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	_box(st, Vector3(-0.095, 0.075, -0.17), Vector3(0.095, 0.088, -0.12))        # brim over the goggles
-	for x in [-1.0, 1.0]:
-		_box(st, Vector3(x * 0.128 - 0.018, -0.07, -0.04), Vector3(x * 0.128 + 0.018, 0.01, 0.05))  # ear pads
+	_arc_band(st, -PI * 0.5 - 0.95, -PI * 0.5 + 0.95, 0.055, 0.078, 0.148, 0.175, 0.03, 20)
 	st.generate_normals()
+	# black: ear pads, vents on top, chin strap
 	var dk := SurfaceTool.new()
 	dk.begin(Mesh.PRIMITIVE_TRIANGLES)
-	for x in [-0.05, 0.0, 0.05]:
-		_box(dk, Vector3(x - 0.008, 0.138, -0.07), Vector3(x + 0.008, 0.156, 0.06))   # vents
 	for x in [-1.0, 1.0]:
-		_box(dk, Vector3(x * 0.112 - 0.006, -0.16, -0.03), Vector3(x * 0.112 + 0.006, -0.06, -0.01))  # strap
-	_box(dk, Vector3(-0.11, -0.172, -0.06), Vector3(0.11, -0.158, -0.02))
+		_box(dk, Vector3(x * 0.13 - 0.02, -0.11, -0.04), Vector3(x * 0.13 + 0.02, -0.02, 0.06))  # ear pads
+		_box(dk, Vector3(x * 0.118 - 0.005, -0.17, -0.03), Vector3(x * 0.118 + 0.005, -0.1, -0.01))  # strap
+	for x in [-0.045, 0.045]:
+		_box(dk, Vector3(x - 0.012, 0.128, -0.085), Vector3(x + 0.012, 0.15, -0.035))   # front vents (flush)
+	_box(dk, Vector3(-0.01, 0.145, 0.02), Vector3(0.01, 0.163, 0.07))
+	_box(dk, Vector3(-0.1, -0.18, -0.06), Vector3(0.1, -0.166, -0.025))           # chin strap
 	dk.generate_normals()
 	return [st.commit(), dk.commit()]
 
 
+## Curved band (part of an elliptical cylinder) between angles a0..a1 (0 = +X, -PI/2 = front),
+## heights y0..y1, half-axes rx / rz.  Closed with a little thickness.
+static func _arc_band(st: SurfaceTool, a0: float, a1: float, y0: float, y1: float, rx: float, rz: float, th := 0.006, segs := 20) -> void:
+	for i in segs:
+		var u0 := lerpf(a0, a1, float(i) / segs)
+		var u1 := lerpf(a0, a1, float(i + 1) / segs)
+		for o: float in [0.0, -th]:
+			var p00 := Vector3(cos(u0) * (rx + o), y0, sin(u0) * (rz + o))
+			var p10 := Vector3(cos(u1) * (rx + o), y0, sin(u1) * (rz + o))
+			var p01 := Vector3(cos(u0) * (rx + o), y1, sin(u0) * (rz + o))
+			var p11 := Vector3(cos(u1) * (rx + o), y1, sin(u1) * (rz + o))
+			for v in ([p00, p01, p10, p10, p01, p11] if o < 0.0 else [p00, p10, p01, p10, p11, p01]):   # outer face outward, inner inward
+				st.add_vertex(v)
+		# top and bottom lips
+		for y: float in [y0, y1]:
+			var q0 := Vector3(cos(u0) * rx, y, sin(u0) * rz)
+			var q1 := Vector3(cos(u1) * rx, y, sin(u1) * rz)
+			var q2 := Vector3(cos(u1) * (rx - th), y, sin(u1) * (rz - th))
+			var q3 := Vector3(cos(u0) * (rx - th), y, sin(u0) * (rz - th))
+			for v in [q0, q1, q2, q0, q2, q3, q0, q2, q1, q0, q3, q2]:   # both sides
+				st.add_vertex(v)
+
+
+## Big frameless-look goggles over the helmet: [strap, lens, frame].  Origin at the head centre
+## (+0.025 up); -Z is forward.  Cylindrical lens wider than the face, black frame behind its edge,
+## black strap around the helmet.
 static func goggles() -> Array:
-	# strap band + curved lens in front (-Z is forward)
-	var band := SurfaceTool.new()
-	band.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var strap := SurfaceTool.new()
+	strap.begin(Mesh.PRIMITIVE_TRIANGLES)
+	_arc_band(strap, -PI * 0.5 + 1.05, PI * 1.5 - 1.05, -0.022, 0.018, 0.152, 0.171, 0.006, 26)
+	strap.generate_normals()
 	var lens := SurfaceTool.new()
 	lens.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var segs := 24
-	for s in segs:
-		var a0 := TAU * float(s) / segs
-		var a1 := TAU * float(s + 1) / segs
-		var r := 0.135
-		var front0 := -sin(a0) > 0.42
-		var front1 := -sin(a1) > 0.42
-		var st := lens if (front0 and front1) else band
-		var h0 := -0.014 if not (front0 and front1) else -0.042
-		var h1 := 0.024 if not (front0 and front1) else 0.038
-		var rr := r + (0.016 if (front0 and front1) else 0.004)
-		var p00 := Vector3(cos(a0) * rr * 0.95, h0, sin(a0) * rr * 1.1)
-		var p10 := Vector3(cos(a1) * rr * 0.95, h0, sin(a1) * rr * 1.1)
-		var p01 := Vector3(cos(a0) * rr * 0.95, h1, sin(a0) * rr * 1.1)
-		var p11 := Vector3(cos(a1) * rr * 0.95, h1, sin(a1) * rr * 1.1)
-		st.add_vertex(p00)
-		st.add_vertex(p01)
-		st.add_vertex(p10)
-		st.add_vertex(p10)
-		st.add_vertex(p01)
-		st.add_vertex(p11)
-	band.generate_normals()
+	_arc_band(lens, -PI * 0.5 - 1.0, -PI * 0.5 + 1.0, -0.05, 0.036, 0.142, 0.168, 0.004, 24)
 	lens.generate_normals()
-	return [band.commit(), lens.commit()]
+	var frame := SurfaceTool.new()
+	frame.begin(Mesh.PRIMITIVE_TRIANGLES)
+	_arc_band(frame, -PI * 0.5 - 1.1, -PI * 0.5 + 1.1, -0.056, 0.042, 0.137, 0.161, 0.018, 24)
+	frame.generate_normals()
+	return [strap.commit(), lens.commit(), frame.commit()]
 
 
 static func boot() -> ArrayMesh:
@@ -251,7 +261,7 @@ static func ski() -> Array:
 	for i in steps + 1:
 		var t := float(i) / steps            # 0 = tail, 1 = tip
 		var z := lerpf(length * 0.45, -length * 0.55, t)
-		var w := 0.052 - 0.012 * sin(t * PI)  # sidecut
+		var w := 0.063 - 0.011 * sin(t * PI)  # sidecut: ~126 mm tips, ~104 mm underfoot (wide park ski)
 		var y := 0.0
 		if t > 0.88:
 			var k := (t - 0.88) / 0.12

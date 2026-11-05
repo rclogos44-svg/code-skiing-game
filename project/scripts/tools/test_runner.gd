@@ -1237,6 +1237,30 @@ func _park_shots() -> void:
 		_free_cam(c + v[1] + Vector3.UP * 0.25, c)
 		await _frames(4)
 		await _snap(v[0])
+	var head: Vector3 = world.body.joints["head"]
+	var hbz: Vector3 = world.body.ski_l.basis.z          # ski tips point -Z: the skier faces -hbz
+	hbz = Vector3(hbz.x, 0, hbz.z).normalized()
+	var hbx: Vector3 = hbz.cross(Vector3.UP)
+	for v in [["helmet_front", -hbz * 0.75 + hbx * 0.3], ["helmet_side", hbx * 0.8 - hbz * 0.25]]:
+		_free_cam(head + v[1] + Vector3.UP * 0.08, head)
+		await _frames(4)
+		await _snap(v[0])
+	# pole push from a standstill on the staging area: frames through two strokes
+	s.teleport(st["pos"], st["yaw"])
+	for i in 24:
+		s.scripted_input = {"tuck": 1.0}
+		for f in 12:
+			s.step(1.0 / 120.0)
+			s.time += 1.0 / 120.0
+		s._cur_xform = s._compose_xform()
+		s._prev_xform = s._cur_xform
+		if i >= 12 and i % 2 == 0:
+			var pc := s.position + Vector3.UP * 0.9
+			_free_cam(pc + rt * 3.0 + fwd * 0.6 + Vector3.UP * 0.2, pc)
+			await _frames(2)
+			await _snap("push_%d" % ((i - 12) / 2))
+		else:
+			await _frames(1)
 	# a right 360 off the medium kicker: frames through the wind-up and the spin, and a double
 	# backflip off the large one (first flip laid out, then tucked)
 	for trick in ["360", "double"]:
@@ -1271,7 +1295,7 @@ func _park_shots() -> void:
 				await _frames(2)
 				await _snap("%s_%d" % [trick, shot])
 				shot += 1
-				next_t = tt + (0.12 if trick == "360" else 0.2)
+				next_t = tt + (0.12 if trick == "360" else 0.16)
 			if shot > 0 and not s.airborne and to_lip < -3.0:
 				break
 		print("[TEST] %s: rotation %.0f deg, flips %.2f, crashed %s" % [trick, rad_to_deg(s.air_rotation), s.air_pitch / TAU, s.is_crashed])

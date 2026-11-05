@@ -44,6 +44,8 @@ var _plant_side := 1.0
 var _last_steer_sign := 0.0
 var _stop_pop := 0.0
 var _prev_edgeb := 0.0
+var _push_ph := 0.0            # double-pole push cycle 0..1 (reach, push, recover)
+var _push_amt := 0.0
 var _hands := {}              # spring-smoothed hand offsets: arms settle after the body
 
 
@@ -53,7 +55,7 @@ func setup(s: Skier) -> void:
 	global_transform = Transform3D.IDENTITY
 	_build()
 	ragdoll.terrain = s.terrain
-	for k in ["ftuck", "chatter", "pelvis_h", "pelvis_z", "pitch", "counter", "hand_spread", "plow", "feet_up", "arms_air", "tuck", "grab_l", "grab_r", "brake", "edgeb"]:
+	for k in ["layout", "ftuck", "chatter", "pelvis_h", "pelvis_z", "pitch", "counter", "hand_spread", "plow", "feet_up", "arms_air", "tuck", "grab_l", "grab_r", "brake", "edgeb"]:
 		_p[k] = 0.0
 	_p["pelvis_h"] = 0.9
 
@@ -65,10 +67,10 @@ func _build() -> void:
 	var jacket := SkierModel.mat(Color(0.05, 0.052, 0.058), 0.78, 0.0, {"rim": 0.25})
 	var jacket_dark := SkierModel.mat(Color(0.11, 0.115, 0.125), 0.8)
 	var pants := SkierModel.mat(Color(0.085, 0.088, 0.095), 0.92, 0.0, {"rim": 0.15})
-	var helmet := SkierModel.mat(Color(0.05, 0.05, 0.055), 0.22, 0.0, {"clearcoat": 0.9})
+	var helmet := SkierModel.mat(Color(0.56, 0.57, 0.55), 0.55, 0.0, {"clearcoat": 0.3})
 	var skin := SkierModel.mat(Color(0.85, 0.66, 0.55), 0.6)
-	var lens := SkierModel.mat(Color(1.0, 0.55, 0.12), 0.06, 0.9)
-	var strap := SkierModel.mat(Color(0.08, 0.08, 0.09), 0.7)
+	var lens := SkierModel.mat(Color(0.12, 0.32, 0.85), 0.04, 0.85, {"clearcoat": 1.0})
+	var strap := SkierModel.mat(Color(0.03, 0.03, 0.035), 0.6)
 	var glove := SkierModel.mat(Color(0.06, 0.06, 0.07), 0.55)
 	var boot := SkierModel.mat(Color(0.13, 0.135, 0.15), 0.35, 0.0, {"clearcoat": 0.5})
 	var bind := SkierModel.mat(Color(0.12, 0.12, 0.13), 0.4, 0.4)
@@ -91,6 +93,7 @@ func _build() -> void:
 	var g := SkierModel.goggles()
 	_add("goggle_band", g[0], strap, true)
 	_add("goggle_lens", g[1], lens, true)
+	_add("goggle_frame", g[2], strap, true)
 	for side in ["l", "r"]:
 		_add("uarm_" + side, SkierModel.limb(0.058, 0.05, UPPER_ARM), jacket)
 		_add("farm_" + side, SkierModel.limb(0.05, 0.043, FOREARM), jacket)
@@ -236,15 +239,20 @@ func _compute_pose(dt: float) -> void:
 	var ph := 0.86 - 0.22 * tuck - 0.24 * s.charge - 0.30 * s.compression + _absorb - 0.15 * edgeb + 0.07 * _stop_pop - 0.3 * gear
 	# flex through the turn, extend through the edge change (pelvis rises as the lean passes zero)
 	ph -= 0.12 * turn_amt
-	if s.pushing > 0.5:
-		ph = 0.86 + sin(s.time * 7.0) * 0.03
+	# double-pole push: reach forward, plant, crunch and drive the arms back past the hips, recover
+	_push_amt = lerpf(_push_amt, 1.0 if s.pushing > 0.5 else 0.0, 1.0 - exp(-8.0 * dt))
+	if _push_amt > 0.02:
+		_push_ph = fmod(_push_ph + dt * 1.25, 1.0)
+	elif _push_ph > 0.0:
+		_push_ph = 0.0
+	var drive := _push_drive()                       # 0 at the reach, 1 at the end of the push
+	ph = lerpf(ph, 0.88 - 0.10 * drive, _push_amt)
 	ph = _sm("pelvis_h", ph, 14.0, dt)
 	# weight shift: forward drives the shins and chest over the tips, back sits on the tails
 	var lf := s.lean_fa
 	var pz := _sm("pelvis_z", 0.06 + 0.10 * tuck + 0.05 * s.charge + 0.05 * edgeb + 0.13 * maxf(-lf, 0.0) - 0.05 * maxf(lf, 0.0), 10.0, dt)
 	var pitch := deg_to_rad(27.0 + 38.0 * tuck + 22.0 * s.charge + 25.0 * s.compression + 32.0 * grab * air + 4.0 * edgeb + 30.0 * gear + 12.0 * lf * (1.0 - air))
-	if s.pushing > 0.5:
-		pitch += deg_to_rad(18.0 + sin(s.time * 7.0) * 12.0)
+	pitch += deg_to_rad(8.0 + 40.0 * drive) * _push_amt
 	pitch = _sm("pitch", pitch, 10.0, dt) + deg_to_rad(45.0) * _p["ftuck"]
 	# angulation: legs take the full inclination, the torso stays much more upright
 	var counter := _lean * 0.58
@@ -252,6 +260,13 @@ func _compute_pose(dt: float) -> void:
 	# flips stay laid out (long body); holding tuck pulls the knees in
 	var ftuck := _sm("ftuck", s.flip_tuck if s.airborne else 0.0, 9.0, dt)
 	var feet_up := _sm("feet_up", air * (0.05 + 0.26 * grab + 0.42 * ftuck), 8.0, dt)
+	# layout flip: body long from the shoulders to the knees, knees bent so the shins and skis fold
+	# back behind the thighs and the skis run parallel to the body; opens up again to land
+	var near_land := absf(roundf(s.air_pitch / TAU) * TAU - s.air_pitch) < deg_to_rad(55.0) and absf(s.air_pitch) > PI
+	var lay_t := air * smoothstep(1.2, 2.5, absf(s.flip_vel)) * (0.0 if near_land else 1.0) * (1.0 - ftuck)
+	if absf(s.air_pitch) < deg_to_rad(25.0):
+		lay_t *= absf(s.air_pitch) / deg_to_rad(25.0)
+	var layout := _sm("layout", lay_t, 7.0, dt)
 	var arms_air := _sm("arms_air", air * (1.0 - grab), 5.0, dt)
 
 	# ---- feet / skis
@@ -260,14 +275,17 @@ func _compute_pose(dt: float) -> void:
 	for side: float in [-1.0, 1.0]:
 		# the inside ski leads a little (right turn: right ski ahead)
 		var lead := (-0.12 * side * _lean) if not s.airborne else 0.0
-		var foot := L * Vector3(side * stance, feet_up, fwd_off + lead)
+		var foot_local := Vector3(side * stance, feet_up, fwd_off + lead)
+		# folded leg: ankle behind the knee at knee height, ski sole facing back
+		foot_local = foot_local.lerp(Vector3(side * 0.11, 0.40, 0.40 + ANKLE_H), layout)
+		var foot := L * foot_local
 		if not s.airborne:
 			# both skis stay on the snow: raise/lower each foot onto the ground plane
 			var dy := (foot - root.origin).dot(up)
 			var lup := L.basis.y
 			foot -= lup * (dy / maxf(lup.dot(up), 0.3))
 		var yaw := plow * side
-		var sb := L.basis * Basis(Vector3.UP, yaw)
+		var sb := L.basis * Basis(Vector3.UP, yaw) * Basis(Vector3(1, 0, 0), -PI * 0.5 * layout)
 		if not s.airborne:
 			# pitch each ski to the snow under its own tip and tail (uneven ground)
 			var tip := foot - sb.z * 0.85
@@ -285,7 +303,7 @@ func _compute_pose(dt: float) -> void:
 			# tip, middle and tail on both edges (+1.5 cm so the ski reads as sitting on top)
 			var lift := 0.0
 			for zz: float in [-0.8, 0.0, 0.7]:
-				for xx: float in [-0.05, 0.05]:
+				for xx: float in [-0.06, 0.06]:
 					var q := foot + sb * Vector3(xx, 0.0, zz)
 					lift = maxf(lift, s.terrain.height(q.x, q.z) + 0.015 - q.y)
 			foot += up * lift
@@ -340,6 +358,15 @@ func _compute_pose(dt: float) -> void:
 		hand_local = hand_local.lerp(Vector3(sgn * 0.27, -0.30, -0.42), edgeb)
 		hand_local = hand_local.lerp(Vector3(sgn * 0.42, -0.22, -0.14), arms_air)
 		hand_local = hand_local.lerp(Vector3(sgn * 0.15, -0.5, -0.32), ftuck)   # tucked flip: hands to the shins
+		hand_local = hand_local.lerp(Vector3(sgn * 0.40, -0.05, -0.05), layout * 0.6)  # layout: arms wide
+		if _push_amt > 0.02:
+			# reach: hands forward at chest height -> push: driven down and back past the hips
+			var reach_p := Vector3(sgn * 0.2, -0.12, -0.5)
+			var end_p := Vector3(sgn * 0.22, -0.6, 0.12)
+			var hp := reach_p.lerp(end_p, drive)
+			if _push_ph > 0.65:
+				hp += Vector3(0.0, 0.12, 0.0) * sin((_push_ph - 0.65) / 0.35 * PI)  # swing back through, up
+			hand_local = hand_local.lerp(hp, _push_amt)
 		if plant_side == sgn:
 			hand_local = hand_local.lerp(Vector3(sgn * 0.16, -0.34, -0.48), _pole_plant)
 		if s.is_grinding():
@@ -378,10 +405,23 @@ func _compute_pose(dt: float) -> void:
 		pd = pd.lerp(Vector3(sgn * 0.3, -0.8, 0.45), edgeb)
 		if plant_side == sgn:
 			pd = pd.lerp(Vector3(sgn * 0.1, -0.96, -0.15), _pole_plant)
+		if _push_amt > 0.02:
+			# planted ahead with the baskets angled back, then pushed until the poles trail behind
+			pd = pd.lerp(Vector3(sgn * 0.05, -0.92, 0.35).lerp(Vector3(sgn * 0.05, -0.4, 0.92), drive), _push_amt)
 		if g > 0.01:
 			pd = pd.lerp(Vector3(sgn * 0.6, 0.2, 0.7), g)
 		joints["pole_dir_" + sd] = (tb * pd).normalized()
 		joints["pole_grip_" + sd] = hand - joints["pole_dir_" + sd] * 0.06
+
+
+## Push stroke progress: quick reach (0->0.25), long drive (0.25->0.65), relaxed recovery back.
+func _push_drive() -> float:
+	var p := _push_ph
+	if p < 0.25:
+		return 0.0
+	if p < 0.65:
+		return smoothstep(0.25, 0.65, p)
+	return 1.0 - smoothstep(0.65, 1.0, p)
 
 
 # ------------------------------------------------------------------ on foot
@@ -640,6 +680,7 @@ func _apply_parts() -> void:
 	parts["helmet"].global_transform = Transform3D(hb, hc + hb.y * 0.015)
 	parts["goggle_band"].global_transform = Transform3D(hb, hc + hb.y * 0.025)
 	parts["goggle_lens"].global_transform = Transform3D(hb, hc + hb.y * 0.025)
+	parts["goggle_frame"].global_transform = Transform3D(hb, hc + hb.y * 0.025)
 	parts["helmet_trim"].global_transform = Transform3D(hb, hc + hb.y * 0.015)
 	parts["helmet_dark"].global_transform = Transform3D(hb, hc + hb.y * 0.015)
 	for sd in ["l", "r"]:
