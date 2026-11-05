@@ -99,6 +99,7 @@ func _ready() -> void:
 func _enter_menu() -> void:
 	state = State.MENU
 	Game.mode = "menu"
+	Engine.time_scale = 1.0           # leaving the game ends slow motion
 	get_tree().paused = false
 	challenges.stop(false)
 	hud.visible = false
@@ -127,6 +128,16 @@ func _start_play(mode: String) -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	hud.show_controls_hint()
 	pois.refresh()
+
+
+## Slow motion: the whole game (physics included) runs at a quarter speed, so tricks play out
+## exactly as they would, just slower.
+const SLOW_MO := 0.25
+
+
+func _set_slow_mo(on: bool) -> void:
+	Engine.time_scale = SLOW_MO if on else 1.0
+	hud.notify("Slow motion %s  ·  %s to toggle" % ["ON" if on else "OFF", Settings.binding_label("slow_mo")], "info")
 
 
 func _pause() -> void:
@@ -267,6 +278,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				_try_lift()
 			elif event.is_action("skis"):
 				_toggle_skis()
+			elif event.is_action("slow_mo"):
+				_set_slow_mo(Engine.time_scale > 0.99)
 			elif event is InputEventMouseButton and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 				Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 			else:

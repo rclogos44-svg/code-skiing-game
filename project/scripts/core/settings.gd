@@ -30,6 +30,7 @@ const ACTIONS := {
 	"map": {"label": "Back to the top of the park", "keys": [KEY_TAB]},
 	"pause": {"label": "Pause", "keys": [KEY_P]},
 	"skeleton_view": {"label": "Skeleton view (see the joints)", "keys": [KEY_V]},
+	"slow_mo": {"label": "Slow motion on / off", "keys": [KEY_B]},
 }
 
 ## Gamepad defaults (not rebindable through the UI, always present).
