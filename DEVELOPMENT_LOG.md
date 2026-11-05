@@ -440,3 +440,7 @@ no map, parks, keep the ragdoll crashes, black baggy gear, only flips, spins and
   the skis run sideways along the body; thighs nearly straight down and shins folded right up
   (ankle flex 10 deg) so the tail reaches up behind the right shoulder; the hand grabs near the
   tail end; free arm overhead.
+- Tail grab revised on feedback: no off-axis body tilt; instead the skis stand upright out to his
+  right side (right ski ~0.34 m out, hips rotated in 40 deg with the knees at 140 deg, boots flexed
+  10 deg - found by searching the joint-limited leg angles), and the upper back turns and leans
+  toward them while he looks back at them.
