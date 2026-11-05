@@ -46,7 +46,20 @@ var _stop_pop := 0.0
 var _prev_edgeb := 0.0
 var _push_ph := 0.0            # double-pole push cycle 0..1 (reach, push, recover)
 var _push_amt := 0.0
-var _hands := {}              # spring-smoothed hand offsets: arms settle after the body
+var _hands := {}
+## Grab poses (preview; not wired to input yet).  Per hand: [ski "l"/"r", along the ski (-Z tip,
+## +Z tail, m), edge (+1 outside, -1 inside)].  Per leg: foot offset in the body frame and ski
+## pitch (rad, + = tips up).  "pitch": extra forward bend of the torso (deg).
+const GRAB_POSES := {
+	"Safety": {"r": ["r", -0.05, 1.0], "feet": {"l": Vector3(0, 0.28, -0.05), "r": Vector3(0, 0.32, -0.05)}, "rot": {"l": 0.15, "r": 0.2}, "pitch": 30.0},
+	"Mute": {"l": ["r", -0.18, 1.0], "feet": {"l": Vector3(0.05, 0.3, -0.05), "r": Vector3(-0.04, 0.34, -0.1)}, "rot": {"l": 0.2, "r": 0.3}, "pitch": 34.0},
+	"Japan": {"l": ["r", -0.12, 1.0], "feet": {"l": Vector3(0.02, 0.36, 0.3), "r": Vector3(-0.03, 0.4, 0.28)}, "rot": {"l": -0.8, "r": -0.9}, "pitch": 30.0},
+	"Tail": {"r": ["r", 0.6, 1.0], "feet": {"l": Vector3(0, 0.26, -0.18), "r": Vector3(0, 0.3, -0.22)}, "rot": {"l": 0.5, "r": 0.65}, "pitch": 26.0},
+	"Tip": {"l": ["l", -0.7, 1.0], "feet": {"l": Vector3(0, 0.32, 0.12), "r": Vector3(0, 0.28, 0.1)}, "rot": {"l": 1.05, "r": 0.8}, "pitch": 40.0},
+	"Truck Driver": {"l": ["l", -0.42, 1.0], "r": ["r", -0.42, 1.0], "feet": {"l": Vector3(0, 0.42, -0.08), "r": Vector3(0, 0.42, -0.08)}, "rot": {"l": 0.45, "r": 0.45}, "pitch": 38.0},
+	"Blunt": {"r": ["r", 0.72, 1.0], "feet": {"l": Vector3(0, 0.3, 0.26), "r": Vector3(0, 0.34, 0.3)}, "rot": {"l": -0.85, "r": -0.95}, "pitch": 20.0},
+}
+var preview_grab := ""              # spring-smoothed hand offsets: arms settle after the body
 
 
 func setup(s: Skier) -> void:
@@ -253,6 +266,8 @@ func _compute_pose(dt: float) -> void:
 	var pz := _sm("pelvis_z", 0.06 + 0.10 * tuck + 0.05 * s.charge + 0.05 * edgeb + 0.13 * maxf(-lf, 0.0) - 0.05 * maxf(lf, 0.0), 10.0, dt)
 	var pitch := deg_to_rad(27.0 + 38.0 * tuck + 22.0 * s.charge + 25.0 * s.compression + 32.0 * grab * air + 4.0 * edgeb + 30.0 * gear + 12.0 * lf * (1.0 - air))
 	pitch += deg_to_rad(8.0 + 40.0 * drive) * _push_amt
+	if GRAB_POSES.has(preview_grab):
+		pitch = deg_to_rad(float(GRAB_POSES[preview_grab]["pitch"]))
 	pitch = _sm("pitch", pitch, 10.0, dt) + deg_to_rad(45.0) * _p["ftuck"]
 	# angulation: legs take the full inclination, the torso stays much more upright
 	var counter := _lean * 0.58
@@ -278,6 +293,10 @@ func _compute_pose(dt: float) -> void:
 		var foot_local := Vector3(side * stance, feet_up, fwd_off + lead)
 		# folded leg: ankle behind the knee at knee height, ski sole facing back
 		foot_local = foot_local.lerp(Vector3(side * 0.11, 0.40, 0.40 + ANKLE_H), layout)
+		var gp: Dictionary = GRAB_POSES.get(preview_grab, {})
+		var sd_key := "l" if side < 0.0 else "r"
+		if not gp.is_empty():
+			foot_local = Vector3(side * stance, 0.0, fwd_off) + (gp["feet"][sd_key] as Vector3)
 		var foot := L * foot_local
 		if not s.airborne:
 			# both skis stay on the snow: raise/lower each foot onto the ground plane
@@ -286,6 +305,8 @@ func _compute_pose(dt: float) -> void:
 			foot -= lup * (dy / maxf(lup.dot(up), 0.3))
 		var yaw := plow * side
 		var sb := L.basis * Basis(Vector3.UP, yaw) * Basis(Vector3(1, 0, 0), -PI * 0.5 * layout)
+		if not gp.is_empty():
+			sb = sb * Basis(Vector3(1, 0, 0), float(gp["rot"][sd_key]))
 		if not s.airborne:
 			# pitch each ski to the snow under its own tip and tail (uneven ground)
 			var tip := foot - sb.z * 0.85
@@ -385,7 +406,15 @@ func _compute_pose(dt: float) -> void:
 		_hands[sd + "_v"] = hv
 		var hand := sh + tb * hc
 		var g := gl if sd == "l" else gr
-		if g > 0.01:
+		var gpose: Dictionary = GRAB_POSES.get(preview_grab, {})
+		if not gpose.is_empty():
+			g = 1.0 if gpose.has(sd) else 0.0
+		if g > 0.01 and gpose.has(sd):
+			var spec: Array = gpose[sd]
+			var gs := -1.0 if spec[0] == "l" else 1.0
+			var sx2: Transform3D = ski_l if spec[0] == "l" else ski_r
+			hand = sx2.origin + sx2.basis * Vector3(gs * 0.075 * float(spec[2]), 0.06, float(spec[1]))
+		elif g > 0.01:
 			var sxf := ski_l if sd == "l" else ski_r
 			var kind := s.grab_kind_l if sd == "l" else s.grab_kind_r
 			var along := {"tip": -0.72, "tail": 0.62}.get(kind, -0.12) as float

@@ -40,6 +40,8 @@ func run(w: World) -> void:
 			await _showcase5()
 		"parks":
 			await _park_shots()
+		"grabs":
+			await _grab_shots()
 		_:
 			print("[TEST] unknown test mode ", Game.test_mode)
 			failures += 1
@@ -1171,6 +1173,40 @@ func _showcase4() -> void:
 		await _frames(3)
 		await _snap(sh[2])
 	s.scripted_input = null
+	s.set_physics_process(true)
+
+
+## Preview renders of each grab pose in the air (two angles each).
+func _grab_shots() -> void:
+	var s := world.skier
+	var body = world.body
+	var st: Dictionary = world.park.park_start(0)
+	world.spawn(st["pos"], st["yaw"])
+	await _frames(10)
+	s.set_physics_process(false)
+	for gname in body.GRAB_POSES:
+		s.teleport(st["pos"], st["yaw"])
+		s.position.y += 2.5
+		s.airborne = true
+		s.vel = Vector3.ZERO
+		s._cur_xform = s._compose_xform()
+		s._prev_xform = s._cur_xform
+		body.preview_grab = gname
+		for i in 40:
+			body._compute_pose(0.03)
+		body._apply_parts()
+		var fwd: Vector3 = -body.ski_l.basis.z
+		fwd = Vector3(fwd.x, 0, fwd.z).normalized()
+		var rt := fwd.cross(Vector3.UP)
+		var c: Vector3 = body.joints["pelvis"]
+		var tag := String(gname).replace(" ", "_")
+		_free_cam(c + rt * 2.6 + fwd * 0.4 + Vector3.UP * 0.2, c)
+		await _frames(3)
+		await _snap("grab_%s_side" % tag)
+		_free_cam(c + fwd * 2.2 - rt * 1.3 + Vector3.UP * 0.5, c)
+		await _frames(3)
+		await _snap("grab_%s_front" % tag)
+	body.preview_grab = ""
 	s.set_physics_process(true)
 
 
