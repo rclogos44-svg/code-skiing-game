@@ -1270,8 +1270,7 @@ func _grab_shots() -> void:
 		print("[TEST] grab %-12s hand-to-ski gap %s  extra spine bend %.0f deg  knee angles %.0f / %.0f" % [gname,
 			str(body.grab_gap), rad_to_deg(body._grab_bend), kl, kr])
 		body._apply_parts()
-		var fwd: Vector3 = -body.ski_l.basis.z
-		fwd = Vector3(fwd.x, 0, fwd.z).normalized()
+		var fwd := Vector3(sin(s.heading), 0, cos(s.heading))       # toward the chest (camera "front")
 		var rt := fwd.cross(Vector3.UP)
 		var c: Vector3 = body.joints["pelvis"]
 		var tag := String(gname).replace(" ", "_")

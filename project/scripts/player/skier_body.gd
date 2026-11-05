@@ -63,7 +63,7 @@ const GRAB_POSES := {
 	# top of the other), knees tucked, left hand across onto the right ski by the boot, right arm high
 	"Mute": {"l": ["r", -0.06, 1.0], "free": {"r": Vector3(0.3, 0.42, 0.05)},
 		"legs": {"l": [80.0, -10.0, 20.0, 105.0], "r": [85.0, -10.0, 20.0, 108.0]}, "pitch": 36.0, "twist": -0.25, "side": 0.1,
-		"skis": {"yaw": {"l": 28.0, "r": -28.0}, "gap": 0.06, "stack": 0.07}},
+		"skis": {"yaw": {"l": 28.0, "r": -28.0}, "gap": 0.06, "stack": 0.07}, "hips_yaw": 0.95},
 	"Safety": {"r": ["r", -0.02, 1.0], "free": {"l": Vector3(-0.45, 0.05, -0.1)},
 		"legs": {"l": [70.0, 6.0, 5.0, 100.0], "r": [88.0, 12.0, -5.0, 108.0]}, "pitch": 28.0, "twist": 0.12, "side": 0.12},
 	"Japan": {"l": ["r", 0.0, 1.0], "free": {"r": Vector3(0.4, 0.22, -0.05)},
@@ -88,7 +88,7 @@ const SPINE_LIMITS := {"pitch": [0.0, 70.0], "twist": [-0.45, 0.45], "side": [-0
 
 ## Body-frame geometry of a grab pose: returns the total hand-to-grab-point gap (m) beyond arm reach.
 func _grab_gap(g: Dictionary, legs: Dictionary, sp: Array, ph: float, pz: float) -> float:
-	var tb := Basis(Vector3.UP, sp[1]) * Basis(Vector3(0, 0, 1), sp[2]) * Basis(Vector3(1, 0, 0), -deg_to_rad(sp[0]))
+	var tb := Basis(Vector3.UP, sp[1] - float(g.get("hips_yaw", 0.0))) * Basis(Vector3(0, 0, 1), sp[2]) * Basis(Vector3(1, 0, 0), -deg_to_rad(sp[0]))
 	var pelvis := Vector3(0, ph, pz)
 	var chest := pelvis + tb.y * (0.07 + TORSO_LEN)
 	var total := 0.0
@@ -376,6 +376,9 @@ func _compute_pose(dt: float) -> void:
 	_lean_v += (w_lean * w_lean * (lean_t - _lean) - 2.0 * w_lean * _lean_v) * dt
 	_lean = clampf(_lean + _lean_v * dt, -0.9, 0.9)
 	var L := Transform3D(root.basis * Basis(Vector3(0, 0, 1), -_lean), root.origin)
+	# a tweaked grab twists the hips and legs against the chest (skis go across, chest faces on)
+	var hips_yaw := float(GRAB_POSES[_ag].get("hips_yaw", 0.0)) * _gw if GRAB_POSES.has(_ag) else 0.0
+	var LH := Transform3D(L.basis * Basis(Vector3.UP, hips_yaw), L.origin)
 	# upper body faces the direction of travel: when the skis pivot underneath, the torso lags
 	# behind instead of snapping, and it counter-rotates slightly toward the outside of the turn
 	var torso_t := 0.0
@@ -466,10 +469,12 @@ func _compute_pose(dt: float) -> void:
 		if not gp.is_empty():
 			var hip_local := Vector3(side * HIP_HALF, ph - 0.04, pz)
 			fk = _leg_fk(hip_local, side, _solved[_ag]["legs"][sd_key])
-			foot_local = foot_local.lerp(fk[2], _gw)
-			_fk["hip_" + sd_key] = L * hip_local
-			_fk["knee_" + sd_key] = L * (fk[0] as Vector3)
+			pass
+			_fk["hip_" + sd_key] = LH * hip_local
+			_fk["knee_" + sd_key] = LH * (fk[0] as Vector3)
 		var foot := L * foot_local
+		if not fk.is_empty():
+			foot = (L * foot_local).lerp(LH * (fk[2] as Vector3), _gw)
 		if not s.airborne:
 			# both skis stay on the snow: raise/lower each foot onto the ground plane
 			var dy := (foot - root.origin).dot(up)
@@ -478,7 +483,7 @@ func _compute_pose(dt: float) -> void:
 		var yaw := plow * side
 		var sb := L.basis * Basis(Vector3.UP, yaw) * Basis(Vector3(1, 0, 0), -PI * 0.5 * layout)
 		if not gp.is_empty():
-			sb = sb.orthonormalized().slerp((L.basis * (fk[1] as Basis)).orthonormalized(), _gw)
+			sb = sb.orthonormalized().slerp((LH.basis * (fk[1] as Basis)).orthonormalized(), _gw)
 		if not s.airborne:
 			# pitch each ski to the snow under its own tip and tail (uneven ground)
 			var tip := foot - sb.z * 0.85
@@ -517,7 +522,7 @@ func _compute_pose(dt: float) -> void:
 	var g_side := float(gpt.get("side", 0.0)) * _gw
 	var tb := L.basis * Basis(Vector3.UP, _torso_yaw + g_twist) * Basis(Vector3(0, 0, 1), counter + g_side) * Basis(Vector3(1, 0, 0), -pitch)
 	torso_basis = tb.orthonormalized()
-	var hip_basis := (L.basis * Basis(Vector3.UP, _torso_yaw * 0.45) * Basis(Vector3(0, 0, 1), counter * 0.3)).orthonormalized()
+	var hip_basis := (LH.basis * Basis(Vector3.UP, _torso_yaw * 0.45) * Basis(Vector3(0, 0, 1), counter * 0.3)).orthonormalized()
 	var max_leg := (THIGH + SHIN) * 0.985
 	for sd in ["l", "r"]:
 		var sgn := -1.0 if sd == "l" else 1.0
@@ -528,7 +533,7 @@ func _compute_pose(dt: float) -> void:
 			# keep feet planted: pull the hip toward the ankle instead of stretching the leg
 			hip = ank - d.normalized() * max_leg
 		joints["hip_" + sd] = hip
-		var pole_dir := L.basis * Vector3(sgn * 0.25, 0.0, -1.0)
+		var pole_dir := LH.basis * Vector3(sgn * 0.25, 0.0, -1.0)
 		var pole_pt := hip + pole_dir
 		if GRAB_POSES.has(_ag) and _fk.has("knee_" + sd):
 			# knees point where the hip rotation puts them (the grab's joint angles)
