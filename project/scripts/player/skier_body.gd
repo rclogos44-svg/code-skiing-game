@@ -59,11 +59,12 @@ const BOOT_LEAN := 15.0        # shin leans this far forward of the boot's up ax
 const GRAB_POSES := {
 	# relaxed, real-world shapes: knees tucked ~90-110 deg, skis close to parallel with a light
 	# tweak, a little twist toward the grab, free arm out to the side for balance
-	# reference: the classic X - skis flat, crossed right under the boots and touching (one just on
-	# top of the other), knees tucked, left hand across onto the right ski by the boot, right arm high
+	# reference: chest faces where he's flying, both skis pushed out to his LEFT side and crossed
+	# in a flat X right under the boots; left hand across onto the right ski by the boot, upper
+	# body counter-leaning right, right arm high
 	"Mute": {"l": ["r", -0.06, 1.0], "free": {"r": Vector3(0.3, 0.42, 0.05)},
-		"legs": {"l": [80.0, -10.0, 20.0, 105.0], "r": [85.0, -10.0, 20.0, 108.0]}, "pitch": 36.0, "twist": -0.25, "side": 0.1,
-		"skis": {"yaw": {"l": 28.0, "r": -28.0}, "gap": 0.06, "stack": 0.07}, "hips_yaw": 0.95},
+		"legs": {"l": [80.0, 40.0, 10.0, 105.0], "r": [85.0, -24.0, 20.0, 108.0]}, "pitch": 30.0, "twist": -0.2, "side": 0.3,
+		"skis": {"yaw": {"l": 28.0, "r": -28.0}, "gap": 0.06, "stack": 0.07, "side_off": -0.55}, "hips_yaw": 0.15, "roll": -0.45},
 	"Safety": {"r": ["r", -0.02, 1.0], "free": {"l": Vector3(-0.45, 0.05, -0.1)},
 		"legs": {"l": [70.0, 6.0, 5.0, 100.0], "r": [88.0, 12.0, -5.0, 108.0]}, "pitch": 28.0, "twist": 0.12, "side": 0.12},
 	"Japan": {"l": ["r", 0.0, 1.0], "free": {"r": Vector3(0.4, 0.22, -0.05)},
@@ -181,6 +182,9 @@ func _ski_target_cost(t: Dictionary, legs: Dictionary, ph: float, pz: float) -> 
 		c += (pow(tip.y / 0.15, 2.0) + pow(B.x.y / 0.15, 2.0)) * 2.0       # flat skis
 		cen[sd] = fk[2]
 	var dl: Vector3 = cen["l"] - cen["r"]
+	if t.has("side_off"):     # where the X sits sideways from the body centre (- = his left)
+		var mid: Vector3 = (cen["l"] + cen["r"]) * 0.5
+		c += pow((mid.x - float(t["side_off"])) / 0.05, 2.0) * 3.0
 	c += pow((Vector2(dl.x, dl.z).length() - float(t["gap"])) / 0.04, 2.0) * 2.0
 	c += pow((dl.y - float(t["stack"])) / 0.03, 2.0) * 2.0
 	return c
@@ -376,6 +380,12 @@ func _compute_pose(dt: float) -> void:
 	_lean_v += (w_lean * w_lean * (lean_t - _lean) - 2.0 * w_lean * _lean_v) * dt
 	_lean = clampf(_lean + _lean_v * dt, -0.9, 0.9)
 	var L := Transform3D(root.basis * Basis(Vector3(0, 0, 1), -_lean), root.origin)
+	# off-axis grab: the whole body tilts in the air (legs and skis swing out to one side)
+	var g_roll := float(GRAB_POSES[_ag].get("roll", 0.0)) * _gw if GRAB_POSES.has(_ag) else 0.0
+	if absf(g_roll) > 0.0001:
+		var piv := L.origin + L.basis.y * 0.9
+		var R := Basis(L.basis.z.normalized(), g_roll)
+		L = Transform3D(R * L.basis, piv + R * (L.origin - piv))
 	# a tweaked grab twists the hips and legs against the chest (skis go across, chest faces on)
 	var hips_yaw := float(GRAB_POSES[_ag].get("hips_yaw", 0.0)) * _gw if GRAB_POSES.has(_ag) else 0.0
 	var LH := Transform3D(L.basis * Basis(Vector3.UP, hips_yaw), L.origin)

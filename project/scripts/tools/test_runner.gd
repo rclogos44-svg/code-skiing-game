@@ -1267,6 +1267,8 @@ func _grab_shots() -> void:
 			body._compute_pose(0.03)
 		var kl: float = rad_to_deg((body.joints["hip_l"] - body.joints["knee_l"]).angle_to(body.joints["ankle_l"] - body.joints["knee_l"]))
 		var kr: float = rad_to_deg((body.joints["hip_r"] - body.joints["knee_r"]).angle_to(body.joints["ankle_r"] - body.joints["knee_r"]))
+		var mid_ank: Vector3 = (body.joints["ankle_l"] + body.joints["ankle_r"]) * 0.5 - body.joints["pelvis"]
+		print("[TEST] grab %-12s skis sideways from the pelvis %.2f m (+ = his right)" % [gname, mid_ank.dot(body.torso_basis.x)])
 		print("[TEST] grab %-12s hand-to-ski gap %s  extra spine bend %.0f deg  knee angles %.0f / %.0f" % [gname,
 			str(body.grab_gap), rad_to_deg(body._grab_bend), kl, kr])
 		body._apply_parts()
