@@ -59,10 +59,11 @@ const BOOT_LEAN := 15.0        # shin leans this far forward of the boot's up ax
 const GRAB_POSES := {
 	# relaxed, real-world shapes: knees tucked ~90-110 deg, skis close to parallel with a light
 	# tweak, a little twist toward the grab, free arm out to the side for balance
-	# reference photo: both skis pulled out to the left side and crossed, knees bent, the upper
-	# body counter-leaning right, left hand across onto the right ski by the boot, right arm high
+	# reference: the classic X - skis flat, crossed right under the boots and touching (one just on
+	# top of the other), knees tucked, left hand across onto the right ski by the boot, right arm high
 	"Mute": {"l": ["r", -0.06, 1.0], "free": {"r": Vector3(0.3, 0.42, 0.05)},
-		"legs": {"l": [70.0, 32.0, 20.0, 100.0], "r": [82.0, -22.0, 28.0, 108.0]}, "pitch": 26.0, "twist": -0.3, "side": 0.28},
+		"legs": {"l": [80.0, -10.0, 20.0, 105.0], "r": [85.0, -10.0, 20.0, 108.0]}, "pitch": 36.0, "twist": -0.25, "side": 0.1,
+		"skis": {"yaw": {"l": 28.0, "r": -28.0}, "gap": 0.06, "stack": 0.07}},
 	"Safety": {"r": ["r", -0.02, 1.0], "free": {"l": Vector3(-0.45, 0.05, -0.1)},
 		"legs": {"l": [70.0, 6.0, 5.0, 100.0], "r": [88.0, 12.0, -5.0, 108.0]}, "pitch": 28.0, "twist": 0.12, "side": 0.12},
 	"Japan": {"l": ["r", 0.0, 1.0], "free": {"r": Vector3(0.4, 0.22, -0.05)},
@@ -118,8 +119,12 @@ func _solve_grab(name: String, ph: float, pz: float) -> Dictionary:
 	for sd in ["l", "r"]:
 		if g.has(sd) and not grabbed.has(g[sd][0]):
 			grabbed.append(g[sd][0])
+	if g.has("skis"):
+		grabbed = ["l", "r"]
 	var cost := func(lg: Dictionary, s2: Array) -> float:
-		var c := pow(_grab_gap(g, lg, s2, ph, pz), 2.0) * 400.0
+		var c := pow(_grab_gap(g, lg, s2, ph, pz), 2.0) * 4000.0
+		if g.has("skis"):
+			c += _ski_target_cost(g["skis"], lg, ph, pz)
 		for side in ["l", "r"]:
 			for i in 4:
 				c += pow((float(lg[side][i]) - float(legs0[side][i])) / 40.0, 2.0) * 1.0
@@ -161,6 +166,26 @@ func _solve_grab(name: String, ph: float, pz: float) -> Dictionary:
 	return {"legs": legs, "pitch": sp[0], "twist": sp[1], "side": sp[2], "gap": _grab_gap(g, legs, sp, ph, pz)}
 
 
+## How far the skis are from a target shape: yaw of each ski (deg, + = tip to the right), flat
+## (no pitch / roll), centres `gap` apart horizontally and the left ski `stack` m above the right.
+func _ski_target_cost(t: Dictionary, legs: Dictionary, ph: float, pz: float) -> float:
+	var c := 0.0
+	var cen := {}
+	for sd in ["l", "r"]:
+		var ss := -1.0 if sd == "l" else 1.0
+		var fk := _leg_fk(Vector3(ss * HIP_HALF, ph - 0.04, pz), ss, legs[sd])
+		var B: Basis = fk[1]
+		var tip := -B.z
+		var yaw := rad_to_deg(atan2(tip.x, -tip.z))
+		c += pow((yaw - float(t["yaw"][sd])) / 8.0, 2.0) * 3.0
+		c += (pow(tip.y / 0.15, 2.0) + pow(B.x.y / 0.15, 2.0)) * 2.0       # flat skis
+		cen[sd] = fk[2]
+	var dl: Vector3 = cen["l"] - cen["r"]
+	c += pow((Vector2(dl.x, dl.z).length() - float(t["gap"])) / 0.04, 2.0) * 2.0
+	c += pow((dl.y - float(t["stack"])) / 0.03, 2.0) * 2.0
+	return c
+
+
 ## Leg forward kinematics in the body frame (x right, y up, -z forward). Returns [knee, ski basis,
 ## ski centre].  Angles are clamped to LEG_LIMITS.
 func _leg_fk(hip: Vector3, sgn: float, a: Array) -> Array:
@@ -170,7 +195,7 @@ func _leg_fk(hip: Vector3, sgn: float, a: Array) -> Array:
 	var knee_f := deg_to_rad(clampf(float(a[3]), LEG_LIMITS["knee"][0], LEG_LIMITS["knee"][1]))
 	# hamstrings: with a straight knee the hip only folds to ~75 deg; bending the knee frees it
 	flex = minf(flex, deg_to_rad(75.0) + knee_f * 0.8)
-	var H := Basis(Vector3(0, 0, 1), sgn * abd) * Basis(Vector3(1, 0, 0), flex) * Basis(Vector3.UP, sgn * rot)
+	var H := Basis(Vector3(1, 0, 0), flex) * Basis(Vector3(0, 0, 1), sgn * abd) * Basis(Vector3.UP, sgn * rot)
 	var knee := hip + H * Vector3(0, -THIGH, 0)
 	var S := H * Basis(Vector3(1, 0, 0), -knee_f)           # knee is a hinge: the shin folds back
 	var ankle := knee + S * Vector3(0, -SHIN, 0)
