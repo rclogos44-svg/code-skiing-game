@@ -331,3 +331,24 @@ no map, parks, keep the ragdoll crashes, black baggy gear, only flips, spins and
 - **Browser build** checked in headless Chromium (software WebGL): menu, entering Main Park,
   skiing, Tab back to the top. Frame rate in the browser was not measured on real hardware.
 - Not done yet: grabs, corks, more outfit options, park-specific sounds, scoring per line.
+
+## Spins, flips and the skier (from the player's 360 / triple-backflip reference videos)
+
+- **No tuck.** W is a pole push that only works below 4 m/s; once moving it does nothing.
+- **Spin wind-up fixed:** hold Left on the run-in and the shoulders coil left, which loads a
+  RIGHT spin (mirrored for left). The wind-up key held after the pop is ignored until released;
+  Right in the air adds to the right spin. Spins build up over 0.35 s (shoulders lead, hips
+  follow) and top out at ~1 turn/s (was ~1.4); in-air spin authority lowered (Easy 20 -> 11).
+- **Pop is realistic:** 1.6-3.5 m/s instead of up to 8 m/s, so a full charge no longer turns a
+  jump into a triple. Rails lowered to 0.55 m (pop-on height), tubes 0.5 m.
+- **Flips start laid out**; keep pulling past ~3/4 of a turn and the body tucks (hands to shins,
+  ~1.6x rotation rate), let go and it opens up again - the layout-then-tuck of the reference.
+- **Skier model:** shaped torso (chest, shoulder blades, broad shoulders), a defined hood lying on
+  the back with a lighter lining, small backpack, joint caps at shoulders/elbows/knees, pants
+  stacked over the boots, park helmet (lower back, brim, ear pads, vents, chin strap), larger
+  goggles, mitts. Deeper athletic stance.
+- **Skis:** lifted onto the highest of tip / middle / tail on both edges (+1.5 cm) so they always
+  read as on top of the snow, and chatter slightly at speed, when skidding and on landings.
+- Tests: physics 80/80; gameplay includes a right 360 off the medium kicker done the player's way
+  (hold Left, pop, Right in the air) - lands clean. Powder Rush / Widowmaker race bots fail (they
+  relied on the tuck; races aren't reachable in the park game).

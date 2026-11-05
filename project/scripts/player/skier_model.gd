@@ -78,14 +78,59 @@ static func sphere(r: float, sx := 1.0, sy := 1.0, sz := 1.0, rings := 8) -> Arr
 	return lathe(pts, sx, sz)
 
 
+## Rings of [y, half width, front depth, back depth, z shift] swept into a closed body: the front
+## (-Z) and back can bulge differently, so a chest, shoulder blades or a helmet's lower back read.
+static func shell(rings: Array, segs := 22) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for i in rings.size():
+		var r: Array = rings[i]
+		for k in segs + 1:
+			var a := TAU * float(k) / segs
+			var sz := sin(a)
+			var depth: float = r[2] if sz < 0.0 else r[3]
+			var zs: float = r[4] if r.size() > 4 else 0.0
+			st.set_uv(Vector2(float(k) / segs, float(i) / (rings.size() - 1)))
+			st.add_vertex(Vector3(cos(a) * float(r[1]), float(r[0]), sz * depth + zs))
+	for i in rings.size() - 1:
+		for k in segs:
+			var a0 := i * (segs + 1) + k
+			var b0 := a0 + segs + 1
+			for idx in [a0, a0 + 1, b0, a0 + 1, b0 + 1, b0]:
+				st.add_index(idx)
+	st.generate_normals()
+	return st.commit()
+
+
 static func torso() -> ArrayMesh:
-	# waist (y=0) to neck base (y=0.52): a long, baggy park jacket whose hem hangs to mid-thigh
-	var pts := [
-		Vector2(0.0, -0.30), Vector2(0.17, -0.30), Vector2(0.205, -0.27), Vector2(0.198, -0.12),
-		Vector2(0.19, 0.04), Vector2(0.192, 0.18), Vector2(0.2, 0.30), Vector2(0.2, 0.40), Vector2(0.18, 0.47),
-		Vector2(0.12, 0.515), Vector2(0.08, 0.535), Vector2(0.0, 0.54),
-	]
-	return lathe(pts, 1.2, 0.8, 18)
+	# waist (y=0) to neck base (y=0.54): a long baggy jacket, hem at mid-thigh, broad shoulders,
+	# a chest in front and a rounded upper back (shoulder joints sit at y=0.43, x=+-0.185)
+	return shell([
+		[-0.31, 0.0, 0.0, 0.0], [-0.305, 0.2, 0.15, 0.16], [-0.27, 0.218, 0.158, 0.168],
+		[-0.12, 0.2, 0.145, 0.155], [0.04, 0.188, 0.135, 0.145], [0.18, 0.2, 0.148, 0.15],
+		[0.30, 0.222, 0.158, 0.155, 0.005], [0.39, 0.238, 0.148, 0.16, 0.01], [0.45, 0.225, 0.12, 0.15, 0.015],
+		[0.5, 0.17, 0.09, 0.12, 0.015], [0.53, 0.1, 0.07, 0.085, 0.01], [0.545, 0.0, 0.0, 0.0],
+	])
+
+
+## Hood down: a rolled cowl of fabric lying on the shoulders behind the neck, with an opening.
+static func hood() -> Array:
+	var cowl := shell([
+		[-0.06, 0.0, 0.0, 0.0, 0.07], [-0.055, 0.1, 0.03, 0.07, 0.07], [-0.02, 0.15, 0.05, 0.11, 0.06],
+		[0.04, 0.155, 0.05, 0.12, 0.05], [0.1, 0.13, 0.04, 0.1, 0.05], [0.14, 0.08, 0.02, 0.06, 0.05],
+		[0.155, 0.0, 0.0, 0.0, 0.05],
+	], 18)
+	# the opening: a dark lining crescent facing up and forward
+	var rim := shell([[0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.1, 0.035, 0.075], [0.012, 0.1, 0.035, 0.075], [0.012, 0.0, 0.0, 0.0]], 18)
+	return [cowl, rim]
+
+
+## Small daypack, centred on its back face.
+static func backpack() -> ArrayMesh:
+	return shell([
+		[-0.2, 0.0, 0.0, 0.0, 0.05], [-0.195, 0.12, 0.02, 0.07, 0.05], [-0.15, 0.14, 0.02, 0.1, 0.05],
+		[0.12, 0.14, 0.02, 0.1, 0.05], [0.18, 0.12, 0.02, 0.075, 0.05], [0.2, 0.0, 0.0, 0.0, 0.05],
+	], 16)
 
 
 static func pelvis() -> ArrayMesh:
@@ -94,13 +139,40 @@ static func pelvis() -> ArrayMesh:
 	return lathe(pts, 1.12, 0.78, 16)
 
 
+## Park helmet: round shell, the back drops lower than the front, with a short brim over the
+## goggles.  Origin at the head centre.
 static func helmet() -> ArrayMesh:
-	var pts := []
-	for i in 9:
-		var a := -0.35 + (PI * 0.5 + 0.35) * float(i) / 8.0
-		pts.append(Vector2(0.128 * cos(a), 0.128 * sin(a) * 1.05))
-	pts.insert(0, Vector2(0.118, -0.07))
-	return lathe(pts, 0.95, 1.08, 20, 0.05)
+	var rings := []
+	for i in 10:
+		var t := float(i) / 9.0
+		var a := lerpf(-0.42, PI * 0.5, t)
+		var r := 0.137 * cos(a)
+		var y := 0.142 * sin(a) + 0.01
+		var back_drop := (1.0 - t) * 0.03
+		rings.append([y - back_drop * 0.5, r * 0.98, r * 1.04, r * 1.1, 0.004])
+	rings.append([0.152, 0.0, 0.0, 0.0])
+	rings[0] = [rings[0][0] - 0.02, rings[0][1] * 0.97, rings[0][2] * 0.92, rings[0][3] * 1.06, 0.01]
+	rings.insert(0, [rings[0][0], 0.0, 0.0, 0.0])
+	return shell(rings, 24)
+
+
+## Helmet details: brim, ear pads, chin strap, vents.  Returns [brim+pads (shell colour), vents+strap].
+static func helmet_details() -> Array:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	_box(st, Vector3(-0.095, 0.075, -0.17), Vector3(0.095, 0.088, -0.12))        # brim over the goggles
+	for x in [-1.0, 1.0]:
+		_box(st, Vector3(x * 0.128 - 0.018, -0.07, -0.04), Vector3(x * 0.128 + 0.018, 0.01, 0.05))  # ear pads
+	st.generate_normals()
+	var dk := SurfaceTool.new()
+	dk.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for x in [-0.05, 0.0, 0.05]:
+		_box(dk, Vector3(x - 0.008, 0.138, -0.07), Vector3(x + 0.008, 0.156, 0.06))   # vents
+	for x in [-1.0, 1.0]:
+		_box(dk, Vector3(x * 0.112 - 0.006, -0.16, -0.03), Vector3(x * 0.112 + 0.006, -0.06, -0.01))  # strap
+	_box(dk, Vector3(-0.11, -0.172, -0.06), Vector3(0.11, -0.158, -0.02))
+	dk.generate_normals()
+	return [st.commit(), dk.commit()]
 
 
 static func goggles() -> Array:
@@ -114,12 +186,12 @@ static func goggles() -> Array:
 		var a0 := TAU * float(s) / segs
 		var a1 := TAU * float(s + 1) / segs
 		var r := 0.135
-		var front0 := -sin(a0) > 0.55
-		var front1 := -sin(a1) > 0.55
+		var front0 := -sin(a0) > 0.42
+		var front1 := -sin(a1) > 0.42
 		var st := lens if (front0 and front1) else band
-		var h0 := -0.012 if not (front0 and front1) else -0.035
-		var h1 := 0.022 if not (front0 and front1) else 0.032
-		var rr := r + (0.012 if (front0 and front1) else 0.0)
+		var h0 := -0.014 if not (front0 and front1) else -0.042
+		var h1 := 0.024 if not (front0 and front1) else 0.038
+		var rr := r + (0.016 if (front0 and front1) else 0.004)
 		var p00 := Vector3(cos(a0) * rr * 0.95, h0, sin(a0) * rr * 1.1)
 		var p10 := Vector3(cos(a1) * rr * 0.95, h0, sin(a1) * rr * 1.1)
 		var p01 := Vector3(cos(a0) * rr * 0.95, h1, sin(a0) * rr * 1.1)

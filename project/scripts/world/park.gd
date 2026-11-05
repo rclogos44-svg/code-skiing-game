@@ -3,7 +3,7 @@ extends Node3D
 ## marks kicker lips and knuckles in orange, puts flags and the park name at the staging area and
 ## tip boards along the progression line.  The skier slides `rails` (see Skier._try_mount).
 
-const HEIGHT := {"box": 0.35, "rail": 0.7, "tube": 0.55}
+const HEIGHT := {"box": 0.35, "rail": 0.55, "tube": 0.5}
 const WIDTH := {"box": 0.5, "rail": 0.07, "tube": 0.7}
 const ORANGE := Color(1.0, 0.42, 0.05)
 

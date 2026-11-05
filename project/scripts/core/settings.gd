@@ -8,7 +8,7 @@ const PATH := "user://settings.cfg"
 
 ## Rebindable gameplay actions. "keys" are physical keycodes or mouse buttons (negative = mouse button).
 const ACTIONS := {
-	"tuck": {"label": "Tuck / Pole push", "keys": [KEY_W]},
+	"tuck": {"label": "Pole push (slow)", "keys": [KEY_W]},
 	"brake": {"label": "Brake (hockey stop)", "keys": [KEY_S]},
 	"steer_left": {"label": "Carve left", "keys": [KEY_A]},
 	"steer_right": {"label": "Carve right", "keys": [KEY_D]},

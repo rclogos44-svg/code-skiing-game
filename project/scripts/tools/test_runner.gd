@@ -199,9 +199,12 @@ func _park_kickers() -> void:
 		var p0: Vector3 = st["pos"]
 		s.teleport(p0, st["yaw"])
 		s.scripted_input = {"tuck": 1.0}
-		for f in 600:
+		for f in 960:
 			s.step(1.0 / 120.0)
-		check("%s: tuck from the top rolls into the park" % st["name"], s.speed > 5.0, "%.1f m/s after 5 s" % s.speed)
+		var o := Vector3(world.park.parks[i]["origin"][0], 0, world.park.parks[i]["origin"][1])
+		var past := (s.position - o).dot(Vector3(world.park.parks[i]["dir"][0], 0, world.park.parks[i]["dir"][1]))
+		check("%s: pole-pushing from the top gets you into the park" % st["name"], past > 0.0 and s.speed > 4.0, "%.0f m past the drop-in at %.1f m/s after 8 s" % [past, s.speed])
+		check("%s: W stops helping once you're moving" % st["name"], s.pushing == 0.0 or s.speed < Skier.PUSH_MAX)
 	for pk in world.terrain.layout.get("parks", []):
 		var d := Vector3(pk["dir"][0], 0, pk["dir"][1])
 		for k in pk["kickers"]:
@@ -274,10 +277,32 @@ func _body_physics(spot: Dictionary) -> void:
 	check("leaning back loads the tails: bigger pop", loaded["clear"] > plain["clear"] * 1.15, "%.2f m vs %.2f m" % [loaded["clear"], plain["clear"]])
 	var bf := _pop(spot, {"jump": 1.0, "lean_back": 1.0}, 0.6, {"jump": 1.0, "lean_back": 1.0}, 0.05, {"lean_back": 1.0}, 0.35)
 	check("holding back at the pop starts a backflip", bf["pitch"] < -0.5, "%.0f deg after 0.35 s" % rad_to_deg(bf["pitch"]))
-	var wound := _pop(spot, {"jump": 1.0, "lean_right": 1.0}, 0.8, {"jump": 1.0, "lean_right": 1.0}, 0.02, {}, 0.5)
-	check("wind-up spins without air input", wound["rot"] > deg_to_rad(90.0), "%.0f deg in 0.5 s" % rad_to_deg(wound["rot"]))
-	var tucked := _pop(spot, {"jump": 1.0, "lean_right": 1.0}, 0.8, {"jump": 1.0, "lean_right": 1.0}, 0.02, {"tuck": 1.0}, 0.5)
-	check("tucking spins faster", tucked["rot"] > wound["rot"] * 1.1, "%.0f vs %.0f deg" % [rad_to_deg(tucked["rot"]), rad_to_deg(wound["rot"])])
+	var wound := _pop(spot, {"jump": 1.0, "lean_left": 1.0}, 0.8, {"jump": 1.0, "lean_left": 1.0}, 0.02, {}, 0.5)
+	check("holding Left winds up a RIGHT spin", wound["rot"] > deg_to_rad(70.0), "%.0f deg in 0.5 s" % rad_to_deg(wound["rot"]))
+	var held := _pop(spot, {"jump": 1.0, "lean_left": 1.0}, 0.8, {"jump": 1.0, "lean_left": 1.0}, 0.02, {"lean_left": 1.0}, 0.5)
+	check("keeping Left held after the pop doesn't undo the spin", held["rot"] > deg_to_rad(70.0), "%.0f deg in 0.5 s" % rad_to_deg(held["rot"]))
+	var both := _pop(spot, {"jump": 1.0, "lean_left": 1.0}, 0.8, {"jump": 1.0, "lean_left": 1.0}, 0.02, {"lean_right": 1.0}, 0.5)
+	check("wind up Left, then Right in the air: faster right spin", both["rot"] > wound["rot"], "%.0f vs %.0f deg" % [rad_to_deg(both["rot"]), rad_to_deg(wound["rot"])])
+	# multiple flips: keep pulling past ~3/4 of a turn and the body tucks; let go and it opens up
+	s.teleport(s.position, s.heading)
+	s.position.y += 60.0
+	s.airborne = true
+	s.air_pitch = -1.0
+	s.flip_vel = -4.0
+	s.scripted_input = {"lean_back": 1.0}
+	for i in 24:
+		s.step(1.0 / 120.0)
+	check("the first flip stays laid out", s.flip_tuck < 0.05, "tuck %.2f at %.0f deg" % [s.flip_tuck, rad_to_deg(-s.air_pitch)])
+	s.air_pitch = -TAU * 0.8
+	for i in 36:
+		s.step(1.0 / 120.0)
+	var tucked := s.flip_tuck
+	s.scripted_input = {}
+	for i in 60:
+		s.step(1.0 / 120.0)
+	check("pulling a second flip tucks, letting go opens up", tucked > 0.8 and s.flip_tuck < 0.3, "tuck %.2f -> %.2f" % [tucked, s.flip_tuck])
+	s.airborne = false
+	s.air_pitch = 0.0
 	var ctrl := []
 	for d in 3:
 		s.difficulty = d
@@ -526,14 +551,16 @@ func _physics() -> void:
 	var v3 := s.vel.length()
 	check("accelerates downhill", v3 > 8.0 and v3 < 30.0, "speed after 3 s on %.0f deg: %.1f m/s" % [spot["slope"], v3])
 	check("stays grounded on smooth slope", not s.airborne and not s.is_crashed)
-	# 2. tuck is faster than upright
+	# 2. no tuck: once you're moving, W (pole push) adds nothing
 	s = _settle_on(spot["pos"], spot["yaw"])
-	_run(s, 4.0, {})
+	_run(s, 2.0, {})
+	_run(s, 2.0, {})
 	var upright := s.vel.length()
 	s = _settle_on(spot["pos"], spot["yaw"])
-	_run(s, 4.0, {"tuck": 1.0})
+	_run(s, 2.0, {})
+	_run(s, 2.0, {"tuck": 1.0})
 	var tucked := s.vel.length()
-	check("tuck reduces drag", tucked > upright, "upright %.1f vs tuck %.1f m/s" % [upright, tucked])
+	check("no tucking: W adds no speed once moving", absf(tucked - upright) < 0.05 and s.tuck == 0.0, "without %.2f vs with W %.2f m/s" % [upright, tucked])
 	# 3. hockey stop: skis swing across the direction of travel and the skier stops
 	s = _settle_on(spot["pos"], spot["yaw"])
 	_run(s, 3.0, {})
@@ -600,7 +627,7 @@ func _physics() -> void:
 	_run(s, 0.02, {})
 	_run(s, 0.5, {"spin_right": 1.0})
 	# (Normal difficulty: in-air input only adds some rotation; most of a spin comes from the wind-up)
-	check("spin input rotates in air", absf(s.air_rotation) > deg_to_rad(60.0) or not s.airborne, "%.0f deg" % rad_to_deg(s.air_rotation))
+	check("spin input rotates in air", absf(s.air_rotation) > deg_to_rad(45.0) or not s.airborne, "%.0f deg" % rad_to_deg(s.air_rotation))
 	# 8. flat terrain: speed decays
 	var flat := _find_slope(0.0, 3.0)
 	if not flat.is_empty():
@@ -772,41 +799,40 @@ func _gameplay() -> void:
 	check("tip grab recognised", str(ttip.get("name", "")) == "Left Tip Grab", str(ttip.get("name", "")))
 	var tsk := TrickSystem.evaluate(base.merged({"rotation": deg_to_rad(360.0), "misalign": 40.0}, true))
 	check("sketchy landing scores less", int(tsk.get("points", 0)) < int(t360.get("points", 0)))
-	# --- real 360: jump off a slope, spin, land
+	# --- real 360 off the park's medium kicker, the way a player does it: hold Left on the run-in
+	# (shoulders coil left), pop at the lip, Right in the air, let go to spot the landing
 	var ok360 := false
-	for attempt in 6:
-		var sp2 := _find_slope(26.0 + attempt, 34.0 + attempt)
-		if sp2.is_empty():
-			continue
-		s.teleport(sp2["pos"], sp2["yaw"])
-		s.scripted_input = {"tuck": 1.0}
-		for i in 240:
-			s.step(dt)
-		s.scripted_input = {"jump": 1.0}
-		for i in 66:
-			s.step(dt)
-		var box := {}
-		var cb := func(info): box["info"] = info
-		s.landed.connect(cb)
-		s.scripted_input = {"spin_right": 1.0}
-		var t2 := 0.0
-		while t2 < 4.0 and not box.has("info"):
-			# stop spinning once a full turn is done so the landing lines up
-			# (spin keeps going while it damps out, so release early enough to land near 360)
-			if s.airborne and absf(s.air_rotation) + s.spin_vel * s.spin_vel / (2.0 * Skier.SPIN_DAMP) > deg_to_rad(355.0):
-				s.scripted_input = {}
-			s.step(dt)
-			t2 += dt
-		s.landed.disconnect(cb)
-		var landed_info: Dictionary = box.get("info", {})
-		if not landed_info.is_empty():
-			var tr := TrickSystem.evaluate(landed_info)
-			print("[TEST]   attempt %d: air %.2f s, rotation %.0f deg, misalign %.0f, crash '%s' -> %s" % [attempt, landed_info["air_time"],
-				rad_to_deg(landed_info["rotation"]), landed_info["misalign"], landed_info["crash"], tr.get("name", "-")])
-			if landed_info["crash"] == "" and tr.get("spin", 0) >= 360:
-				ok360 = true
-				break
-	check("a real 360 can be landed", ok360)
+	var kk: Dictionary = {}
+	for k in world.terrain.layout["parks"][0]["kickers"]:
+		if k["size"] == "M":
+			kk = k
+	var kd := Vector3(kk["dir"][0], 0, kk["dir"][1])
+	var lip := Vector3(kk["lip"][0], 0, kk["lip"][1])
+	s.difficulty = 0
+	s.teleport(Vector3(kk["origin"][0], 0, kk["origin"][1]) - kd * 12.0, Skier.yaw_of(kd), float(kk["approach_speed"]) - 1.0)
+	var box := {}
+	var cb := func(info): box["info"] = info
+	s.landed.connect(cb)
+	var t2 := 0.0
+	while t2 < 6.0 and not box.has("info"):
+		var to_lip := (lip - s.position).dot(kd)
+		if not s.airborne:
+			s.scripted_input = {"lean_left": 1.0, "jump": 1.0} if to_lip > 0.4 else {}
+		elif absf(s.air_rotation) + s.spin_vel * s.spin_vel / (2.0 * float(s.diff()["spin_damp"])) < deg_to_rad(350.0):
+			s.scripted_input = {"lean_right": 1.0}
+		else:
+			s.scripted_input = {}
+		s.step(dt)
+		s.time += dt
+		t2 += dt
+	s.landed.disconnect(cb)
+	var landed_info: Dictionary = box.get("info", {})
+	if not landed_info.is_empty():
+		var tr := TrickSystem.evaluate(landed_info)
+		print("[TEST]   kicker 360: air %.2f s, rotation %.0f deg, misalign %.0f, crash '%s' -> %s" % [landed_info["air_time"],
+			rad_to_deg(landed_info["rotation"]), landed_info["misalign"], landed_info["crash"], tr.get("name", "-")])
+		ok360 = landed_info["crash"] == "" and tr.get("spin", 0) >= 360 and landed_info["rotation"] > 0.0
+	check("a real right 360 off a kicker (wind up Left, spin Right) can be landed", ok360)
 	# --- autopilot through every race: straight at each gate, or along the routed line;
 	# the race counts as finishable if either strategy gets through every gate
 	for c in world.terrain.layout.get("challenges", []):
@@ -1198,6 +1224,57 @@ func _park_shots() -> void:
 		if snapped and not s.airborne:
 			break
 	print("[TEST] park shots: %s, backflip snapped=%s" % [pk["name"], snapped])
+	# close-ups of the outfit from three sides
+	s.teleport(st["pos"], st["yaw"])
+	for i in 30:
+		s.step(1.0 / 120.0)
+	s._cur_xform = s._compose_xform()
+	s._prev_xform = s._cur_xform
+	var fwd := Vector3(-sin(s.heading), 0, -cos(s.heading))
+	var rt := fwd.cross(Vector3.UP)
+	var c := s.position + Vector3.UP * 0.95
+	for v in [["outfit_front", fwd * 2.4 + rt * 0.6], ["outfit_side", rt * 2.4 + fwd * 0.3], ["outfit_back", -fwd * 2.4 + rt * 0.7]]:
+		_free_cam(c + v[1] + Vector3.UP * 0.25, c)
+		await _frames(4)
+		await _snap(v[0])
+	# a right 360 off the medium kicker: frames through the wind-up and the spin, and a double
+	# backflip off the large one (first flip laid out, then tucked)
+	for trick in ["360", "double"]:
+		var kk: Dictionary = {}
+		for k2 in pk["kickers"]:
+			if k2["line"] == "jump" and k2["size"] == ("M" if trick == "360" else "L"):
+				kk = k2
+		var ko := Vector3(kk["origin"][0], 0, kk["origin"][1])
+		var lip := Vector3(kk["lip"][0], 0, kk["lip"][1])
+		s.teleport(ko - d * 12.0, Skier.yaw_of(d), float(kk["approach_speed"]) - 1.0)
+		var shot := 0
+		var tt := 0.0
+		var next_t := 0.0
+		while tt < 6.0:
+			var to_lip := (lip - s.position).dot(d)
+			if trick == "360":
+				if not s.airborne:
+					s.scripted_input = {"lean_left": 1.0, "jump": 1.0} if to_lip > 0.4 else {}
+				elif absf(s.air_rotation) + s.spin_vel * s.spin_vel / (2.0 * float(s.diff()["spin_damp"])) < deg_to_rad(350.0):
+					s.scripted_input = {"lean_right": 1.0}
+				else:
+					s.scripted_input = {}
+			else:
+				s.scripted_input = {"jump": 1.0, "lean_back": 1.0} if (not s.airborne and to_lip > 0.4 and to_lip < 3.0) else ({"lean_back": 1.0} if s.airborne and s.air_pitch > -TAU * 1.75 else {})
+			s.step(1.0 / 120.0)
+			s.time += 1.0 / 120.0
+			tt += 1.0 / 120.0
+			if (to_lip < 4.0 or s.airborne) and tt >= next_t and shot < 8:
+				s._cur_xform = s._compose_xform()
+				s._prev_xform = s._cur_xform
+				_free_cam(s.position + side * 6.0 - d * 2.0 + Vector3.UP * 1.0, s.position + Vector3.UP * 0.8)
+				await _frames(2)
+				await _snap("%s_%d" % [trick, shot])
+				shot += 1
+				next_t = tt + (0.12 if trick == "360" else 0.2)
+			if shot > 0 and not s.airborne and to_lip < -3.0:
+				break
+		print("[TEST] %s: rotation %.0f deg, flips %.2f, crashed %s" % [trick, rad_to_deg(s.air_rotation), s.air_pitch / TAU, s.is_crashed])
 	s.scripted_input = null
 	s.set_physics_process(true)
 

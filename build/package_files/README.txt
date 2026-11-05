@@ -32,7 +32,7 @@ on laptops or integrated graphics.
 
 CONTROLS (keyboard & mouse, all rebindable in Settings)
 --------
-W            Tuck (less air resistance) / pole-push on flat ground
+W            Pole push - only when slow (no tuck)
 S            Hockey stop (tap: check speed, hold: stop; + A/D picks the side)
 A / D        Carve left / right. On a rail or box: keep your balance
 Left Shift   Aggressive edge carving (tighter turns, scrubs speed)
@@ -40,8 +40,9 @@ Space        Hold to crouch, release to pop - let go right at the lip
 Up / Down    Shift your weight forward / back. Keep holding Down (or Up) as
              you pop for a backflip (front flip); in the air Up / Down keep
              flipping. Hold W (tuck) in a flip to tuck it, let go to lay it out.
-Left / Right On the ground: wind up a spin (release Space while winding). In the
-             air: spin. Q / E also spin. Tucking spins faster.
+Left / Right Spins. For a right 360: hold Left on the run-in (shoulders coil
+             left), pop at the lip, then press Right in the air. Mirror it for left.
+             Keep pulling a flip past the first rotation and you tuck for more.
 Difficulty   Settings > Controls: Easy (default: lots of air control,
              forgiving landings and rails), Normal, Realistic (rotation only
              from your takeoff, edges catch, rails need balancing)

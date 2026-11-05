@@ -31,20 +31,22 @@ const SIDECUT_R := 15.0
 const CONTACT_EPS := 0.06
 const AIR_THRESHOLD := 0.22
 const CRASH_IMPACT := 20.0
-const SPIN_MAX := 8.6
+const SPIN_MAX := 6.3                # ~1 turn per second, like a real 360 off a park jump
 const SPIN_ACCEL := 20.0
 const SPIN_DAMP := 7.0
 const WALK_SPEED := 1.8
 const JOG_SPEED := 3.4
 const MAX_HIKE_SLOPE := 40.0
 const GRABS := false               # grabs are switched off for now (flips, spins and rails first)
-const WIND_SPIN := 7.5             # spin rate (rad/s) from a full wind-up at takeoff
-const FLIP_POP := 4.4              # flip rate (rad/s) from leaning fully at the pop
+const WIND_SPIN := 5.4             # spin rate (rad/s) the unwinding body reaches after a full wind-up
+const UNWIND_TIME := 0.35          # the spin builds up over this long after takeoff (hips follow shoulders)
+const PUSH_MAX := 4.0              # W pole-pushes only below this speed (m/s); faster, it does nothing
+const FLIP_POP := 3.8              # flip rate (rad/s) from leaning fully at the pop
 ## Easy / Normal / Realistic: in-air spin & flip authority (rad/s^2), spin damping, auto-levelling
 ## toward a clean landing, landing tolerance (deg), impact limit and edge catching.
 const DIFFICULTY := [
-	{"name": "Easy", "air_spin": 20.0, "spin_damp": 7.0, "air_flip": 9.0, "level": 3.0, "land_tol": 62.0, "impact": 24.0, "edge_catch": false, "rail": 1.0, "rail_assist": 3.0},
-	{"name": "Normal", "air_spin": 11.0, "spin_damp": 3.0, "air_flip": 6.0, "level": 1.8, "land_tol": 50.0, "impact": 20.0, "edge_catch": false, "rail": 2.0, "rail_assist": 1.2},
+	{"name": "Easy", "air_spin": 11.0, "spin_damp": 7.0, "air_flip": 9.0, "level": 3.0, "land_tol": 62.0, "impact": 24.0, "edge_catch": false, "rail": 1.0, "rail_assist": 3.0},
+	{"name": "Normal", "air_spin": 7.5, "spin_damp": 3.0, "air_flip": 6.0, "level": 1.8, "land_tol": 50.0, "impact": 20.0, "edge_catch": false, "rail": 2.0, "rail_assist": 1.2},
 	{"name": "Realistic", "air_spin": 4.5, "spin_damp": 0.8, "air_flip": 3.0, "level": 0.0, "land_tol": 40.0, "impact": 17.0, "edge_catch": true, "rail": 3.2, "rail_assist": 0.0},
 ]
 
@@ -91,6 +93,7 @@ var revert := 0.0
 var takeoff_pos := Vector3.ZERO
 var max_air_height := 0.0
 var pushing := 0.0
+var _want_push := false
 var steep_time := 0.0
 var carving := false
 var aggressive := false
@@ -111,7 +114,11 @@ var _jump_prev := false
 var _mode_before_lift := Mode.SKI
 var difficulty := 1
 var lean_fa := 0.0                 # body weight: + forward over the tips, - back on the tails
-var wind := 0.0                    # upper body wound up for a spin (+ = right), on the ground
+var wind := 0.0                    # upper body wound up for a spin (+ = a right spin: shoulders coiled left), on the ground
+var flip_tuck := 0.0               # 0 = laid-out flip, 1 = tucked (pulled in after the first rotation)
+var _spin_target := 0.0
+var _unwind := 0.0
+var _spin_latch := 0.0             # direction of the wind-up key still held after takeoff (ignored until released)
 var tail_load := 0.0               # crouching while leaning back: extra pop
 var flip_vel := 0.0                # rad/s, + = forward (front flip)
 var air_pitch := 0.0               # flip rotation so far (rad)
@@ -283,7 +290,8 @@ func step(dt: float) -> void:
 	var lean_in := _in("lean_forward") - _in("lean_back")
 	lean_fa = move_toward(lean_fa, lean_in, 5.0 * dt)
 	if not airborne:
-		wind = move_toward(wind, spin_in, (2.5 if absf(spin_in) > 0.1 else 4.0) * dt)
+		# hold Left to coil the shoulders left, which loads a RIGHT spin (and the other way round)
+		wind = move_toward(wind, -spin_in, (2.5 if absf(spin_in) > 0.1 else 4.0) * dt)
 		# loading builds while crouching with the weight back and fades slowly, so you can
 		# straighten up just before the pop (big ollie) instead of popping into a backflip
 		var load_t := charge * maxf(-lean_fa, 0.0)
@@ -292,7 +300,8 @@ func step(dt: float) -> void:
 	# smooth inputs (no instant redirection)
 	var srate := 3.2 * steer_sens if absf(raw_steer) > absf(steer) else 5.0
 	steer = move_toward(steer, clampf(raw_steer, -1.0, 1.0), srate * dt)
-	tuck = move_toward(tuck, 1.0 if want_tuck and not want_brake else 0.0, 3.0 * dt)
+	tuck = 0.0
+	_want_push = want_tuck and not want_brake
 	brake = move_toward(brake, 1.0 if want_brake else 0.0, 4.0 * dt)
 	# jump charge
 	if jump_held:
@@ -493,8 +502,8 @@ func _ground_step(dt: float, n: Vector3, cf: float) -> void:
 	vel = vt + n * vn
 	# --- pole push / skating on the flats
 	pushing = 0.0
-	if tuck > 0.5 and sp < 7.0 and brake < 0.1:
-		var acc := 2.4 * (1.0 - sp / 7.0)
+	if _want_push and sp < PUSH_MAX and brake < 0.1:
+		var acc := 2.6 * (1.0 - sp / PUSH_MAX)
 		vel += f * acc * dt
 		pushing = 1.0
 	# --- static friction when nearly stopped
@@ -518,8 +527,17 @@ func _air_step(dt: float, spin_in: float, flip_in: float) -> void:
 	vel -= vel * cda * sp * dt
 	var d := diff()
 	# body english: how much you can change your rotation once airborne depends on the difficulty
+	if _spin_latch != 0.0 and signf(spin_in) != _spin_latch:
+		_spin_latch = 0.0
+	if _spin_latch != 0.0:
+		spin_in = 0.0
+	if _unwind > 0.0:
+		_unwind -= dt
+		spin_vel = move_toward(spin_vel, _spin_target, absf(_spin_target) / UNWIND_TIME * 1.4 * dt)
 	if absf(spin_in) > 0.1:
 		spin_vel = move_toward(spin_vel, signf(spin_in) * SPIN_MAX, float(d["air_spin"]) * dt)
+	elif _unwind > 0.0:
+		pass
 	else:
 		spin_vel = move_toward(spin_vel, 0.0, float(d["spin_damp"]) * dt)
 	if absf(flip_in) > 0.1:
@@ -528,11 +546,14 @@ func _air_step(dt: float, spin_in: float, flip_in: float) -> void:
 		# assist: settle a small tilt toward a clean landing (it cannot rescue an upside-down one)
 		var target := roundf(air_pitch / TAU) * TAU
 		flip_vel += ((target - air_pitch) * float(d["level"]) * 2.0 - flip_vel * float(d["level"])) * dt
-	# tucked or grabbing: smaller moment of inertia, faster rotation
+	# flips start laid out; keep pulling the flip past ~3/4 of a turn and the body tucks to rotate
+	# faster (doubles, triples); let go and it opens up again to slow down and spot the landing
+	var pulling := absf(flip_in) > 0.1 and absf(air_pitch) > TAU * 0.7 and signf(flip_in) == signf(flip_vel)
+	flip_tuck = move_toward(flip_tuck, 1.0 if pulling else 0.0, (4.0 if pulling else 3.0) * dt)
 	var w_mul := 1.0 + 0.3 * compact
 	heading = wrapf(heading - spin_vel * w_mul * dt, -PI, PI)
 	air_rotation += spin_vel * w_mul * dt
-	air_pitch += flip_vel * w_mul * dt
+	air_pitch += flip_vel * lerpf(0.85, 1.4, flip_tuck) * dt
 	air_pitch_peak = maxf(air_pitch_peak, absf(air_pitch))
 	# light air steering ("body english")
 	var hv := Vector3(vel.x, 0, vel.z)
@@ -564,7 +585,8 @@ func _do_jump() -> void:
 		ground_n = Vector3.UP
 	var n := ground_n
 	# crouch depth, loaded tails (lean back while crouching) and rebound off a compression
-	var strength := 2.6 + 2.6 * charge + 1.6 * tail_load + 1.2 * clampf(compression, 0.0, 1.0)
+	# a real ollie adds ~1.5-3 m/s of pop, not a launch: the kicker does the work
+	var strength := 1.6 + 1.9 * charge + 0.7 * tail_load + 0.5 * clampf(compression, 0.0, 1.0)
 	vel += (n * 0.75 + Vector3.UP * 0.25).normalized() * strength
 	tail_load = 0.0
 	position.y += 0.05
@@ -586,8 +608,13 @@ func _take_off(from_jump := false) -> void:
 	max_air_height = 0.0
 	_coyote = 0.0 if from_jump else 0.12
 	# rotation is set at takeoff: carving rotation and the wound-up upper body give the spin ...
-	spin_vel = clampf(yaw_rate * 0.5 + wind * WIND_SPIN, -SPIN_MAX, SPIN_MAX)
+	# the shoulders unwind first and the hips and skis follow, so the spin builds up over UNWIND_TIME
+	_spin_target = clampf(yaw_rate * 0.5 + wind * WIND_SPIN, -SPIN_MAX, SPIN_MAX)
+	spin_vel = _spin_target * 0.3
+	_unwind = UNWIND_TIME if absf(wind) > 0.15 else 0.0
+	_spin_latch = -signf(wind) if absf(wind) > 0.15 else 0.0
 	wind = 0.0
+	flip_tuck = 0.0
 	# ... the lip pitches you backward, and leaning at the pop starts a front / back flip
 	flip_vel = clampf(_ground_pitch_rate * 0.35, -1.0, 1.0)
 	if from_jump:
