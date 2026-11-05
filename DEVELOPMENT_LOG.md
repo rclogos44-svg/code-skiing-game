@@ -444,3 +444,7 @@ no map, parks, keep the ragdoll crashes, black baggy gear, only flips, spins and
   right side (right ski ~0.34 m out, hips rotated in 40 deg with the knees at 140 deg, boots flexed
   10 deg - found by searching the joint-limited leg angles), and the upper back turns and leans
   toward them while he looks back at them.
+- Arms no longer pass through the skis: the tail grab holds the edge nearest the shoulder
+  (`auto_grip`), and for every grab, if an arm would intersect a ski (arm and skis treated as
+  rounded bars), the elbow swings around the shoulder-hand line to the clearest side. The grab
+  preview prints the arm-to-ski clearance: all seven grabs 5-8 cm clear.

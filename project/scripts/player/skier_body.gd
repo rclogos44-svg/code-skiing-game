@@ -81,7 +81,7 @@ const GRAB_POSES := {
 	"Tail": {"r": ["r", 0.68, 1.0], "free": {"l": Vector3(-0.12, 0.22, -0.48)},
 		"legs": {"l": [30.0, 15.0, -40.0, 140.0, 10.0], "r": [30.0, -15.0, 40.0, 140.0, 10.0]}, "pitch": 12.0, "pitch_w": 6.0,
 		"legs_w": 3.0, "twist": -0.55, "twist_dist": [0.1, 0.5, 1.0], "side": -0.05, "curve": -0.32, "time_in": 0.65,
-		"look": 1.0, "shoulders": {"r": Vector3(0.02, -0.045, 0.08), "l": Vector3(0.0, 0.02, -0.04)}},
+		"look": 1.0, "shoulders": {"r": Vector3(0.02, -0.045, 0.08), "l": Vector3(0.0, 0.02, -0.04)}, "auto_grip": true},
 	"Tip": {"l": ["l", -0.52, 1.0], "free": {"r": Vector3(0.42, 0.08, 0.05)},
 		"legs": {"l": [100.0, 6.0, 0.0, 80.0], "r": [72.0, 5.0, 5.0, 100.0]}, "pitch": 38.0, "twist": 0.12, "side": -0.08},
 	"Truck Driver": {"l": ["l", -0.3, 1.0], "r": ["r", -0.3, 1.0],
@@ -90,7 +90,9 @@ const GRAB_POSES := {
 		"legs": {"l": [55.0, 5.0, 5.0, 115.0], "r": [55.0, 10.0, -8.0, 128.0]}, "pitch": 18.0, "twist": 0.25, "side": 0.12},
 }
 var _grab_bend := 0.0            # extra spine bend (rad) so an out-of-reach hand gets to the ski
-var grab_gap := {}               # hand-to-ski distance per hand (m), for checking the poses
+var grab_gap := {}
+var arm_clear := {}              # arm-to-ski clearance per grabbing hand (m, < 0 = through the ski)
+var _elbow_k := {}               # elbow swing chosen to keep a grabbing arm clear of the skis               # hand-to-ski distance per hand (m), for checking the poses
 var _fk := {}                    # leg forward kinematics for the current grab: hip / knee per side
 
 
@@ -98,6 +100,37 @@ var _solved := {}                # grab name -> pose solved so the hand really h
 const SPINE_LIMITS := {"pitch": [0.0, 70.0], "twist": [-0.7, 0.7], "side": [-0.3, 0.3]}
 const NECK_YAW := 80.0            # how far the head turns on the shoulders (deg)
 const NECK_PITCH := [-50.0, 35.0] # down / up (deg)
+
+
+## Where the hand holds the ski (ski centre / basis): the pose's edge, or with auto_grip whichever
+## edge and face is nearest the shoulder, so the arm doesn't reach through the ski to the far side.
+static func grip_point(ski_c: Vector3, B: Basis, ss: float, spec: Array, sh: Vector3, auto: bool) -> Vector3:
+	var along := float(spec[1])
+	if not auto:
+		return ski_c + B * Vector3(ss * 0.07 * float(spec[2]), 0.05, along)
+	var best := ski_c
+	var bd := INF
+	for e in [1.0, -1.0]:
+		for f in [0.05, -0.035]:
+			var p: Vector3 = ski_c + B * Vector3(e * 0.07, f, along)
+			if p.distance_to(sh) < bd:
+				bd = p.distance_to(sh)
+				best = p
+	return best
+
+
+## Smallest gap (m) between an arm (upper arm, and the forearm short of the gripping hand) and the
+## skis, treating the arm and each ski as rounded bars; < 0 means the arm goes through a ski.
+func _arm_ski_clearance(sh: Vector3, el: Vector3, hand: Vector3) -> float:
+	var fa_end := hand + (el - hand).normalized() * 0.13
+	var best := INF
+	for sx: Transform3D in [ski_l, ski_r]:
+		var a: Vector3 = sx.origin + sx.basis.z * 0.79
+		var b: Vector3 = sx.origin - sx.basis.z * 0.95
+		for seg in [[sh, el], [el, fa_end]]:
+			var cp := Geometry3D.get_closest_points_between_segments(seg[0], seg[1], a, b)
+			best = minf(best, cp[0].distance_to(cp[1]))
+	return best - 0.12
 
 
 ## Body-frame geometry of a grab pose: returns the total hand-to-grab-point gap (m) beyond arm reach.
@@ -115,9 +148,9 @@ func _grab_gap(g: Dictionary, legs: Dictionary, sp: Array, ph: float, pz: float)
 		var ss := -1.0 if spec[0] == "l" else 1.0
 		var fk := _leg_fk(Vector3(ss * HIP_HALF, ph - 0.04, pz), ss, legs[spec[0]])
 		var B: Basis = fk[1]
-		var pt: Vector3 = (fk[2] as Vector3) + B * Vector3(ss * 0.07 * float(spec[2]), 0.05, float(spec[1]))
 		var hs := -1.0 if sd == "l" else 1.0
 		var sh := chest - tb.y * 0.07 + tb.x * (hs * SHOULDER_HALF) + tb * (g.get("shoulders", {}).get(sd, Vector3.ZERO) as Vector3)
+		var pt := grip_point(fk[2], B, ss, spec, sh, bool(g.get("auto_grip", false)))
 		total += maxf((pt - sh).length() - (UPPER_ARM + FOREARM) * 0.95, 0.0)
 	return total
 
@@ -704,7 +737,7 @@ func _compute_pose(dt: float) -> void:
 			var spec: Array = gpose[sd]
 			var gs := -1.0 if spec[0] == "l" else 1.0
 			var sx2: Transform3D = ski_l if spec[0] == "l" else ski_r
-			hand = hand.lerp(sx2.origin + sx2.basis * Vector3(gs * 0.07 * float(spec[2]), 0.05, float(spec[1])), g)
+			hand = hand.lerp(grip_point(sx2.origin, sx2.basis, gs, spec, sh, bool(gpose.get("auto_grip", false))), g)
 			grab_gap[sd] = maxf((hand - sh).length() - (UPPER_ARM + FOREARM), 0.0)
 		elif g > 0.01:
 			var sxf := ski_l if sd == "l" else ski_r
@@ -714,6 +747,32 @@ func _compute_pose(dt: float) -> void:
 			hand = hand.lerp(grab_pt, g)
 		var elbow_pole := sh + tb * Vector3(sgn * 0.5, -0.2, 0.45)
 		var el := ik2(sh, hand, UPPER_ARM, FOREARM, elbow_pole)
+		if g > 0.01 and gpose.has(sd):
+			# grabbing: if the arm would pass through a ski, swing the elbow round the shoulder-hand
+			# line to the clearest side (sticking with the last choice unless another is clearly better)
+			var clr := _arm_ski_clearance(sh, el, hand)
+			if clr < 0.0 or _elbow_k.get(sd, 0) != 0:
+				var axis := (hand - sh).normalized()
+				var best_k := 0
+				var best_c := clr
+				var cands := {}
+				for k in 12:
+					var pole_k := sh + (elbow_pole - sh).rotated(axis, TAU * k / 12.0)
+					var el_k := ik2(sh, hand, UPPER_ARM, FOREARM, pole_k)
+					var c_k := _arm_ski_clearance(sh, el_k, hand) - 0.004 * minf(k, 12 - k)
+					cands[k] = [el_k, c_k]
+					if c_k > best_c:
+						best_c = c_k
+						best_k = k
+				var prev: int = _elbow_k.get(sd, 0)
+				if cands.has(prev) and float(cands[prev][1]) > best_c - 0.02:
+					best_k = prev
+				_elbow_k[sd] = best_k
+				el = cands[best_k][0]
+				clr = _arm_ski_clearance(sh, el, hand)
+			arm_clear[sd] = clr
+		else:
+			_elbow_k[sd] = 0
 		joints["elbow_" + sd] = el
 		var reach := (hand - sh).length()
 		if reach > UPPER_ARM + FOREARM:
