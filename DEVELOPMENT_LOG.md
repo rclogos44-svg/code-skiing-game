@@ -432,3 +432,7 @@ no map, parks, keep the ragdoll crashes, black baggy gear, only flips, spins and
   end of the right tail with the shoulder pulled back; left arm forward and up; torso upright.
   Compared side by side with the photos from a matching side camera. Eases in over 0.6 s.
 - Physics 91/91 (tail grab off the medium kicker held, named, clean landing).
+- Tail grab: the head turns to look at the ski being grabbed (over the right shoulder; neck limited
+  to 80 deg turn, -50..35 deg pitch) and turns first, before the hand reaches; the grabbing shoulder
+  blade slides back and down, the other forward; the twist comes mostly from the upper back
+  (spine twist shared 15 / 55 / 100 % lower to upper) with a slight lean toward the grab.
