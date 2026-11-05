@@ -21,6 +21,10 @@ var layout := {}
 var min_h := 0.0
 var max_h := 3000.0
 var sun_dir := Vector3(-0.5, 0.71, 0.5).normalized()
+# park kickers, added on top of the heightmap analytically (the 2 m grid can't hold a sharp lip)
+var _kickers: Array = []     # {o: Vector2, d: Vector2, h, lr, ld, ll, hw}
+var _kick_cells := {}        # 64 m cell key -> Array of kicker indices
+const KICK_CELL := 64.0
 
 
 func load_data(base := "res://world/") -> bool:
@@ -61,7 +65,63 @@ func load_data(base := "res://world/") -> bool:
 		surface.decompress()
 	surface.convert(Image.FORMAT_RGBA8)
 	surf_n = surface.get_width()
+	_load_kickers()
 	return true
+
+
+func _load_kickers() -> void:
+	for pk in layout.get("parks", []):
+		for k in pk["kickers"]:
+			var o := Vector2(k["origin"][0], k["origin"][1])
+			var d := Vector2(k["dir"][0], k["dir"][1]).normalized()
+			var kk := {"o": o, "d": d, "h": float(k["height"]), "lr": float(k["ramp"]), "ld": float(k["deck"]),
+				"ll": float(k["landing"]), "hw": float(k["half_width"])}
+			var idx := _kickers.size()
+			_kickers.append(kk)
+			var total: float = kk["lr"] + kk["ld"] + kk["ll"]
+			var side: Vector2 = Vector2(-d.y, d.x) * (float(kk["hw"]) + 2.0)
+			var lo := o
+			var hi := o
+			for c in [o + side, o - side, o + d * total + side, o + d * total - side]:
+				lo = lo.min(c)
+				hi = hi.max(c)
+			for cz in range(int(floor(lo.y / KICK_CELL)), int(floor(hi.y / KICK_CELL)) + 1):
+				for cx in range(int(floor(lo.x / KICK_CELL)), int(floor(hi.x / KICK_CELL)) + 1):
+					var key := cz * 4096 + cx
+					if not _kick_cells.has(key):
+						_kick_cells[key] = []
+					_kick_cells[key].append(idx)
+
+
+## Extra height of the park kickers at (x, z): parabolic ramp up to the lip, flat deck, straight landing.
+func kicker_offset(x: float, z: float) -> float:
+	var key := int(floor(z / KICK_CELL)) * 4096 + int(floor(x / KICK_CELL))
+	if not _kick_cells.has(key):
+		return 0.0
+	var best := 0.0
+	for idx in _kick_cells[key]:
+		var k: Dictionary = _kickers[idx]
+		var rel := Vector2(x, z) - (k["o"] as Vector2)
+		var d: Vector2 = k["d"]
+		var t := rel.dot(d)
+		var u := absf(rel.x * -d.y + rel.y * d.x)
+		var hw: float = k["hw"]
+		if t <= 0.0 or u >= hw + 2.0:
+			continue
+		var h: float = k["h"]
+		var lr: float = k["lr"]
+		var ld: float = k["ld"]
+		var ll: float = k["ll"]
+		var y := 0.0
+		if t < lr:
+			y = h * (t / lr) * (t / lr)
+		elif t < lr + ld:
+			y = h
+		elif t < lr + ld + ll:
+			y = h * (1.0 - (t - lr - ld) / ll)
+		y *= clampf((hw + 2.0 - u) * 0.5, 0.0, 1.0)
+		best = maxf(best, y)
+	return best
 
 
 func _load_bytes(path: String, count: int) -> PackedByteArray:
@@ -85,8 +145,13 @@ func in_core(x: float, z: float) -> bool:
 	return x >= 0.0 and z >= 0.0 and x <= world and z <= world
 
 
-## Bilinear height (m). Outside the core the 32 m backdrop grid is used.
+## Ground height (m): heightmap plus park kickers.
 func height(x: float, z: float) -> float:
+	return base_height(x, z) + (kicker_offset(x, z) if not _kick_cells.is_empty() else 0.0)
+
+
+## Bilinear heightmap height (m). Outside the core the 32 m backdrop grid is used.
+func base_height(x: float, z: float) -> float:
 	if x >= 0.0 and z >= 0.0 and x <= world and z <= world:
 		var fx := x / sp
 		var fz := z / sp

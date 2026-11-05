@@ -37,6 +37,7 @@ const SPIN_DAMP := 7.0
 const WALK_SPEED := 1.8
 const JOG_SPEED := 3.4
 const MAX_HIKE_SLOPE := 40.0
+const GRABS := false               # grabs are switched off for now (flips, spins and rails first)
 const WIND_SPIN := 7.5             # spin rate (rad/s) from a full wind-up at takeoff
 const FLIP_POP := 4.4              # flip rate (rad/s) from leaning fully at the pop
 ## Easy / Normal / Realistic: in-air spin & flip authority (rad/s^2), spin damping, auto-levelling
@@ -314,7 +315,7 @@ func step(dt: float) -> void:
 
 	var p := position
 	ground_h = terrain.height(p.x, p.z)
-	var n := terrain.normal(p.x, p.z, 1.2)
+	var n := _snow_normal(p)
 	var gap := p.y - ground_h
 	contact = gap < CONTACT_EPS
 	# skis just above the snow after a small bump still steer partially (legs absorb the bump)
@@ -333,7 +334,7 @@ func step(dt: float) -> void:
 	# integrate
 	p += vel * dt
 	var h2 := terrain.height(p.x, p.z)
-	var n2 := terrain.normal(p.x, p.z, 1.2)
+	var n2 := _snow_normal(p)
 	if p.y <= h2:
 		p.y = h2
 		var vn := vel.dot(n2)
@@ -366,6 +367,12 @@ func step(dt: float) -> void:
 	_rail_cd = maxf(_rail_cd - dt, 0.0)
 	if not rails.is_empty() and not is_crashed and _rail_cd <= 0.0:
 		_try_mount()
+
+
+## Ground normal: smoothed over 2.4 m on the mountain, but tight on park kickers so the lip's angle
+## isn't averaged away with the flat deck behind it.
+func _snow_normal(p: Vector3) -> Vector3:
+	return terrain.normal(p.x, p.z, 0.25 if terrain.kicker_offset(p.x, p.z) > 0.0 else 1.2)
 
 
 func _measure_turn(dt: float) -> void:
@@ -532,8 +539,8 @@ func _air_step(dt: float, spin_in: float, flip_in: float) -> void:
 	if hv.length() > 1.0:
 		var right := hv.normalized().cross(Vector3.UP)
 		vel += right * steer * 1.1 * dt
-	var gl := _pressed("grab_left")
-	var gr := _pressed("grab_right")
+	var gl := GRABS and _pressed("grab_left")
+	var gr := GRABS and _pressed("grab_right")
 	# where the hand goes: leaning forward reaches the tip, leaning back the tail
 	var kind := "tip" if flip_in > 0.5 else ("tail" if flip_in < -0.5 else "")
 	if gl and grab_l < 0.05:
@@ -975,7 +982,8 @@ func _try_mount() -> void:
 		if absf(lat) > float(r["width"]) * 0.5 + 0.3:
 			continue
 		var dy := position.y - top.y
-		if dy < (-0.42 if r["kind"] == "box" else -0.1) or dy > 0.45:
+		# boxes and tubes can be ridden onto from the snow, rails need a pop
+		if dy < {"box": -0.42, "tube": -0.62}.get(r["kind"], -0.1) or dy > 0.45:
 			continue
 		var vh := vel.dot(dir)
 		if absf(vh) < 2.0 or (airborne and vel.y > 1.0):

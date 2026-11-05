@@ -38,6 +38,8 @@ func run(w: World) -> void:
 			await _showcase4()
 		"showcase5":
 			await _showcase5()
+		"parks":
+			await _park_shots()
 		_:
 			print("[TEST] unknown test mode ", Game.test_mode)
 			failures += 1
@@ -187,6 +189,82 @@ func _pop(spot: Dictionary, hold: Dictionary, charge_s: float, before: Dictionar
 	return res
 
 
+## Every park kicker from a normal run-in (Easy, no input): air, and a landing past the knuckle.
+func _park_kickers() -> void:
+	var s := world.skier
+	var saved := s.difficulty
+	s.difficulty = 0
+	for i in world.park.parks.size():
+		var st: Dictionary = world.park.park_start(i)
+		var p0: Vector3 = st["pos"]
+		s.teleport(p0, st["yaw"])
+		s.scripted_input = {"tuck": 1.0}
+		for f in 600:
+			s.step(1.0 / 120.0)
+		check("%s: tuck from the top rolls into the park" % st["name"], s.speed > 5.0, "%.1f m/s after 5 s" % s.speed)
+	for pk in world.terrain.layout.get("parks", []):
+		var d := Vector3(pk["dir"][0], 0, pk["dir"][1])
+		for k in pk["kickers"]:
+			var knuckle := Vector3(k["knuckle"][0], 0, k["knuckle"][1])
+			var origin := Vector3(k["origin"][0], 0, k["origin"][1])
+			var end := Vector3(k["end"][0], 0, k["end"][1])
+			s.teleport(origin - d * 12.0, Skier.yaw_of(d), float(k["approach_speed"]) - 1.0)
+			s.scripted_input = {}
+			var box := {}
+			var cb := func(info): box["info"] = info
+			s.landed.connect(cb)
+			var max_air := 0.0
+			var land_at := 0.0
+			var crash := ""
+			var launch := ""
+			for i in 900:
+				var was_air := s.airborne
+				s.step(1.0 / 120.0)
+				s.time += 1.0 / 120.0
+				if s.airborne and not was_air and launch == "":
+					var hv := Vector2(s.vel.x, s.vel.z).length()
+					launch = " · launch %.1f m/s at %.0f deg, %.1f m from lip" % [s.vel.length(), rad_to_deg(atan2(s.vel.y, hv)),
+						(s.position - Vector3(k["lip"][0], 0, k["lip"][1])).dot(d)]
+				if s.is_crashed:
+					crash = "crashed"
+					break
+				if box.has("info"):
+					var info: Dictionary = box["info"]
+					if float(info["air_time"]) > max_air:
+						max_air = info["air_time"]
+						land_at = (s.position - knuckle).dot(d)
+						crash = info["crash"]
+					box.erase("info")
+				if (s.position - knuckle).dot(d) > 45.0:
+					break
+			s.landed.disconnect(cb)
+			check("%s %s kicker (%s line) lands on the landing" % [pk["name"], k["size"], k["line"]], crash == "" and max_air > 0.4 and land_at > -1.0
+				and land_at < (end - knuckle).dot(d) + 6.0,
+				"%.2f s air, landed %.1f m past the knuckle (landing %.1f m)%s%s" % [max_air, land_at, (end - knuckle).dot(d),
+				(" CRASH " + crash) if crash != "" else "", launch])
+	s.difficulty = saved
+
+
+## Both skis stay on the boots in every flip attitude.
+func _skis_attached(spot: Dictionary) -> void:
+	var s := _settle_on(spot["pos"], spot["yaw"])
+	var body := world.body
+	var worst := 0.0
+	s.airborne = true
+	s.position.y += 5.0
+	for k in 12:
+		s.air_pitch = -TAU * k / 12.0
+		s._cur_xform = s._compose_xform()
+		s._prev_xform = s._cur_xform
+		body._compute_pose(0.016)
+		for sd in ["l", "r"]:
+			var ski: Transform3D = body.ski_l if sd == "l" else body.ski_r
+			worst = maxf(worst, ski.origin.distance_to(body.joints["ankle_" + sd]))
+	s.airborne = false
+	s.air_pitch = 0.0
+	check("skis stay on the boots through a full flip", worst < 0.3, "max ski-to-ankle %.2f m" % worst)
+
+
 func _body_physics(spot: Dictionary) -> void:
 	var s := world.skier
 	var saved := s.difficulty
@@ -228,12 +306,12 @@ func _body_physics(spot: Dictionary) -> void:
 
 ## Rides at a park feature along its line from `back` metres before it.  Optional per-step
 ## controller `ctl(s) -> Dictionary` provides the input.  Returns {mounted, info, crash, slide}.
-func _jib_run(r: Dictionary, back: float, v0: float, ctl: Callable, heading_off := 0.0, from_air := false) -> Dictionary:
+func _jib_run(r: Dictionary, back: float, v0: float, ctl: Callable, heading_off := 0.0, from_air := false, lateral := 0.0) -> Dictionary:
 	var s := world.skier
 	var a: Vector3 = r["a"]
 	var dir: Vector3 = (r["b"] - a).normalized()
 	var flat := Vector3(dir.x, 0, dir.z).normalized()
-	s.teleport(a - flat * back, Skier.yaw_of(flat), v0)
+	s.teleport(a - flat * back + flat.cross(Vector3.UP) * lateral, Skier.yaw_of(flat), v0)
 	var res := {"mounted": false, "info": {}, "crash": "", "slide": false}
 	if from_air:
 		s.position = a + dir * 0.8 + Vector3.UP * 0.25
@@ -288,14 +366,14 @@ func _jibs() -> void:
 		if float(b["length"]) > float(longest["length"]):
 			longest = b
 	s.difficulty = 2
-	var r4 := _jib_run(longest, 10.0, 6.0, none)
-	check("Realistic: no balance input falls off", r4["mounted"] and r4["crash"] == "Fell off the rail", "%s %s" % [r4["info"].get("how", ""), r4["crash"]])
+	var r4 := _jib_run(longest, 10.0, 6.0, none, 0.0, false, 0.25)    # half a box width off-centre
+	check("Realistic: entering off-centre with no balance input falls off", r4["mounted"] and r4["crash"] == "Fell off the rail", "%s %s" % [r4["info"].get("how", ""), r4["crash"]])
 	var balancer := func(sk: Skier):
 		if not sk.is_grinding():
 			return {}
 		var c := -sk.rail_balance * 3.0 - sk._rail_bal_vel * 1.5
 		return {"steer_right": clampf(c, 0.0, 1.0), "steer_left": clampf(-c, 0.0, 1.0)}
-	var r5 := _jib_run(longest, 10.0, 6.0, balancer)
+	var r5 := _jib_run(longest, 10.0, 6.0, balancer, 0.0, false, 0.25)
 	check("Realistic: balancing with A/D reaches the end", r5["info"].get("how", "") == "end", "%s %s, %.1f s" % [r5["info"].get("how", ""), r5["crash"], float(r5["info"].get("time", 0.0))])
 	s.difficulty = 1
 	var r6 := _jib_run(boxes[0], 0.0, 7.0, none, PI * 0.5, true)
@@ -557,6 +635,8 @@ func _physics() -> void:
 		_run(s, 1.5, {})
 		check("hitting a tree at speed crashes", s.is_crashed, "reason via signal")
 	_body_physics(spot)
+	_park_kickers()
+	_skis_attached(spot)
 	_jibs()
 	_on_foot(spot)
 	world.body.set_process(true)
@@ -684,7 +764,10 @@ func _gameplay() -> void:
 	var tdf := TrickSystem.evaluate(base.merged({"rotation": deg_to_rad(358.0), "flip": TAU * 2.02}, true))
 	check("double frontflip 360 recognised", str(tdf.get("name", "")).begins_with("Double Frontflip"), str(tdf.get("name", "")))
 	var tck := TrickSystem.evaluate(base.merged({"rotation": deg_to_rad(722.0), "flip": 0.1, "pitch_peak": deg_to_rad(80.0)}, true))
-	check("cork recognised", str(tck.get("name", "")).contains("Cork 720"), str(tck.get("name", "")))
+	if TrickSystem.CORKS:
+		check("cork recognised", str(tck.get("name", "")).contains("Cork 720"), str(tck.get("name", "")))
+	else:
+		check("off-axis spins score as flat spins (corks come later)", str(tck.get("name", "")).ends_with("720") and not str(tck.get("name", "")).contains("Cork"), str(tck.get("name", "")))
 	var ttip := TrickSystem.evaluate(base.merged({"rotation": 0.0, "grab_l": 0.8, "grab_kind_l": "tip"}, true))
 	check("tip grab recognised", str(ttip.get("name", "")) == "Left Tip Grab", str(ttip.get("name", "")))
 	var tsk := TrickSystem.evaluate(base.merged({"rotation": deg_to_rad(360.0), "misalign": 40.0}, true))
@@ -1061,6 +1144,60 @@ func _showcase4() -> void:
 		_free_cam(s.position + rf.cross(Vector3.UP) * 3.5 + rf * 2.0 + Vector3.UP * 1.0, s.position + Vector3.UP * 0.7)
 		await _frames(3)
 		await _snap(sh[2])
+	s.scripted_input = null
+	s.set_physics_process(true)
+
+
+## Park staging area, the skier's outfit, and a backflip off the large kicker.
+func _park_shots() -> void:
+	var s := world.skier
+	var park = world.park
+	var pi := int(Game.test_args.get("park", "0"))
+	var st: Dictionary = park.park_start(pi)
+	var pk: Dictionary = park.parks[pi]
+	var d := Vector3(pk["dir"][0], 0, pk["dir"][1])
+	var side := d.cross(Vector3.UP)
+	world.spawn(st["pos"], st["yaw"])
+	await _frames(20)
+	var p0: Vector3 = s.position
+	_free_cam(p0 - d * 14.0 + Vector3.UP * 9.0, p0 + d * 90.0)
+	await _frames(20)
+	await _snap("park_top")
+	_free_cam(p0 + d * 2.6 + side * 1.2 + Vector3.UP * 1.2, p0 + Vector3.UP * 0.95)
+	await _frames(10)
+	await _snap("park_outfit")
+	# a jump-line kicker: the largest one in this park
+	var k: Dictionary = {}
+	for kk in pk["kickers"]:
+		if kk["line"] == "jump" and (k.is_empty() or float(kk["height"]) > float(k["height"])):
+			k = kk
+	var o := Vector3(k["origin"][0], 0, k["origin"][1])
+	var knuckle := Vector3(k["knuckle"][0], 0, k["knuckle"][1])
+	knuckle.y = world.terrain.height(knuckle.x, knuckle.z)
+	_free_cam(o - d * 16.0 + side * 14.0 + Vector3.UP * 6.0, knuckle)
+	await _frames(10)
+	await _snap("park_kicker")
+	s.set_physics_process(false)
+	s.difficulty = 0
+	s.teleport(o - d * 12.0, Skier.yaw_of(d), float(k["approach_speed"]) - 1.0)
+	var t := 0.0
+	var snapped := false
+	while t < 8.0:
+		var lip_dist: float = (s.position - Vector3(k["lip"][0], 0, k["lip"][1])).dot(d)
+		s.scripted_input = {"jump": 1.0, "lean_back": 1.0} if lip_dist > -2.5 and lip_dist < 0.0 else ({"lean_back": 1.0} if s.airborne else {})
+		s.step(1.0 / 120.0)
+		s.time += 1.0 / 120.0
+		t += 1.0 / 120.0
+		if s.airborne and not snapped and absf(wrapf(s.air_pitch, -PI, PI)) > 2.4:
+			s._cur_xform = s._compose_xform()
+			s._prev_xform = s._cur_xform
+			_free_cam(s.position + side * 7.0 - d * 1.0 + Vector3.UP * 0.5, s.position)
+			await _frames(3)
+			await _snap("park_backflip")
+			snapped = true
+		if snapped and not s.airborne:
+			break
+	print("[TEST] park shots: %s, backflip snapped=%s" % [pk["name"], snapped])
 	s.scripted_input = null
 	s.set_physics_process(true)
 

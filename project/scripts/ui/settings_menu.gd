@@ -26,7 +26,6 @@ func _ready() -> void:
 	tabs.add_child(_graphics_tab())
 	tabs.add_child(_controls_tab())
 	tabs.add_child(_camera_tab())
-	tabs.add_child(_skier_tab())
 	tabs.add_child(_audio_tab())
 	var back := Button.new()
 	back.text = "Back"
@@ -163,17 +162,6 @@ func _controls_tab() -> Control:
 	_row(g, "Key bindings", reset)
 	var note := UITheme.label("Mouse: look around · Scroll: zoom · Esc: pause · Gamepad supported", 16, UITheme.DIM)
 	g.add_child(note)
-	return sg[0]
-
-
-func _skier_tab() -> Control:
-	var sg := _scroll("Skier")
-	var g: GridContainer = sg[1]
-	var names := func(pal: Array) -> Array: return pal.map(func(e): return e[0])
-	var idx := func(pal: Array) -> Array: return range(pal.size())
-	_row(g, "Jacket", _option("gear", "jacket", idx.call(SkierBody.JACKETS), names.call(SkierBody.JACKETS)))
-	_row(g, "Pants", _option("gear", "pants", idx.call(SkierBody.PANTS), names.call(SkierBody.PANTS)))
-	_row(g, "Helmet", _option("gear", "helmet", idx.call(SkierBody.HELMETS), names.call(SkierBody.HELMETS)))
 	return sg[0]
 
 

@@ -88,15 +88,15 @@ func _build_main() -> void:
 	main_panel.add_child(v)
 	var title := UITheme.label("SUMMIT", 112, UITheme.TEXT, 900, 10)
 	v.add_child(title)
-	var sub := UITheme.label("OPEN-WORLD MOUNTAIN SKIING", 22, UITheme.ACCENT, 700, 4)
+	var sub := UITheme.label("PARK SKIING", 22, UITheme.ACCENT, 700, 4)
 	v.add_child(sub)
 	var spacer := Control.new()
 	spacer.custom_minimum_size = Vector2(0, 30)
 	v.add_child(spacer)
-	_button("Start Game", func(): _maybe_new_game(), v)
-	continue_btn = _button("Continue", func(): request.emit("continue", ""), v)
-	_button("Free Ride", func(): show_drop_list(true), v)
-	_button("Challenges", func(): show_challenges(), v)
+	var parks: Array = terrain.layout.get("parks", [])
+	for i in parks.size():
+		var idx := str(i)
+		_button(String(parks[i]["name"]), func(): request.emit("park", idx), v)
 	_button("Settings", func(): show_settings(), v)
 	if not Settings.is_web():
 		_button("Quit", func(): request.emit("quit", ""), v)
@@ -127,9 +127,8 @@ func _build_pause() -> void:
 	_button("Respawn", func(): request.emit("respawn", ""), v).name = "Respawn"
 	_button("Restart Challenge", func(): request.emit("restart_challenge", ""), v).name = "Restart"
 	_button("Abandon Challenge", func(): request.emit("abandon_challenge", ""), v).name = "Abandon"
-	_button("Mountain Map", func(): request.emit("map", ""), v)
-	_button("Travel to Drop Zone", func(): show_drop_list(false), v)
-	_button("Challenges", func(): show_challenges(), v)
+	_button("Back to the Top", func(): request.emit("park_top", ""), v)
+	_button("Choose Park", func(): show_parks(), v)
 	_button("Settings", func(): show_settings(), v)
 	_button("Main Menu", func(): request.emit("main_menu", ""), v)
 	if not Settings.is_web():
@@ -246,6 +245,8 @@ func is_open() -> bool:
 
 
 func refresh() -> void:
+	if continue_btn == null:
+		return
 	continue_btn.disabled = not Game.has_save()
 	var c := Game.completion_counts()
 	if Game.has_save():
@@ -269,6 +270,20 @@ func _confirm(text: String, action: String) -> void:
 
 func show_settings() -> void:
 	_push(settings)
+
+
+func show_parks() -> void:
+	list_title.text = "CHOOSE A PARK"
+	for ch in list_box.get_children():
+		ch.queue_free()
+	var parks: Array = terrain.layout.get("parks", [])
+	for i in parks.size():
+		var idx := str(i)
+		var pk: Dictionary = parks[i]
+		var b := _button("%s   ·   %d jumps, %d rails & boxes" % [pk["name"], pk["kickers"].size(), pk["rails"].size()],
+			func(): request.emit("park", idx), list_box)
+		b.custom_minimum_size = Vector2(680, 46)
+	_push(list_panel)
 
 
 func show_drop_list(freeride: bool) -> void:

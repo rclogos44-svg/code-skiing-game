@@ -16,6 +16,7 @@ var fade: ColorRect
 var state := State.MENU
 var _save_timer := 0.0
 var _skip_hold := 0.0
+var park_i := 0
 
 
 func _ready() -> void:
@@ -41,11 +42,13 @@ func _ready() -> void:
 	challenges.name = "Challenges"
 	world.add_child(challenges)
 	challenges.setup(world, tricks, hud)
-	hud.attach_minimap(challenges)
 	pois = POIManager.new()
 	pois.name = "POIs"
 	world.add_child(pois)
 	pois.setup(world.terrain, world.skier, hud)
+	# park game: no drop-zone discovery, flags or viewpoints
+	pois.process_mode = Node.PROCESS_MODE_DISABLED
+	pois.visible = false
 	tricks.trick_landed.connect(hud.show_trick)
 	tricks.combo_banked.connect(hud.show_banked)
 	tricks.combo_lost.connect(hud.show_combo_lost)
@@ -101,8 +104,8 @@ func _enter_menu() -> void:
 	hud.visible = false
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	# cinematic backdrop: the skier waiting at a scenic drop zone, camera orbiting
-	var d := world.terrain.drop_zone("Resort Top")
-	world.spawn_at_drop("Resort Top")
+	var st: Dictionary = world.park.park_start(park_i)
+	world.spawn(st["pos"], st["yaw"])
 	world.skier.frozen = true
 	var cam := world.camera
 	cam.orbit_center = world.skier.position
@@ -144,15 +147,17 @@ func _resume() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
+## Tab (the old map key): back to the top of the current park.
 func _open_map() -> void:
-	if state not in [State.PLAYING, State.PAUSED]:
+	if state not in [State.PLAYING, State.PAUSED] or world.park == null:
 		return
-	state = State.MAP
-	get_tree().paused = true
-	menus.hide_all()
-	hud.visible = false
-	map_screen.open()
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	if state == State.PAUSED:
+		_resume()
+	challenges.stop(false)
+	var st: Dictionary = world.park.park_start(park_i)
+	_fade_then(func():
+		world.spawn(st["pos"], st["yaw"])
+		world.camera.snap())
 
 
 func _fade_then(cb: Callable) -> void:
@@ -200,6 +205,16 @@ func _on_menu_request(action: String, arg: String) -> void:
 			_resume()
 			challenges.stop(true)
 		"map":
+			_open_map()
+		"park":
+			park_i = int(arg)
+			var st: Dictionary = world.park.park_start(park_i)
+			_fade_then(func():
+				world.spawn(st["pos"], st["yaw"])
+				_start_play("freeride")
+				hud.notify("%s  ·  Tab: back to the top" % st["name"], "info"))
+		"park_top":
+			_resume()
 			_open_map()
 		"main_menu":
 			_store_position()

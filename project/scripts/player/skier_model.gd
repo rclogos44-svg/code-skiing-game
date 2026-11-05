@@ -79,13 +79,13 @@ static func sphere(r: float, sx := 1.0, sy := 1.0, sz := 1.0, rings := 8) -> Arr
 
 
 static func torso() -> ArrayMesh:
-	# waist (y=0) to neck base (y=0.52); wider at the chest, jacket hem flare at bottom
+	# waist (y=0) to neck base (y=0.52): a long, baggy park jacket whose hem hangs to mid-thigh
 	var pts := [
-		Vector2(0.0, -0.06), Vector2(0.13, -0.055), Vector2(0.165, -0.02), Vector2(0.158, 0.06),
-		Vector2(0.162, 0.18), Vector2(0.178, 0.30), Vector2(0.182, 0.40), Vector2(0.165, 0.47),
-		Vector2(0.11, 0.515), Vector2(0.075, 0.535), Vector2(0.0, 0.54),
+		Vector2(0.0, -0.30), Vector2(0.17, -0.30), Vector2(0.205, -0.27), Vector2(0.198, -0.12),
+		Vector2(0.19, 0.04), Vector2(0.192, 0.18), Vector2(0.2, 0.30), Vector2(0.2, 0.40), Vector2(0.18, 0.47),
+		Vector2(0.12, 0.515), Vector2(0.08, 0.535), Vector2(0.0, 0.54),
 	]
-	return lathe(pts, 1.18, 0.72, 18)
+	return lathe(pts, 1.2, 0.8, 18)
 
 
 static func pelvis() -> ArrayMesh:
@@ -139,10 +139,11 @@ static func boot() -> ArrayMesh:
 	# shell around the ankle joint (origin), sole at y=-0.10, toe toward -Z
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var hw := 0.058
+	var hw := 0.064
 	var parts := [
-		[Vector3(-hw, -0.10, -0.19), Vector3(hw, -0.02, 0.13)],     # foot shell
-		[Vector3(-hw * 1.05, -0.06, -0.07), Vector3(hw * 1.05, 0.17, 0.10)],  # cuff
+		[Vector3(-hw, -0.10, -0.2), Vector3(hw, -0.02, 0.14)],      # foot shell
+		[Vector3(-hw * 1.08, -0.06, -0.08), Vector3(hw * 1.08, 0.19, 0.11)],  # cuff
+		[Vector3(-hw * 1.12, 0.02, -0.09), Vector3(hw * 1.12, 0.05, 0.05)],   # buckle strap
 	]
 	for p in parts:
 		_box(st, p[0], p[1])
@@ -184,9 +185,11 @@ static func ski() -> Array:
 			var k := (t - 0.88) / 0.12
 			y = 0.075 * k * k
 			w *= 1.0 - 0.45 * k * k
-		elif t < 0.06:
-			var k2 := (0.06 - t) / 0.06
-			y = 0.025 * k2 * k2
+		elif t < 0.1:
+			# twin-tip: the tail turns up too
+			var k2 := (0.1 - t) / 0.1
+			y = 0.06 * k2 * k2
+			w *= 1.0 - 0.35 * k2 * k2
 		pts_l.append(Vector3(-w, y, z))
 		pts_r.append(Vector3(w, y, z))
 		ys.append(y)

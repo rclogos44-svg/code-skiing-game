@@ -20,22 +20,18 @@ const ACTIONS := {
 	"lean_right": {"label": "Wind up / spin right", "keys": [KEY_RIGHT]},
 	"spin_left": {"label": "Spin left (air)", "keys": [KEY_Q]},
 	"spin_right": {"label": "Spin right (air)", "keys": [KEY_E]},
-	"grab_left": {"label": "Left ski grab", "keys": [KEY_Z]},
-	"grab_right": {"label": "Right ski grab", "keys": [KEY_X]},
 	"camera_switch": {"label": "Switch camera", "keys": [KEY_C]},
 	"first_person": {"label": "First-person view", "keys": [KEY_F]},
 	"respawn": {"label": "Respawn", "keys": [KEY_R]},
 	"interact": {"label": "Interact / Ride lift", "keys": [KEY_G]},
 	"skis": {"label": "Skis off / on (walk)", "keys": [KEY_T]},
-	"map": {"label": "Mountain map", "keys": [KEY_TAB]},
+	"map": {"label": "Back to the top of the park", "keys": [KEY_TAB]},
 	"pause": {"label": "Pause", "keys": [KEY_P]},
 }
 
 ## Gamepad defaults (not rebindable through the UI, always present).
 const JOY_BUTTONS := {
 	"jump": [JOY_BUTTON_A],
-	"grab_left": [JOY_BUTTON_X],
-	"grab_right": [JOY_BUTTON_B],
 	"respawn": [JOY_BUTTON_Y],
 	"spin_left": [JOY_BUTTON_LEFT_SHOULDER],
 	"spin_right": [JOY_BUTTON_RIGHT_SHOULDER],
@@ -70,7 +66,7 @@ var _defaults := {
 		"render_scale": 1.0, "shadows": 3, "view_distance": 2, "aa": "msaa2", "ssao": true, "glow": true,
 		"detail": 2, "show_fps": false,
 	},
-	"controls": {"mouse_sens": 1.0, "invert_y": false, "steer_sens": 1.0, "difficulty": 1, "bindings": {}},
+	"controls": {"mouse_sens": 1.0, "invert_y": false, "steer_sens": 1.0, "difficulty": 0, "bindings": {}},
 	"camera": {"fov": 72.0, "distance": 1.0, "speed_fx": true, "shake": true, "auto_center": true,
 		"minimap": true, "minimap_rotate": true},
 	"audio": {"master": 0.8, "sfx": 1.0, "ambience": 0.8, "ui": 0.7},

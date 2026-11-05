@@ -309,10 +309,6 @@ func _process(delta: float) -> void:
 	speed_label.text = str(int(round(skier.speed_kmh())))
 	var p := skier.position
 	alt_label.text = "ALT %s m   ·   %d°" % [_thousands(int(p.y + ALTITUDE_OFFSET)), int(round(skier.slope))]
-	var r := terrain.region_at(p.x, p.z)
-	if r != _region:
-		_region = r
-		show_region(terrain.region_name(r))
 	if crash_box.visible:
 		var left := maxf(3.0 - skier.crash_time, 0.0)
 		crash_hint.text = "Press %s to respawn%s" % [Settings.binding_label("respawn"), ("   (auto in %.0f)" % ceil(left)) if left > 0.0 else ""]
@@ -353,10 +349,9 @@ func show_controls_hint() -> void:
 	if skier and skier.mode == Skier.Mode.LIFT:
 		hint_label.text = "Mouse: look around · hold %s to skip to the top · %s map" % [b.call("interact"), b.call("map")]
 		return
-	hint_label.text = "%s/%s carve · %s tuck · %s hockey stop · %s crouch, release to pop · %s/%s lean (lean back = bigger pop / backflip) · %s/%s wind up & spin · %s/%s grab · %s skis off · %s map" % [
-		b.call("steer_left"), b.call("steer_right"), b.call("tuck"), b.call("brake"), b.call("jump"), b.call("lean_forward"),
-		b.call("lean_back"), b.call("lean_left"), b.call("lean_right"), b.call("grab_left"), b.call("grab_right"),
-		b.call("skis"), b.call("map")]
+	hint_label.text = "%s/%s turn · %s tuck · %s hockey stop · %s crouch, let go at the lip to pop · hold %s/%s at the pop: backflip / front flip · %s/%s wind up & spin · on rails %s/%s balance · %s back to the top" % [
+		b.call("steer_left"), b.call("steer_right"), b.call("tuck"), b.call("brake"), b.call("jump"), b.call("lean_back"),
+		b.call("lean_forward"), b.call("lean_left"), b.call("lean_right"), b.call("steer_left"), b.call("steer_right"), b.call("map")]
 
 
 func show_region(name: String) -> void:

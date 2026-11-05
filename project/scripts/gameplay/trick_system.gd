@@ -14,6 +14,7 @@ const COMBO_WINDOW := 3.5
 const SPIN_POINTS := {180: 200, 360: 500, 540: 900, 720: 1400, 900: 2000, 1080: 2700, 1260: 3500, 1440: 4400}
 const FLIP_POINTS := {1: 1000, 2: 2400, 3: 4200}
 const FLIP_NAMES := {1: "", 2: "Double ", 3: "Triple "}
+const CORKS := false                 # off-axis spins come later
 
 var skier: Skier
 var combo_points := 0
@@ -72,7 +73,7 @@ static func evaluate(info: Dictionary) -> Dictionary:
 	var tags: Array[String] = []
 	var flip := float(info.get("flip", 0.0))
 	var flips := int(floor((absf(rad_to_deg(flip)) + 60.0) / 360.0))
-	var cork := flips == 0 and spin >= 360 and rad_to_deg(float(info.get("pitch_peak", 0.0))) >= 50.0
+	var cork := CORKS and flips == 0 and spin >= 360 and rad_to_deg(float(info.get("pitch_peak", 0.0))) >= 50.0
 	if flips >= 1:
 		parts.append("%s%s" % [FLIP_NAMES.get(flips, "%dx " % flips), "Backflip" if flip < 0.0 else "Frontflip"])
 		points += int(FLIP_POINTS.get(flips, 4200 + (flips - 3) * 2000))
@@ -159,7 +160,7 @@ static func evaluate_jib(info: Dictionary) -> Dictionary:
 	if info["switch"]:
 		parts.append("Switch")
 		points *= 1.2
-	parts.append("50-50" if not slide else ("Box Slide" if info["kind"] == "box" else "Rail Slide"))
+	parts.append("50-50" if not slide else {"box": "Box Slide", "tube": "Tube Slide"}.get(info["kind"], "Rail Slide"))
 	if slide:
 		points *= 1.3
 	var press := float(info["press"])

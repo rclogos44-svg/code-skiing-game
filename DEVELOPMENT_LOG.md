@@ -292,3 +292,42 @@ Hybrid approach: the proven snow/edge model stays; the body now drives pop and r
   through the challenge system twice.
 - Challenge list shows the full description (was cut off).
 - Physics suite now 57 checks, all passing.
+
+## Park skiing — the game becomes a terrain-park game (on request)
+
+The open mountain is kept as scenery, but the game is now about three terrain parks. Requested:
+no map, parks, keep the ragdoll crashes, black baggy gear, only flips, spins and rails for now,
+"kind of realistic" but easy by default, quick resets, a lower camera, lip markings, browser first.
+
+- **Parks** (`build/parks.py`, built by `gen_terrain.py`): Main Park, Big Air Park and Jib Garden.
+  The generator finds wide, even 11–16° slopes, regrades a 560 m × 120 m run (3° staging area,
+  low side banks), grooms it and keeps trees and rocks out. Each has three lines, signed at the top:
+  progression (small kickers with tip boards, ride-on boxes), jump line (small / medium / large
+  tabletops) and jib line (boxes, rails, tubes). 13 kickers and 20 rails, boxes and tubes in all.
+- **Kickers are exact shapes, not heightmap bumps.** On the 2 m grid a 1.2 m kicker came out
+  with a ~9° lip and gave no air. `TerrainData.height()` now adds each kicker analytically
+  (parabolic ramp to the lip angle, flat deck, 32° landing) and `park.gd` builds a matching snow
+  mesh, so what you see is what you ride. On kickers the skier reads the snow normal over ±0.25 m
+  instead of ±1.2 m, which kept averaging the lip with the deck. Deck lengths are designed from
+  the lip speed the physics actually gives at the speed on the sign (S 36, M 47, L 58 km/h), so
+  you touch down ~40% down the landing. Orange lines mark each lip and knuckle.
+- **Menu**: one button per park. **Tab** = back to the top of the current park, **Esc** > Choose
+  Park. The map, minimap, drop zones, viewpoints and region banners are off. The spawn is 14 m
+  above the drop-in, so you roll straight in.
+- **Skier**: all-black gear: long baggy hooded jacket, baggy pants flared over the boots, glossy
+  helmet, orange goggles, chunky boots, charcoal twin-tip skis (tails turned up). Gear colour
+  options were removed for now. Arms follow a spring so they swing loosely.
+- **Tricks for now**: spins, back/front flips (hold ↓/↑ at the pop), rails / boxes / tubes
+  (A/D balance). Grabs and corks are switched off behind flags (`Skier.GRABS`, `TrickSystem.CORKS`)
+  to be turned back on later. Difficulty defaults to Easy.
+- **Camera** lower and closer (target 1.1 m, 3.9 m back).
+- **Tests** (`--test=physics`, 74 checks, all passing): every park kicker is jumped at its sign
+  speed on Easy and must land on the landing, with no crash (air 1.0–2.1 s); tucking from each
+  park's top rolls into the park; skis stay on the boots in 12 flip attitudes; box, rail and
+  balance checks (the Realistic check now enters a box off-centre, as a player would).
+  `--test=parks` takes screenshots of a park top, the outfit, a kicker and a backflip.
+  `--test=gameplay`: all passing except the Widowmaker race autopilot (open-mountain content that
+  can't be reached in this version; it was already unverified, see above).
+- **Browser build** checked in headless Chromium (software WebGL): menu, entering Main Park,
+  skiing, Tab back to the top. Frame rate in the browser was not measured on real hardware.
+- Not done yet: grabs, corks, more outfit options, park-specific sounds, scoring per line.

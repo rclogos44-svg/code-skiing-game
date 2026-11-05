@@ -144,7 +144,7 @@ func _third_person(dt: float) -> void:
 	if skier.is_crashed and body and body.in_ragdoll:
 		focus = body.joints.get("pelvis", focus) - Vector3.UP * 0.6
 	var speed := skier.speed
-	var desired_target := focus + Vector3.UP * (1.25 if not chase else 1.05)
+	var desired_target := focus + Vector3.UP * (1.1 if not chase else 1.0)
 	# travel direction drives the follow yaw (spins in the air do not whip the camera)
 	var hv := Vector3(skier.vel.x, 0.0, skier.vel.z)
 	var dir_yaw := Skier.yaw_of(hv) if hv.length() > 1.5 else skier.heading
@@ -171,9 +171,10 @@ func _third_person(dt: float) -> void:
 	var yaw := _follow_yaw + user_yaw + (1.05 if on_lift else 0.0)
 	# look a little more downhill on steep slopes
 	var slope_pitch := -deg_to_rad(clampf(skier.slope, 0.0, 45.0)) * 0.22 if not skier.airborne else 0.0
-	var pitch := (-0.15 if not chase else -0.09) + user_pitch + slope_pitch
+	var pitch := (-0.12 if not chase else -0.09) + user_pitch + slope_pitch
 	pitch = clampf(pitch, -1.25, 0.6)
-	var dist := (4.4 + speed * 0.045) if not chase else (2.7 + speed * 0.022)
+	# low and close behind the skier, park-video style
+	var dist := (3.9 + speed * 0.04) if not chase else (2.7 + speed * 0.022)
 	if walking:
 		dist = 3.6 if not chase else 2.6
 	elif on_lift:

@@ -39,6 +39,10 @@ class Placer:
         vg = lay.get("village", {})
         if vg:
             self.taken.append((vg["x"], vg["z"], 420.0))
+        for pk in lay.get("parks", []):
+            o, d = pk["origin"], pk["dir"]
+            for s in range(0, int(pk["length"]) + 1, 60):
+                self.taken.append((o[0] + d[0] * s, o[1] + d[1] * s, pk["half_width"] + 50.0))
 
     def free(self, x, z, r):
         if not (300 < x < self.g.WORLD - 300 and 300 < z < self.g.WORLD - 300):

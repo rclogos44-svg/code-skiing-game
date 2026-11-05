@@ -1,5 +1,5 @@
-SUMMIT  -  Open-world mountain skiing
-=====================================
+SUMMIT  -  Park skiing
+======================
 
 Thanks for playing! SUMMIT is a standalone game: nothing else needs to be
 installed. You only need an up-to-date graphics driver.
@@ -34,52 +34,41 @@ CONTROLS (keyboard & mouse, all rebindable in Settings)
 --------
 W            Tuck (less air resistance) / pole-push on flat ground
 S            Hockey stop (tap: check speed, hold: stop; + A/D picks the side)
-A / D        Carve left / right
+A / D        Carve left / right. On a rail or box: keep your balance
 Left Shift   Aggressive edge carving (tighter turns, scrubs speed)
-Space        Hold to crouch, release to pop (longer hold = bigger ollie)
-Up / Down    Shift your weight forward / back. Crouch with Down held to load the
-             tails, let go of Down just before releasing Space for a bigger pop;
-             keep holding Down (or Up) as you pop for a backflip (front flip).
-             In the air: Up / Down keep flipping.
+Space        Hold to crouch, release to pop - let go right at the lip
+Up / Down    Shift your weight forward / back. Keep holding Down (or Up) as
+             you pop for a backflip (front flip); in the air Up / Down keep
+             flipping. Hold W (tuck) in a flip to tuck it, let go to lay it out.
 Left / Right On the ground: wind up a spin (release Space while winding). In the
-             air: spin. Q / E also spin. Tucking (W) or grabbing spins faster.
-Z / X + Up   Tip grab, Z / X + Down tail grab
-Difficulty   Settings > Controls: Easy (lots of air control, forgiving),
-             Normal, Realistic (rotation only from your takeoff, edges catch)
-Z / X        Grab left / right ski in the air
+             air: spin. Q / E also spin. Tucking spins faster.
+Difficulty   Settings > Controls: Easy (default: lots of air control,
+             forgiving landings and rails), Normal, Realistic (rotation only
+             from your takeoff, edges catch, rails need balancing)
 Mouse        Look around      Scroll wheel   Zoom camera
 C            Switch camera (standard / close chase)
 F            First-person view
-R            Respawn (in a race: back to the last gate)
-T            Take skis off / put them on. On foot: WASD walk (camera-relative),
-             Shift jog, Space hop - hike up to lines the lifts don't reach
-G            Ride a chairlift: stand on the blue LOAD mat, the next chair picks
-             you up; hold G while riding to skip to the top
-Tab          Mountain map (click a drop zone to travel there, click anywhere
-             else to set a waypoint - shown on the minimap and as a light beam)
-P / Esc      Pause & settings
+R            Respawn on the snow
+Tab          Back to the top of the park
+P / Esc      Pause & settings (Choose Park to switch parks)
 A gamepad also works: left stick steer/tuck/brake, A jump, LB/RB spin,
-X/B grabs, Y respawn, right stick camera, Start pause, Back map,
-D-pad up ride lift, D-pad down skis off/on.
+Y respawn, right stick camera, Start pause, Back: top of the park.
 
 HOW TO PLAY
 -----------
-- Start Game begins a career at the ski resort. Ride the lifts, explore,
-  and unlock the rest of the range:
-    * Look at a distant peak for a moment to SPOT its drop zone (a ring
-      fills in the middle of the screen), or ski close to it.
-    * Reach a VIEWPOINT (blue flag) to reveal all drop zones in its region.
-- Free Ride: every drop zone open, no objectives.
-- Challenges: races with bronze/silver/gold medals, freestyle score and
-  trick challenges, and extreme no-fall descents.
-- Tricks are scored from what you actually do in the air: measured spin
-  (180/360/540/720...), grab hold time, airtime and landing quality.
-  Land tricks within a few seconds of each other to build a combo
+- Pick a park from the main menu: Main Park, Big Air Park or Jib Garden.
+  Each has three lines, marked by signs at the top:
+    * PROGRESSION (left): small jumps with tips, ride-on boxes.
+    * JUMP LINE (middle): small, medium and large tabletops. The sign before
+      each jump shows the speed to hit it with.
+    * JIB LINE (right): boxes, rails and tubes.
+- Orange lines mark each kicker's lip (take-off) and knuckle (start of the
+  landing). Aim to land just past the knuckle, on the steep landing.
+- Tricks: spins (180/360/540...), backflips and front flips, and rail /
+  box slides. Land tricks within a few seconds of each other to build a combo
   multiplier; a combo is banked after ~3.5 s on the snow and lost if you
   crash. Land straight (or fully switch) - sideways landings crash.
-- Physics tips: steep slopes accelerate you, deep powder slows you, ice has
-  little grip, tucking is fastest, tight carving scrubs speed, and you can
-  launch off any cliff or lip - but very hard landings end in a crash.
+- Crash? Press R to get back up, or Tab to go back to the top.
 
 SAVE FILES
 ----------

@@ -735,9 +735,13 @@ def main():
 
     finalize_layout(layout, H2)
 
-    log("terrain features")
+    log("terrain parks")
     sys.path.insert(0, _HERE)
     import features
+    import parks
+    parks.apply_parks(sys.modules[__name__], H2, layout, groomed, features.Placer(sys.modules[__name__], layout))
+
+    log("terrain features")
     feats, marks, fmasks = features.apply_features(sys.modules[__name__], H2, layout, lake)
     layout["features"] = feats
     layout["landmarks"] = marks
@@ -1186,6 +1190,11 @@ def place_trees(H, slope, surface, X, Z, lay):
             keep &= ~in_landing(xs, zs, f)
     for m in lay.get("landmarks", []):
         keep &= np.hypot(xs - m["x"], zs - m["z"]) > 22.0
+    for pk in lay.get("parks", []):
+        o, d = pk["origin"], pk["dir"]
+        s = (xs - o[0]) * d[0] + (zs - o[1]) * d[1]
+        u = -(xs - o[0]) * d[1] + (zs - o[1]) * d[0]
+        keep &= ~((s > -70) & (s < pk["length"] + 50) & (np.abs(u) < pk["half_width"] + 12))
     xs, zs = xs[keep], zs[keep]
     sc = rng.uniform(0.7, 1.35, len(xs))
     rot = rng.uniform(0, 2 * math.pi, len(xs))
@@ -1253,6 +1262,11 @@ def place_rocks(H, slope, W, X, Z, lay, fm=None):
                 keep &= seg_dist(xs, zs, pth[i][0], pth[i][1], pth[i + 1][0], pth[i + 1][1]) > 10.0
     for d in lay.get("drop_zones", []):
         keep &= np.hypot(xs - d["x"], zs - d["z"]) > 30.0
+    for pk in lay.get("parks", []):
+        o, d = pk["origin"], pk["dir"]
+        s = (xs - o[0]) * d[0] + (zs - o[1]) * d[1]
+        u = -(xs - o[0]) * d[1] + (zs - o[1]) * d[0]
+        keep &= ~((s > -80) & (s < pk["length"] + 60) & (np.abs(u) < pk["half_width"] + 25))
     for f in lay.get("features", []):
         if f["type"] in ("trail", "gully"):
             pth = f["path"]

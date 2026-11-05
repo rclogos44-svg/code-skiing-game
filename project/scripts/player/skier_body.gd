@@ -15,14 +15,6 @@ const SHOULDER_HALF := 0.185
 const TORSO_LEN := 0.50
 const ANKLE_H := 0.15
 const HEAD_LAYER := 2   # render layer bit hidden in first-person
-## Gear colours (Settings > Skier): [name, colour]
-const JACKETS := [["Signal red", Color(0.85, 0.22, 0.1)], ["Glacier blue", Color(0.12, 0.42, 0.85)], ["Lime", Color(0.55, 0.8, 0.15)],
-	["Sunflower", Color(0.98, 0.75, 0.1)], ["Violet", Color(0.5, 0.25, 0.75)], ["Black", Color(0.08, 0.09, 0.11)], ["White", Color(0.92, 0.93, 0.95)]]
-const PANTS := [["Charcoal", Color(0.16, 0.18, 0.23)], ["Black", Color(0.06, 0.06, 0.07)], ["Navy", Color(0.1, 0.14, 0.3)],
-	["Olive", Color(0.3, 0.33, 0.2)], ["Sand", Color(0.7, 0.62, 0.48)], ["Red", Color(0.6, 0.12, 0.1)]]
-const HELMETS := [["White", Color(0.94, 0.95, 0.97)], ["Black", Color(0.08, 0.08, 0.09)], ["Orange", Color(1.0, 0.45, 0.08)],
-	["Blue", Color(0.15, 0.4, 0.9)], ["Mint", Color(0.55, 0.9, 0.75)]]
-
 var skier: Skier
 var parts := {}
 var head_parts: Array[MeshInstance3D] = []
@@ -52,7 +44,7 @@ var _plant_side := 1.0
 var _last_steer_sign := 0.0
 var _stop_pop := 0.0
 var _prev_edgeb := 0.0
-var jacket_color := Color(0.85, 0.22, 0.1)
+var _hands := {}              # spring-smoothed hand offsets: arms settle after the body
 
 
 func setup(s: Skier) -> void:
@@ -66,22 +58,26 @@ func setup(s: Skier) -> void:
 	_p["pelvis_h"] = 0.9
 
 
+## All-black park outfit: long baggy hooded jacket, baggy pants stacked over the boots, black
+## helmet with orange goggles, black gloves and charcoal twin-tips.  Slightly different blacks and
+## roughness keep the jacket, pants and gear readable.
 func _build() -> void:
-	var jacket := SkierModel.mat(jacket_color, 0.55, 0.0, {"rim": 0.2})
-	var jacket_dark := SkierModel.mat(Color(0.12, 0.13, 0.16), 0.6)
-	var pants := SkierModel.mat(Color(0.16, 0.18, 0.23), 0.75)
-	var helmet := SkierModel.mat(Color(0.94, 0.95, 0.97), 0.25, 0.0, {"clearcoat": 0.8})
+	var jacket := SkierModel.mat(Color(0.05, 0.052, 0.058), 0.78, 0.0, {"rim": 0.25})
+	var jacket_dark := SkierModel.mat(Color(0.11, 0.115, 0.125), 0.8)
+	var pants := SkierModel.mat(Color(0.085, 0.088, 0.095), 0.92, 0.0, {"rim": 0.15})
+	var helmet := SkierModel.mat(Color(0.05, 0.05, 0.055), 0.22, 0.0, {"clearcoat": 0.9})
 	var skin := SkierModel.mat(Color(0.85, 0.66, 0.55), 0.6)
 	var lens := SkierModel.mat(Color(1.0, 0.55, 0.12), 0.06, 0.9)
 	var strap := SkierModel.mat(Color(0.08, 0.08, 0.09), 0.7)
 	var glove := SkierModel.mat(Color(0.06, 0.06, 0.07), 0.55)
-	var boot := SkierModel.mat(Color(0.18, 0.32, 0.55), 0.35, 0.0, {"clearcoat": 0.5})
+	var boot := SkierModel.mat(Color(0.13, 0.135, 0.15), 0.35, 0.0, {"clearcoat": 0.5})
 	var bind := SkierModel.mat(Color(0.12, 0.12, 0.13), 0.4, 0.4)
 	var pole_m := SkierModel.mat(Color(0.75, 0.77, 0.8), 0.3, 0.8)
 	var grip_m := SkierModel.mat(Color(0.1, 0.1, 0.1), 0.6)
-	var accent := SkierModel.mat(Color(1.0, 0.45, 0.05), 0.4)
+	var accent := SkierModel.mat(Color(0.16, 0.165, 0.18), 0.7)
 	_add("pelvis", SkierModel.pelvis(), pants)
 	_add("torso", SkierModel.torso(), jacket)
+	_add("hood", SkierModel.sphere(0.13, 1.15, 0.75, 0.62), jacket_dark)
 	_add("collar", SkierModel.lathe([Vector2(0.0, -0.01), Vector2(0.085, -0.01), Vector2(0.08, 0.06), Vector2(0.0, 0.06)], 1.0, 1.0, 12), jacket_dark)
 	_add("neck", SkierModel.limb(0.05, 0.048, 0.08), skin)
 	_add("head", SkierModel.sphere(0.105, 0.95, 1.12, 1.05), skin, true)
@@ -94,8 +90,8 @@ func _build() -> void:
 		_add("farm_" + side, SkierModel.limb(0.05, 0.043, FOREARM), jacket)
 		_add("cuff_" + side, SkierModel.limb(0.047, 0.047, 0.05), accent)
 		_add("hand_" + side, SkierModel.sphere(0.05, 0.85, 1.4, 1.0), glove)
-		_add("thigh_" + side, SkierModel.limb(0.088, 0.066, THIGH), pants)
-		_add("shin_" + side, SkierModel.limb(0.066, 0.058, SHIN), pants)
+		_add("thigh_" + side, SkierModel.limb(0.105, 0.092, THIGH), pants)
+		_add("shin_" + side, SkierModel.limb(0.092, 0.104, SHIN), pants)
 		_add("boot_" + side, SkierModel.boot(), boot)
 		var sk := SkierModel.ski()
 		var flex := ShaderMaterial.new()
@@ -108,19 +104,6 @@ func _build() -> void:
 		_add("basket_" + side, pl[2], grip_m)
 	# a stripe of accent colour on the jacket
 	_add("stripe", SkierModel.lathe([Vector2(0.0, 0.0), Vector2(0.18, 0.0), Vector2(0.183, 0.035), Vector2(0.0, 0.035)], 1.19, 0.73, 18), accent)
-	_apply_gear()
-	Settings.changed.connect(func(section: String, _k: String):
-		if section == "gear":
-			_apply_gear())
-
-
-func _apply_gear() -> void:
-	var c := func(pal: Array, key: String) -> Color: return pal[clampi(int(Settings.get_value("gear", key)), 0, pal.size() - 1)][1]
-	set_color(c.call(JACKETS, "jacket"))
-	var pants: Color = c.call(PANTS, "pants")
-	for n in ["pelvis", "thigh_l", "thigh_r", "shin_l", "shin_r"]:
-		(parts[n].material_override as StandardMaterial3D).albedo_color = pants
-	(parts["helmet"].material_override as StandardMaterial3D).albedo_color = c.call(HELMETS, "helmet")
 
 
 func _add(name: String, mesh: Mesh, m: Material, head := false) -> void:
@@ -134,11 +117,6 @@ func _add(name: String, mesh: Mesh, m: Material, head := false) -> void:
 		head_parts.append(mi)
 	add_child(mi)
 	parts[name] = mi
-
-
-func set_color(c: Color) -> void:
-	jacket_color = c
-	(parts["torso"].material_override as StandardMaterial3D).albedo_color = c
 
 
 # ------------------------------------------------------------------ per frame
@@ -257,7 +235,8 @@ func _compute_pose(dt: float) -> void:
 	# angulation: legs take the full inclination, the torso stays much more upright
 	var counter := _lean * 0.58
 	var plow := _sm("plow", 0.0, 8.0, dt)
-	var feet_up := _sm("feet_up", air * (0.06 + 0.26 * grab + 0.22 * clampf(absf(s.flip_vel) / 4.0, 0.0, 1.0)), 8.0, dt)
+	# flips stay laid out (long body); holding tuck pulls the knees in
+	var feet_up := _sm("feet_up", air * (0.06 + 0.26 * grab + 0.22 * s.tuck * clampf(absf(s.flip_vel) / 4.0, 0.0, 1.0)), 8.0, dt)
 	var arms_air := _sm("arms_air", air * (1.0 - grab), 5.0, dt)
 
 	# ---- feet / skis
@@ -341,7 +320,14 @@ func _compute_pose(dt: float) -> void:
 			# close call: arms windmill to catch the balance
 			var a := s.time * 13.0 + (0.0 if sgn > 0.0 else PI)
 			hand_local = hand_local.lerp(Vector3(sgn * 0.5, -0.05 + 0.25 * sin(a), -0.15 + 0.25 * cos(a)), clampf(s.sketchy / 0.3, 0.0, 1.0))
-		var hand := sh + tb * hand_local
+		# loose arms: hands follow their target through a spring, a beat behind the body
+		var hv: Vector3 = _hands.get(sd + "_v", Vector3.ZERO)
+		var hc: Vector3 = _hands.get(sd, hand_local)
+		hv += (196.0 * (hand_local - hc) - 28.0 * hv) * dt
+		hc += hv * dt
+		_hands[sd] = hc
+		_hands[sd + "_v"] = hv
+		var hand := sh + tb * hc
 		var g := gl if sd == "l" else gr
 		if g > 0.01:
 			var sxf := ski_l if sd == "l" else ski_r
@@ -615,6 +601,7 @@ func _apply_parts() -> void:
 	parts["torso"].global_transform = Transform3D(tb, joints["waist"])
 	parts["stripe"].global_transform = Transform3D(tb, joints["waist"] + tb.y * 0.27)
 	parts["collar"].global_transform = Transform3D(tb, joints["chest"] - tb.y * 0.02)
+	parts["hood"].global_transform = Transform3D(tb, joints["chest"] - tb.y * 0.03 + tb.z * 0.13)
 	parts["neck"].global_transform = Transform3D(head_basis, joints["chest"])
 	var hb := head_basis
 	var hc: Vector3 = joints["head"]
