@@ -53,6 +53,7 @@ Difficulty   Settings > Controls: Easy (default: lots of air control,
              from your takeoff, edges catch, rails need balancing)
 Mouse        Look around      Scroll wheel   Zoom camera
 C            Switch camera (standard / close chase)
+V            Skeleton view: hide the clothes and show the bones and joints
 F            First-person view
 R            Respawn on the snow
 Tab          Back to the top of the park

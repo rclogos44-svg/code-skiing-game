@@ -1251,6 +1251,7 @@ func _grab_shots() -> void:
 	await _frames(10)
 	s.set_physics_process(false)
 	var only: String = Game.test_args.get("only", "")
+	body.skeleton_view = Game.test_args.get("skeleton", "0") == "1"
 	for gname in body.GRAB_POSES:
 		if only != "" and gname != only:
 			continue

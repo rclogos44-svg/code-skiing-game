@@ -12,7 +12,7 @@ const UPPER_ARM := 0.29
 const FOREARM := 0.27
 const HIP_HALF := 0.095
 const SHOULDER_HALF := 0.185
-const TORSO_LEN := 0.50
+const TORSO_LEN := 0.47
 const ANKLE_H := 0.15
 const HEAD_LAYER := 2   # render layer bit hidden in first-person
 var skier: Skier
@@ -91,7 +91,9 @@ const SPINE_LIMITS := {"pitch": [0.0, 70.0], "twist": [-0.45, 0.45], "side": [-0
 func _grab_gap(g: Dictionary, legs: Dictionary, sp: Array, ph: float, pz: float) -> float:
 	var tb := Basis(Vector3.UP, sp[1] - float(g.get("hips_yaw", 0.0))) * Basis(Vector3(0, 0, 1), sp[2]) * Basis(Vector3(1, 0, 0), -deg_to_rad(sp[0]))
 	var pelvis := Vector3(0, ph, pz)
-	var chest := pelvis + tb.y * (0.07 + TORSO_LEN)
+	var pr := deg_to_rad(sp[0])
+	var chest := pelvis + tb.y * 0.07 + (tb * Basis(Vector3(1, 0, 0), pr * 0.6)).y * 0.16 \
+		+ (tb * Basis(Vector3(1, 0, 0), pr * 0.25)).y * 0.16 + tb.y * (TORSO_LEN - 0.32)
 	var total := 0.0
 	for sd in ["l", "r"]:
 		if not g.has(sd):
@@ -207,6 +209,13 @@ func _leg_fk(hip: Vector3, sgn: float, a: Array) -> Array:
 	var ski_c := ankle - B.y * ANKLE_H - B.z * 0.03
 	return [knee, B, ski_c]
 var preview_grab := ""
+var skeleton_view := false        # V: hide the clothes and show bones + joints
+const BONES := [["pelvis", "hip_l"], ["pelvis", "hip_r"], ["hip_l", "knee_l"], ["knee_l", "ankle_l"], ["hip_r", "knee_r"],
+	["knee_r", "ankle_r"], ["pelvis", "waist"], ["waist", "lumbar"], ["lumbar", "thoracic"], ["thoracic", "chest"], ["chest", "head"],
+	["chest", "shoulder_l"], ["chest", "shoulder_r"], ["shoulder_l", "elbow_l"], ["elbow_l", "hand_l"], ["shoulder_r", "elbow_r"],
+	["elbow_r", "hand_r"]]
+const SK_JOINTS := ["pelvis", "hip_l", "hip_r", "knee_l", "knee_r", "ankle_l", "ankle_r", "waist", "lumbar", "thoracic", "chest",
+	"shoulder_l", "shoulder_r", "elbow_l", "elbow_r", "hand_l", "hand_r"]
 var _ag := ""                     # grab pose being shown (preview or the skier's live grab)
 var _gw := 0.0                    # how far into it (blends in and out)              # spring-smoothed hand offsets: arms settle after the body
 
@@ -292,7 +301,20 @@ func _build() -> void:
 		_add("basket_" + side, pl[2], grip_m)
 	# a stripe of accent colour on the jacket
 	_add("stripe", SkierModel.lathe([Vector2(0.0, 0.0), Vector2(0.18, 0.0), Vector2(0.183, 0.035), Vector2(0.0, 0.035)], 1.19, 0.73, 18), accent)
-	parts["stripe"].visible = false        # read as a toy band round the chest; the zip and pockets replace it
+	parts["stripe"].visible = false
+	var bone_m := SkierModel.mat(Color(0.95, 0.95, 0.92), 0.6)
+	var joint_m := SkierModel.mat(Color(1.0, 0.45, 0.1), 0.5)
+	var cyl := CylinderMesh.new()
+	cyl.top_radius = 0.018
+	cyl.bottom_radius = 0.018
+	cyl.height = 1.0
+	cyl.radial_segments = 8
+	for b in BONES:
+		_add("sk_" + b[0] + "_" + b[1], cyl, bone_m)
+	for j in SK_JOINTS:
+		_add("skj_" + j, SkierModel.sphere(0.035), joint_m)
+	_add("skj_head", SkierModel.sphere(0.09, 0.9, 1.1, 1.0), bone_m)
+	_set_skeleton(false)        # read as a toy band round the chest; the zip and pockets replace it
 
 
 func _add(name: String, mesh: Mesh, m: Material, head := false) -> void:
@@ -313,6 +335,10 @@ func _process(delta: float) -> void:
 	if skier == null:
 		return
 	var dt := minf(delta, 0.05)
+	joints.erase("lumbar")
+	joints.erase("thoracic")
+	if InputMap.has_action("skeleton_view") and Input.is_action_just_pressed("skeleton_view"):
+		skeleton_view = not skeleton_view
 	if skier.is_crashed:
 		if not in_ragdoll:
 			_start_ragdoll()
@@ -554,7 +580,15 @@ func _compute_pose(dt: float) -> void:
 	joints["pelvis"] = pelvis
 	var waist := pelvis + tb.y * 0.07
 	joints["waist"] = waist
-	var chest := waist + tb.y * TORSO_LEN
+	# a spine, not a plank: the lower back takes a little of the bend, the mid back more, the upper
+	# back the rest, so a bent-over skier curves instead of hinging at the waist
+	var tb_low := tb * Basis(Vector3(1, 0, 0), pitch * 0.6)
+	var tb_mid := tb * Basis(Vector3(1, 0, 0), pitch * 0.25)
+	var lumbar := waist + tb_low.y * 0.16
+	var thoracic := lumbar + tb_mid.y * 0.16
+	var chest := thoracic + tb.y * (TORSO_LEN - 0.32)
+	joints["lumbar"] = lumbar
+	joints["thoracic"] = thoracic
 	joints["chest"] = chest
 	# head keeps the eyes level and looks into the turn
 	var hb := tb * Basis(Vector3.UP, -_lean * 0.35) * Basis(Vector3(0, 0, 1), _lean * 0.3) * Basis(Vector3(1, 0, 0), pitch * 0.8 - deg_to_rad(6.0))
@@ -912,6 +946,10 @@ func _seg(name: String, a: Vector3, b: Vector3, side_hint: Vector3) -> void:
 
 
 func _apply_parts() -> void:
+	if skeleton_view != _sk_shown:
+		_set_skeleton(skeleton_view)
+	if skeleton_view:
+		_place_skeleton()
 	# skis bend under load (landings, crouching on the tails) and spring back in the air
 	var bend := clampf(skier.compression * 1.2 + skier.tail_load * 0.6 + skier.charge * 0.3, 0.0, 1.2)
 	if skier.airborne:
@@ -973,6 +1011,44 @@ func _apply_parts() -> void:
 		parts["pole_" + sd].global_transform = Transform3D(pb, grip_pos)
 		parts["grip_" + sd].global_transform = Transform3D(pb, grip_pos)
 		parts["basket_" + sd].global_transform = Transform3D(pb, grip_pos)
+
+
+var _sk_shown := false
+
+
+func _set_skeleton(on: bool) -> void:
+	_sk_shown = on
+	for k in parts:
+		var name := String(k)
+		var keep := name.begins_with("ski_") or name.begins_with("bind_") or name.begins_with("pole_") or name.begins_with("grip_") or name.begins_with("basket_")
+		if name.begins_with("sk_") or name.begins_with("skj_"):
+			parts[k].visible = on
+		elif name != "stripe" and not keep:
+			parts[k].visible = not on
+
+
+func _place_skeleton() -> void:
+	var w: Vector3 = joints.get("waist", joints["pelvis"])
+	if not joints.has("lumbar"):
+		joints["lumbar"] = w.lerp(joints["chest"], 0.36)
+		joints["thoracic"] = w.lerp(joints["chest"], 0.7)
+	if not joints.has("waist"):
+		joints["waist"] = w
+	for b in BONES:
+		var a: Vector3 = joints[b[0]]
+		var c: Vector3 = joints[b[1]]
+		var d := c - a
+		var ln := d.length()
+		var mi: MeshInstance3D = parts["sk_" + b[0] + "_" + b[1]]
+		if ln < 0.001:
+			mi.visible = false
+			continue
+		mi.visible = true
+		var bb := _basis_y(d / ln, torso_basis.x)
+		mi.global_transform = Transform3D(Basis(bb.x, bb.y * ln, bb.z), (a + c) * 0.5)
+	for j in SK_JOINTS:
+		parts["skj_" + j].global_transform = Transform3D(Basis.IDENTITY, joints[j])
+	parts["skj_head"].global_transform = Transform3D(head_basis, joints["head"])
 
 
 static func _basis_y(y: Vector3, hint: Vector3) -> Basis:
