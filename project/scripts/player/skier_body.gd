@@ -74,14 +74,14 @@ const GRAB_POSES := {
 		"legs": {"l": [70.0, 6.0, 5.0, 100.0], "r": [88.0, 12.0, -5.0, 108.0]}, "pitch": 28.0, "twist": 0.12, "side": 0.12},
 	"Japan": {"l": ["r", 0.0, 1.0], "free": {"r": Vector3(0.4, 0.22, -0.05)},
 		"legs": {"l": [45.0, 5.0, 10.0, 118.0], "r": [55.0, -6.0, 18.0, 125.0]}, "pitch": 22.0, "twist": -0.2, "side": -0.1},
-	# copied from three reference photos (skeletons drawn on them): knees up in front, shins folded
-	# right back so the skis hang nearly vertical, tips down, tails up behind at chest height; the
-	# right hand reaches back to the end of the right tail (shoulder pulled back), left arm reaches
-	# forward and up, torso nearly upright
-	"Tail": {"r": ["r", 0.68, 1.0], "free": {"l": Vector3(-0.1, 0.25, -0.48)},
-		"legs": {"l": [50.0, 8.0, 0.0, 138.0, 0.0], "r": [48.0, 16.0, -6.0, 140.0, 0.0]}, "pitch": 14.0, "pitch_w": 6.0,
-		"legs_w": 3.0, "twist": -0.6, "twist_dist": [0.15, 0.55, 1.0], "side": 0.0, "curve": -0.22, "time_in": 0.6,
-		"look": 1.0, "shoulders": {"r": Vector3(0.0, -0.035, 0.075), "l": Vector3(0.0, 0.015, -0.05)}},
+	# copied from four reference photos (skeletons drawn on them): shins folded right back so the
+	# skis run along the body, tips down, tails up behind the right shoulder; the right hand reaches
+	# back to the tail (shoulder pulled back, looking back at it), the left arm reaches up overhead,
+	# and the whole body is laid over ~40 deg off-axis (head to his left) so the skis go sideways
+	"Tail": {"r": ["r", 0.72, 1.0], "free": {"l": Vector3(-0.12, 0.5, -0.18)},
+		"legs": {"l": [22.0, 6.0, 0.0, 138.0, 10.0], "r": [20.0, 12.0, -6.0, 140.0, 10.0]}, "pitch": 12.0, "pitch_w": 6.0,
+		"legs_w": 3.0, "twist": -0.45, "twist_dist": [0.15, 0.55, 1.0], "side": 0.0, "curve": -0.15, "time_in": 0.65,
+		"look": 0.7, "shoulders": {"r": Vector3(0.0, -0.035, 0.075), "l": Vector3(0.0, 0.03, -0.03)}, "roll": 0.8},
 	"Tip": {"l": ["l", -0.52, 1.0], "free": {"r": Vector3(0.42, 0.08, 0.05)},
 		"legs": {"l": [100.0, 6.0, 0.0, 80.0], "r": [72.0, 5.0, 5.0, 100.0]}, "pitch": 38.0, "twist": 0.12, "side": -0.08},
 	"Truck Driver": {"l": ["l", -0.3, 1.0], "r": ["r", -0.3, 1.0],

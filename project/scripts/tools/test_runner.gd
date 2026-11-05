@@ -1381,7 +1381,7 @@ func _grab_shots() -> void:
 			var az := deg_to_rad(float(Game.test_args.get("photo_az", "60")))     # from his front toward his left
 			var el := deg_to_rad(float(Game.test_args.get("photo_el", "12")))     # camera below him
 			var pd := (fwd * cos(az) - rt * sin(az)) * cos(el) + Vector3.DOWN * sin(el)
-			views.append(["photo", pd * 2.0 + Vector3.UP * 0.25])
+			views.append(["photo", pd * float(Game.test_args.get("photo_dist", "2.0")) + Vector3.UP * 0.25])
 		for v in views:
 			_free_cam(c + v[1], c)
 			await _frames(3)

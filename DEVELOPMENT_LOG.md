@@ -436,3 +436,7 @@ no map, parks, keep the ragdoll crashes, black baggy gear, only flips, spins and
   to 80 deg turn, -50..35 deg pitch) and turns first, before the hand reaches; the grabbing shoulder
   blade slides back and down, the other forward; the twist comes mostly from the upper back
   (spine twist shared 15 / 55 / 100 % lower to upper) with a slight lean toward the grab.
+- Tail grab, from a fourth photo: the whole body lays over ~45 deg off-axis (head to his left) so
+  the skis run sideways along the body; thighs nearly straight down and shins folded right up
+  (ankle flex 10 deg) so the tail reaches up behind the right shoulder; the hand grabs near the
+  tail end; free arm overhead.
