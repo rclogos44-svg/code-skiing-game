@@ -247,6 +247,36 @@ func _park_kickers() -> void:
 				and land_at < (end - knuckle).dot(d) + 6.0,
 				"%.2f s air, landed %.1f m past the knuckle (landing %.1f m)%s%s" % [max_air, land_at, (end - knuckle).dot(d),
 				(" CRASH " + crash) if crash != "" else "", launch])
+	# grabs off the medium kicker: grab after takeoff, let go ~0.4 s before touching down
+	for gt in [["Mute", {"grab_left": 1.0}], ["Japan", {"grab_left": 1.0, "lean_back": 1.0}], ["Truck Driver", {"grab_left": 1.0, "grab_right": 1.0}],
+			["Tail", {"grab_right": 1.0, "lean_back": 1.0}]]:
+		var mk: Dictionary = {}
+		for k in world.terrain.layout["parks"][0]["kickers"]:
+			if k["size"] == "M":
+				mk = k
+		var md := Vector3(mk["dir"][0], 0, mk["dir"][1])
+		s.teleport(Vector3(mk["origin"][0], 0, mk["origin"][1]) - md * 12.0, Skier.yaw_of(md), float(mk["approach_speed"]) - 1.0)
+		var gbox := {}
+		var gcb := func(info): gbox["info"] = info
+		s.landed.connect(gcb)
+		var held_name := ""
+		for i in 900:
+			var below := s.position.y - world.terrain.height(s.position.x, s.position.z)
+			var falling := s.vel.y < 0.0
+			s.scripted_input = gt[1] if (s.airborne and s.air_time > 0.15 and not (falling and below < 2.2)) else {}
+			s.step(1.0 / 120.0)
+			s.time += 1.0 / 120.0
+			if s.grab_name != "":
+				held_name = s.grab_name
+			if gbox.has("info") or s.is_crashed:
+				break
+		s.landed.disconnect(gcb)
+		var gi: Dictionary = gbox.get("info", {})
+		var tr: Dictionary = TrickSystem.evaluate(gi) if not gi.is_empty() else {}
+		check("%s grab off the medium kicker: held, named, landed clean" % gt[0], held_name == gt[0] and not gi.is_empty() and gi["crash"] == ""
+			and str(tr.get("name", "")).contains(gt[0]) and absf(float(gi["flip"])) < 0.6,
+			"held '%s' %.2f s -> '%s' %s, flip %.0f deg" % [held_name, float(gi.get("grab_time", 0.0)), tr.get("name", "-"), gi.get("crash", "no landing"),
+			rad_to_deg(float(gi.get("flip", 0.0)))])
 	s.difficulty = saved
 
 
@@ -1305,10 +1335,10 @@ func _park_shots() -> void:
 			await _frames(1)
 	# a right 360 off the medium kicker: frames through the wind-up and the spin, and a double
 	# backflip off the large one (first flip laid out, then tucked)
-	for trick in ["360", "double"]:
+	for trick in ["mute", "360", "double"]:
 		var kk: Dictionary = {}
 		for k2 in pk["kickers"]:
-			if k2["line"] == "jump" and k2["size"] == ("M" if trick == "360" else "L"):
+			if k2["line"] == "jump" and k2["size"] == ("L" if trick == "double" else "M"):
 				kk = k2
 		var ko := Vector3(kk["origin"][0], 0, kk["origin"][1])
 		var lip := Vector3(kk["lip"][0], 0, kk["lip"][1])
@@ -1318,7 +1348,9 @@ func _park_shots() -> void:
 		var next_t := 0.0
 		while tt < 6.0:
 			var to_lip := (lip - s.position).dot(d)
-			if trick == "360":
+			if trick == "mute":
+				s.scripted_input = {"grab_left": 1.0} if (s.airborne and s.air_time > 0.15 and not (s.vel.y < 0.0 and s.position.y - world.terrain.height(s.position.x, s.position.z) < 2.2)) else {}
+			elif trick == "360":
 				if not s.airborne:
 					s.scripted_input = {"lean_left": 1.0, "jump": 1.0} if to_lip > 0.4 else {}
 				elif absf(s.air_rotation) + s.spin_vel * s.spin_vel / (2.0 * float(s.diff()["spin_damp"])) < deg_to_rad(350.0):

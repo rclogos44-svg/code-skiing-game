@@ -366,3 +366,19 @@ no map, parks, keep the ragdoll crashes, black baggy gear, only flips, spins and
   inward and invisible from outside - now double-sided.)
 - **Skis** wider: ~126 mm tips, ~104 mm underfoot.
 - Physics 80/80. Checked by screenshots: helmet front/side, push strokes, double backflip frames.
+
+## Grabs in the game
+
+- Seven grabs, built from real joint angles: hip flexion / abduction / rotation and a hinge knee,
+  each clamped to human range, with hamstring coupling (a straight knee limits hip flexion) and
+  the ski locked to the shin by the boot (15 deg forward lean). A small solver moves the grabbing
+  leg and the spine within those limits so the hand actually holds the ski; the preview renderer
+  (`--test=grabs`) prints the hand-to-ski gap (0 for every grab).
+- Controls: Z = left hand (Mute; + Up Tip; + Down Japan), X = right hand (Safety; + Up Blunt;
+  + Down Tail), Z + X = Truck Driver. Gamepad X / B. When a grab starts without a flip, the arrows
+  pick the grab instead of flipping. The pose blends in and out; landing while still grabbing
+  hard can crash ("Held the grab too long").
+- Scoring: the grab is named on the trick ("Right 360 Mute") and scores 200 + 400/s held (up to
+  2 s) times a difficulty factor (Safety 0.9 ... Japan / Blunt 1.3).
+- Tests: physics 84/84, including Mute, Japan, Truck Driver and Tail grabs off the medium kicker:
+  held, named, no unwanted flip, clean landing.

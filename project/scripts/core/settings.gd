@@ -18,6 +18,8 @@ const ACTIONS := {
 	"lean_back": {"label": "Lean back (load the tails) / back flip", "keys": [KEY_DOWN]},
 	"lean_left": {"label": "Wind up / spin left", "keys": [KEY_LEFT]},
 	"lean_right": {"label": "Wind up / spin right", "keys": [KEY_RIGHT]},
+	"grab_left": {"label": "Grab, left hand (Mute; + Up: Tip, + Down: Japan)", "keys": [KEY_Z]},
+	"grab_right": {"label": "Grab, right hand (Safety; + Up: Blunt, + Down: Tail)", "keys": [KEY_X]},
 	"spin_left": {"label": "Spin left (air)", "keys": [KEY_Q]},
 	"spin_right": {"label": "Spin right (air)", "keys": [KEY_E]},
 	"camera_switch": {"label": "Switch camera", "keys": [KEY_C]},
@@ -33,6 +35,8 @@ const ACTIONS := {
 const JOY_BUTTONS := {
 	"jump": [JOY_BUTTON_A],
 	"respawn": [JOY_BUTTON_Y],
+	"grab_left": [JOY_BUTTON_X],
+	"grab_right": [JOY_BUTTON_B],
 	"spin_left": [JOY_BUTTON_LEFT_SHOULDER],
 	"spin_right": [JOY_BUTTON_RIGHT_SHOULDER],
 	"camera_switch": [JOY_BUTTON_RIGHT_STICK],

@@ -37,7 +37,7 @@ const SPIN_DAMP := 7.0
 const WALK_SPEED := 1.8
 const JOG_SPEED := 3.4
 const MAX_HIKE_SLOPE := 40.0
-const GRABS := false               # grabs are switched off for now (flips, spins and rails first)
+const GRABS := true
 const WIND_SPIN := 5.4             # spin rate (rad/s) the unwinding body reaches after a full wind-up
 const UNWIND_TIME := 0.35          # the spin builds up over this long after takeoff (hips follow shoulders)
 const PUSH_MAX := 4.0              # W pole-pushes only below this speed (m/s); faster, it does nothing
@@ -125,6 +125,10 @@ var air_pitch := 0.0               # flip rotation so far (rad)
 var air_pitch_peak := 0.0          # largest |pitch| reached in this jump (corks)
 var sketchy := 0.0                 # > 0 while recovering from a sketchy landing (s)
 var grab_kind_l := ""              # "", "tip" or "tail"
+var grab_name := ""                # the grab being held: Mute, Safety, Japan, Tail, Tip, Truck Driver, Blunt
+var grab_time := 0.0
+var _jump_grab := ""               # the grab done on this jump (scored at landing)
+var _grab_flip_lock := false      # the grab took the arrow keys: they pick the grab, not a flip
 var grab_kind_r := ""
 var _ground_pitch := 0.0           # pitch of the snow along the direction of travel
 var _ground_pitch_rate := 0.0      # how fast it changes (a kicker's lip throws you backward)
@@ -520,6 +524,9 @@ func _ground_step(dt: float, n: Vector3, cf: float) -> void:
 
 
 func _air_step(dt: float, spin_in: float, flip_in: float) -> void:
+	var grab_keys := GRABS and (_pressed("grab_left") or _pressed("grab_right"))
+	if grab_keys and _grab_flip_lock:
+		flip_in = 0.0
 	vel += Vector3(0, -G, 0) * dt
 	var sp := vel.length()
 	var compact := maxf(tuck, (grab_l + grab_r) * 0.5)
@@ -562,6 +569,27 @@ func _air_step(dt: float, spin_in: float, flip_in: float) -> void:
 		vel += right * steer * 1.1 * dt
 	var gl := GRABS and _pressed("grab_left")
 	var gr := GRABS and _pressed("grab_right")
+	# which grab: Z = left hand, X = right hand, both = Truck Driver; Up / Down when you grab
+	# picks the variation (Z: Tip / Japan, X: Blunt / Tail).  Not flipping yet? then the arrow
+	# picks the grab instead of starting a flip.
+	var lean_raw := _in("lean_forward") - _in("lean_back")
+	if (gl or gr) and grab_name == "":
+		_grab_flip_lock = absf(flip_vel) < 1.5
+		if gl and gr:
+			grab_name = "Truck Driver"
+		elif gl:
+			grab_name = "Tip" if lean_raw > 0.5 else ("Japan" if lean_raw < -0.5 else "Mute")
+		else:
+			grab_name = "Blunt" if lean_raw > 0.5 else ("Tail" if lean_raw < -0.5 else "Safety")
+	elif gl and gr and grab_name != "Truck Driver" and grab_time < 0.15:
+		grab_name = "Truck Driver"
+	if grab_name != "":
+		_jump_grab = grab_name
+	if gl or gr:
+		if grab_l > 0.8 or grab_r > 0.8:
+			grab_time += dt
+	elif grab_l < 0.05 and grab_r < 0.05:
+		grab_name = ""
 	# where the hand goes: leaning forward reaches the tip, leaning back the tail
 	var kind := "tip" if flip_in > 0.5 else ("tail" if flip_in < -0.5 else "")
 	if gl and grab_l < 0.05:
@@ -623,6 +651,9 @@ func _take_off(from_jump := false) -> void:
 	air_pitch_peak = 0.0
 	grab_kind_l = ""
 	grab_kind_r = ""
+	grab_name = ""
+	grab_time = 0.0
+	_jump_grab = ""
 	took_off.emit()
 
 
@@ -644,7 +675,7 @@ func _land(n: Vector3, impact: float) -> void:
 		"rotation": air_rotation, "grab_l": grab_time_l, "grab_r": grab_time_r, "speed": sp,
 		"height": max_air_height, "distance": Vector2(position.x - takeoff_pos.x, position.z - takeoff_pos.z).length(),
 		"crash": "", "flip": air_pitch, "pitch_peak": air_pitch_peak, "pitch_off": rad_to_deg(pitch_off),
-		"grab_kind_l": grab_kind_l, "grab_kind_r": grab_kind_r,
+		"grab_kind_l": grab_kind_l, "grab_kind_r": grab_kind_r, "grab_name": _jump_grab, "grab_time": grab_time,
 	}
 	ground_n = n
 	compression = clampf(impact / 14.0, 0.1, 1.0) * (1.0 if air_time > 0.25 else 0.4)

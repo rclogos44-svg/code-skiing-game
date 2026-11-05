@@ -171,7 +171,9 @@ func _leg_fk(hip: Vector3, sgn: float, a: Array) -> Array:
 	var B := S * Basis(Vector3(1, 0, 0), deg_to_rad(BOOT_LEAN))   # boot locked to the shin
 	var ski_c := ankle - B.y * ANKLE_H - B.z * 0.03
 	return [knee, B, ski_c]
-var preview_grab := ""              # spring-smoothed hand offsets: arms settle after the body
+var preview_grab := ""
+var _ag := ""                     # grab pose being shown (preview or the skier's live grab)
+var _gw := 0.0                    # how far into it (blends in and out)              # spring-smoothed hand offsets: arms settle after the body
 
 
 func setup(s: Skier) -> void:
@@ -183,6 +185,8 @@ func setup(s: Skier) -> void:
 	for k in ["layout", "ftuck", "chatter", "pelvis_h", "pelvis_z", "pitch", "counter", "hand_spread", "plow", "feet_up", "arms_air", "tuck", "grab_l", "grab_r", "brake", "edgeb"]:
 		_p[k] = 0.0
 	_p["pelvis_h"] = 0.9
+	for gname in GRAB_POSES:
+		_solved[gname] = _solve_grab(gname, 0.86, 0.06)
 
 
 ## All-black park outfit: long baggy hooded jacket, baggy pants stacked over the boots, black
@@ -378,10 +382,18 @@ func _compute_pose(dt: float) -> void:
 	var pz := _sm("pelvis_z", 0.06 + 0.10 * tuck + 0.05 * s.charge + 0.05 * edgeb + 0.13 * maxf(-lf, 0.0) - 0.05 * maxf(lf, 0.0), 10.0, dt)
 	var pitch := deg_to_rad(27.0 + 38.0 * tuck + 22.0 * s.charge + 25.0 * s.compression + 32.0 * grab * air + 4.0 * edgeb + 30.0 * gear + 12.0 * lf * (1.0 - air))
 	pitch += deg_to_rad(8.0 + 40.0 * drive) * _push_amt
-	if GRAB_POSES.has(preview_grab):
-		if not _solved.has(preview_grab):
-			_solved[preview_grab] = _solve_grab(preview_grab, 0.86, 0.06)
-		pitch = deg_to_rad(float(_solved[preview_grab]["pitch"]))
+	# grab pose: the preview, or the live grab while airborne; blends in/out with the hold
+	var live := s.grab_name if s.airborne and (s.grab_l > 0.3 or s.grab_r > 0.3) else ""
+	var want := preview_grab if preview_grab != "" else live
+	if want != "":
+		_ag = want
+	_gw = 1.0 if preview_grab != "" else lerpf(_gw, 1.0 if want != "" else 0.0, 1.0 - exp(-12.0 * dt))
+	if _gw < 0.01:
+		_ag = ""
+	if GRAB_POSES.has(_ag):
+		if not _solved.has(_ag):
+			_solved[_ag] = _solve_grab(_ag, 0.86, 0.06)
+		pitch = lerpf(pitch, deg_to_rad(float(_solved[_ag]["pitch"])), _gw)
 	pitch = _sm("pitch", pitch, 10.0, dt) + deg_to_rad(45.0) * _p["ftuck"]
 	# angulation: legs take the full inclination, the torso stays much more upright
 	var counter := _lean * 0.58
@@ -407,13 +419,13 @@ func _compute_pose(dt: float) -> void:
 		var foot_local := Vector3(side * stance, feet_up, fwd_off + lead)
 		# folded leg: ankle behind the knee at knee height, ski sole facing back
 		foot_local = foot_local.lerp(Vector3(side * 0.11, 0.40, 0.40 + ANKLE_H), layout)
-		var gp: Dictionary = GRAB_POSES.get(preview_grab, {})
+		var gp: Dictionary = GRAB_POSES.get(_ag, {})
 		var sd_key := "l" if side < 0.0 else "r"
 		var fk := []
 		if not gp.is_empty():
 			var hip_local := Vector3(side * HIP_HALF, ph - 0.04, pz)
-			fk = _leg_fk(hip_local, side, _solved[preview_grab]["legs"][sd_key])
-			foot_local = fk[2]
+			fk = _leg_fk(hip_local, side, _solved[_ag]["legs"][sd_key])
+			foot_local = foot_local.lerp(fk[2], _gw)
 			_fk["hip_" + sd_key] = L * hip_local
 			_fk["knee_" + sd_key] = L * (fk[0] as Vector3)
 		var foot := L * foot_local
@@ -425,7 +437,7 @@ func _compute_pose(dt: float) -> void:
 		var yaw := plow * side
 		var sb := L.basis * Basis(Vector3.UP, yaw) * Basis(Vector3(1, 0, 0), -PI * 0.5 * layout)
 		if not gp.is_empty():
-			sb = L.basis * (fk[1] as Basis)
+			sb = sb.orthonormalized().slerp((L.basis * (fk[1] as Basis)).orthonormalized(), _gw)
 		if not s.airborne:
 			# pitch each ski to the snow under its own tip and tail (uneven ground)
 			var tip := foot - sb.z * 0.85
@@ -459,9 +471,9 @@ func _compute_pose(dt: float) -> void:
 	# ---- pelvis & hips
 	var pelvis := L * Vector3(0.0, ph, pz)
 	joints["pelvis"] = pelvis
-	var gpt: Dictionary = _solved.get(preview_grab, {})
-	var g_twist := float(gpt.get("twist", 0.0))
-	var g_side := float(gpt.get("side", 0.0))
+	var gpt: Dictionary = _solved.get(_ag, {})
+	var g_twist := float(gpt.get("twist", 0.0)) * _gw
+	var g_side := float(gpt.get("side", 0.0)) * _gw
 	var tb := L.basis * Basis(Vector3.UP, _torso_yaw + g_twist) * Basis(Vector3(0, 0, 1), counter + g_side) * Basis(Vector3(1, 0, 0), -pitch)
 	torso_basis = tb.orthonormalized()
 	var hip_basis := (L.basis * Basis(Vector3.UP, _torso_yaw * 0.45) * Basis(Vector3(0, 0, 1), counter * 0.3)).orthonormalized()
@@ -476,11 +488,12 @@ func _compute_pose(dt: float) -> void:
 			hip = ank - d.normalized() * max_leg
 		joints["hip_" + sd] = hip
 		var pole_dir := L.basis * Vector3(sgn * 0.25, 0.0, -1.0)
-		joints["knee_" + sd] = ik2(hip, ank, THIGH, SHIN, hip + pole_dir)
-	if GRAB_POSES.has(preview_grab) and _fk.has("knee_l"):
-		for sd in ["l", "r"]:
-			joints["hip_" + sd] = _fk["hip_" + sd]
-			joints["knee_" + sd] = _fk["knee_" + sd]
+		var pole_pt := hip + pole_dir
+		if GRAB_POSES.has(_ag) and _fk.has("knee_" + sd):
+			# knees point where the hip rotation puts them (the grab's joint angles)
+			var fkk: Vector3 = _fk["knee_" + sd]
+			pole_pt = pole_pt.lerp(fkk + (fkk - (hip + ank) * 0.5), _gw)
+		joints["knee_" + sd] = ik2(hip, ank, THIGH, SHIN, pole_pt)
 	pelvis = (joints["hip_l"] + joints["hip_r"]) * 0.5 + hip_basis.y * 0.04
 	joints["pelvis"] = pelvis
 	var waist := pelvis + tb.y * 0.07
@@ -532,16 +545,16 @@ func _compute_pose(dt: float) -> void:
 		_hands[sd + "_v"] = hv
 		var hand := sh + tb * hc
 		var g := gl if sd == "l" else gr
-		var gpose: Dictionary = GRAB_POSES.get(preview_grab, {})
+		var gpose: Dictionary = GRAB_POSES.get(_ag, {})
 		if not gpose.is_empty():
-			g = 1.0 if gpose.has(sd) else 0.0
+			g = _gw if gpose.has(sd) else 0.0
 			if gpose.has("free") and gpose["free"].has(sd):
-				hand = sh + tb * (gpose["free"][sd] as Vector3)       # the free arm styles it out
+				hand = hand.lerp(sh + tb * (gpose["free"][sd] as Vector3), _gw)   # the free arm styles it out
 		if g > 0.01 and gpose.has(sd):
 			var spec: Array = gpose[sd]
 			var gs := -1.0 if spec[0] == "l" else 1.0
 			var sx2: Transform3D = ski_l if spec[0] == "l" else ski_r
-			hand = sx2.origin + sx2.basis * Vector3(gs * 0.07 * float(spec[2]), 0.05, float(spec[1]))
+			hand = hand.lerp(sx2.origin + sx2.basis * Vector3(gs * 0.07 * float(spec[2]), 0.05, float(spec[1])), g)
 			grab_gap[sd] = maxf((hand - sh).length() - (UPPER_ARM + FOREARM), 0.0)
 		elif g > 0.01:
 			var sxf := ski_l if sd == "l" else ski_r

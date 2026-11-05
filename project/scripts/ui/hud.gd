@@ -349,9 +349,9 @@ func show_controls_hint() -> void:
 	if skier and skier.mode == Skier.Mode.LIFT:
 		hint_label.text = "Mouse: look around · hold %s to skip to the top · %s map" % [b.call("interact"), b.call("map")]
 		return
-	hint_label.text = "%s/%s turn · %s pole push (slow only) · %s hockey stop · %s crouch, let go at the lip · hold %s/%s at the pop: backflip / front flip · 360 right: hold %s on the run-in, then %s in the air (and the other way round) · on rails %s/%s balance · %s back to the top" % [
+	hint_label.text = "%s/%s turn · %s pole push (slow only) · %s hockey stop · %s crouch, let go at the lip · hold %s/%s at the pop: backflip / front flip · 360 right: hold %s on the run-in, then %s in the air (and the other way round) · grabs: %s / %s (+ Up / Down for others) · on rails %s/%s balance · %s back to the top" % [
 		b.call("steer_left"), b.call("steer_right"), b.call("tuck"), b.call("brake"), b.call("jump"), b.call("lean_back"),
-		b.call("lean_forward"), b.call("lean_left"), b.call("lean_right"), b.call("steer_left"), b.call("steer_right"), b.call("map")]
+		b.call("lean_forward"), b.call("lean_left"), b.call("lean_right"), b.call("grab_left"), b.call("grab_right"), b.call("steer_left"), b.call("steer_right"), b.call("map")]
 
 
 func show_region(name: String) -> void:

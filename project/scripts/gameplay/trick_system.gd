@@ -88,13 +88,25 @@ static func evaluate(info: Dictionary) -> Dictionary:
 		if cork:
 			tags.append("cork")
 	var grabs := 0
+	var gname := String(info.get("grab_name", ""))
+	var gtime := float(info.get("grab_time", 0.0))
+	if gname != "" and gtime >= 0.2:
+		# named grab: points for how long it's held, scaled by how hard it is to reach
+		var hard := {"Safety": 0.9, "Mute": 1.0, "Tail": 1.0, "Tip": 1.1, "Truck Driver": 1.2, "Japan": 1.3, "Blunt": 1.3}.get(gname, 1.0) as float
+		parts.append(gname)
+		points += int((200 + 400.0 * minf(gtime, 2.0)) * hard)
+		grabs = 2 if gname == "Truck Driver" else 1
+		tags.append("grab")
+		tags.append(gname.to_lower().replace(" ", "_"))
+		gl = 0.0
+		gr = 0.0
 	if gl >= 0.25:
 		grabs += 1
 		points += 150 + int(300.0 * minf(gl, 2.0))
 	if gr >= 0.25:
 		grabs += 1
 		points += 150 + int(300.0 * minf(gr, 2.0))
-	if grabs == 2:
+	if grabs == 2 and gname == "":
 		parts.append("Double Grab")
 		points = int(points * 1.25)
 		tags.append("grab")

@@ -43,6 +43,10 @@ Up / Down    Shift your weight forward / back. Keep holding Down (or Up) as
 Left / Right Spins. For a right 360: hold Left on the run-in (shoulders coil
              left), pop at the lip, then press Right in the air. Mirror it for left.
              Keep pulling a flip past the first rotation and you tuck for more.
+Z / X        Grabs (in the air). Z = left hand: Mute; Z + Up = Tip; Z + Down =
+             Japan. X = right hand: Safety; X + Up = Blunt; X + Down = Tail.
+             Z + X = Truck Driver. Hold longer for more points; let go before
+             you land. (When you grab, Up / Down pick the grab, not a flip.)
 Difficulty   Settings > Controls: Easy (default: lots of air control,
              forgiving landings and rails), Normal, Realistic (rotation only
              from your takeoff, edges catch, rails need balancing)
@@ -65,8 +69,8 @@ HOW TO PLAY
     * JIB LINE (right): boxes, rails and tubes.
 - Orange lines mark each kicker's lip (take-off) and knuckle (start of the
   landing). Aim to land just past the knuckle, on the steep landing.
-- Tricks: spins (180/360/540...), backflips and front flips, and rail /
-  box slides. Land tricks within a few seconds of each other to build a combo
+- Tricks: spins (180/360/540...), backflips and front flips, seven grabs,
+  and rail / box slides. Land tricks within a few seconds of each other to build a combo
   multiplier; a combo is banked after ~3.5 s on the snow and lost if you
   crash. Land straight (or fully switch) - sideways landings crash.
 - Crash? Press R to get back up, or Tab to go back to the top.
