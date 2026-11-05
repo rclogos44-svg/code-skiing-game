@@ -54,7 +54,9 @@ var _hands := {}
 ## the hip and knee.  Per leg [hip flexion, hip abduction (+ out, - across), hip internal rotation,
 ## knee flexion] in degrees.  Per hand [ski, along the ski (-tip / +tail, m), edge +1 out / -1 in].
 ## "free": where the other hand goes (torso frame).  "pitch"/"twist"/"side": spine (deg / rad).
-const LEG_LIMITS := {"flex": [-15.0, 125.0], "abd": [-25.0, 45.0], "rot": [-40.0, 40.0], "knee": [0.0, 140.0]}
+## Optional 5th leg angle "ankle": boot flex on top of BOOT_LEAN (a ski boot gives ~15 deg forward,
+## very little back).
+const LEG_LIMITS := {"flex": [-15.0, 125.0], "abd": [-25.0, 45.0], "rot": [-40.0, 40.0], "knee": [0.0, 140.0], "ankle": [-5.0, 15.0]}
 const BOOT_LEAN := 15.0        # shin leans this far forward of the boot's up axis (deg)
 const GRAB_POSES := {
 	# relaxed, real-world shapes: knees tucked ~90-110 deg, skis close to parallel with a light
@@ -119,7 +121,7 @@ func _solve_grab(name: String, ph: float, pz: float) -> Dictionary:
 	var sp := [float(g["pitch"]), float(g["twist"]), float(g["side"])]
 	var legs0 := {"l": (g["legs"]["l"] as Array).duplicate(), "r": (g["legs"]["r"] as Array).duplicate()}
 	var sp0 := sp.duplicate()
-	var keys := ["flex", "abd", "rot", "knee"]
+	var keys := ["flex", "abd", "rot", "knee", "ankle"]
 	var grabbed := []
 	for sd in ["l", "r"]:
 		if g.has(sd) and not grabbed.has(g[sd][0]):
@@ -131,7 +133,7 @@ func _solve_grab(name: String, ph: float, pz: float) -> Dictionary:
 		if g.has("skis"):
 			c += _ski_target_cost(g["skis"], lg, ph, pz)
 		for side in ["l", "r"]:
-			for i in 4:
+			for i in (lg[side] as Array).size():
 				c += pow((float(lg[side][i]) - float(legs0[side][i])) / 40.0, 2.0) * float(g.get("legs_w", 1.0))
 		c += pow((s2[0] - sp0[0]) / 40.0, 2.0) * float(g.get("pitch_w", 0.12)) + pow((s2[1] - sp0[1]) / 0.6, 2.0) * 0.25 + pow((s2[2] - sp0[2]) / 0.5, 2.0) * 0.25
 		return c
@@ -140,7 +142,7 @@ func _solve_grab(name: String, ph: float, pz: float) -> Dictionary:
 		for it in 30:
 			var improved := false
 			for side in grabbed:
-				for i in 4:
+				for i in (legs[side] as Array).size():
 					for dirn in [-1.0, 1.0]:
 						var v: float = float(legs[side][i]) + dirn * step
 						var lim: Array = LEG_LIMITS[keys[i]]
@@ -207,7 +209,8 @@ func _leg_fk(hip: Vector3, sgn: float, a: Array) -> Array:
 	var knee := hip + H * Vector3(0, -THIGH, 0)
 	var S := H * Basis(Vector3(1, 0, 0), -knee_f)           # knee is a hinge: the shin folds back
 	var ankle := knee + S * Vector3(0, -SHIN, 0)
-	var B := S * Basis(Vector3(1, 0, 0), deg_to_rad(BOOT_LEAN))   # boot locked to the shin
+	var ank_f := clampf(float(a[4]), LEG_LIMITS["ankle"][0], LEG_LIMITS["ankle"][1]) if a.size() > 4 else 0.0
+	var B := S * Basis(Vector3(1, 0, 0), deg_to_rad(BOOT_LEAN + ank_f))   # boot on the shin (+ boot flex)
 	var ski_c := ankle - B.y * ANKLE_H - B.z * 0.03
 	return [knee, B, ski_c]
 var preview_grab := ""
@@ -215,9 +218,13 @@ var skeleton_view := false        # V: hide the clothes and show bones + joints
 const BONES := [["pelvis", "hip_l"], ["pelvis", "hip_r"], ["hip_l", "knee_l"], ["knee_l", "ankle_l"], ["hip_r", "knee_r"],
 	["knee_r", "ankle_r"], ["pelvis", "waist"], ["waist", "lumbar"], ["lumbar", "thoracic"], ["thoracic", "chest"], ["chest", "head"],
 	["chest", "shoulder_l"], ["chest", "shoulder_r"], ["shoulder_l", "elbow_l"], ["elbow_l", "hand_l"], ["shoulder_r", "elbow_r"],
-	["elbow_r", "hand_r"]]
+	["elbow_r", "hand_r"], ["ankle_l", "heel_l"], ["ankle_l", "toe_l"], ["heel_l", "toe_l"], ["ankle_r", "heel_r"], ["ankle_r", "toe_r"],
+	["heel_r", "toe_r"]]
 const SK_JOINTS := ["pelvis", "hip_l", "hip_r", "knee_l", "knee_r", "ankle_l", "ankle_r", "waist", "lumbar", "thoracic", "chest",
-	"shoulder_l", "shoulder_r", "elbow_l", "elbow_r", "hand_l", "hand_r"]
+	"shoulder_l", "shoulder_r", "elbow_l", "elbow_r", "hand_l", "hand_r", "heel_l", "heel_r", "toe_l", "toe_r"]
+## Foot points in the boot frame (origin at the ankle joint, sole 0.1 m below, toe toward -Z).
+const HEEL := Vector3(0.0, -0.105, 0.1)
+const TOE := Vector3(0.0, -0.105, -0.19)
 var _ag := ""                     # grab pose being shown (preview or the skier's live grab)
 var _gw := 0.0                    # how far into it, eased (blends in and out)
 var _gp := 0.0                    # linear progress behind _gw
@@ -528,6 +535,8 @@ func _compute_pose(dt: float) -> void:
 			# swing across into the X instead of appearing crossed
 			var la: Array = _solved[_ag]["legs"][sd_key]
 			var ang := [la[0], lerpf(0.0, float(la[1]), _gw_cross), lerpf(0.0, float(la[2]), _gw_cross), la[3]]
+			if la.size() > 4:
+				ang.append(la[4])
 			fk = _leg_fk(hip_local, side, ang)
 			_fk["hip_" + sd_key] = LH * hip_local
 			_fk["knee_" + sd_key] = LH * (fk[0] as Vector3)
@@ -1076,6 +1085,12 @@ func _place_skeleton() -> void:
 		joints["thoracic"] = w.lerp(joints["chest"], 0.7)
 	if not joints.has("waist"):
 		joints["waist"] = w
+	# feet: heel and toe follow the boot (and with it the ski)
+	for sd in ["l", "r"]:
+		var bb: Basis = (boot_l if sd == "l" else boot_r).orthonormalized()
+		var an: Vector3 = joints["ankle_" + sd]
+		joints["heel_" + sd] = an + bb * HEEL
+		joints["toe_" + sd] = an + bb * TOE
 	for b in BONES:
 		var a: Vector3 = joints[b[0]]
 		var c: Vector3 = joints[b[1]]
