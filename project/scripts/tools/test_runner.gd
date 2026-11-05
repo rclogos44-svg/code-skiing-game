@@ -276,8 +276,11 @@ func _park_kickers() -> void:
 		"%d plants, tip height off the snow %.2f m, tip slide %.3f m" % [plants, worst_h, worst_slide])
 	check("pole push: three seconds of pushing gets you rolling", s.speed > 3.5, "%.1f m/s (%.0f km/h)" % [s.speed, s.speed * 3.6])
 	# grabs off the medium kicker: grab after takeoff, let go ~0.4 s before touching down
-	for gt in [["Mute", {"grab_left": 1.0}], ["Japan", {"grab_left": 1.0, "lean_back": 1.0}], ["Truck Driver", {"grab_left": 1.0, "grab_right": 1.0}],
-			["Tail", {"grab_right": 1.0, "lean_back": 1.0}]]:
+	# [name, keys from the start of the grab, extra keys pressed 0.2 s later (as a player would)]
+	for gt in [["Mute", {"grab_left": 1.0}, {}], ["Safety", {"grab_right": 1.0}, {}],
+			["Japan", {"grab_left": 1.0}, {"lean_back": 1.0}], ["Tip", {"grab_left": 1.0}, {"lean_forward": 1.0}],
+			["Tail", {"grab_right": 1.0}, {"lean_back": 1.0}], ["Blunt", {"grab_right": 1.0}, {"lean_forward": 1.0}],
+			["Truck Driver", {"grab_left": 1.0}, {"grab_right": 1.0}]]:
 		var mk: Dictionary = {}
 		for k in world.terrain.layout["parks"][0]["kickers"]:
 			if k["size"] == "M":
@@ -291,7 +294,12 @@ func _park_kickers() -> void:
 		for i in 900:
 			var below := s.position.y - world.terrain.height(s.position.x, s.position.z)
 			var falling := s.vel.y < 0.0
-			s.scripted_input = gt[1] if (s.airborne and s.air_time > 0.15 and not (falling and below < 2.2)) else {}
+			var keys := {}
+			if s.airborne and s.air_time > 0.15 and not (falling and below < 2.2):
+				keys = (gt[1] as Dictionary).duplicate()
+				if s.air_time > 0.35:
+					keys.merge(gt[2])
+			s.scripted_input = keys
 			s.step(1.0 / 120.0)
 			s.time += 1.0 / 120.0
 			if s.grab_name != "":

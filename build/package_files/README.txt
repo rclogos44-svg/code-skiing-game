@@ -43,7 +43,8 @@ Up / Down    Shift your weight forward / back. Keep holding Down (or Up) as
 Left / Right Spins. For a right 360: hold Left on the run-in (shoulders coil
              left), pop at the lip, then press Right in the air. Mirror it for left.
              Keep pulling a flip past the first rotation and you tuck for more.
-Z / X        Grabs (in the air). Z = left hand: Mute; Z + Up = Tip; Z + Down =
+Z / X        Grabs (in the air; tap Up / Down any time while holding to switch).
+             Z = left hand: Mute; Z + Up = Tip; Z + Down =
              Japan. X = right hand: Safety; X + Up = Blunt; X + Down = Tail.
              Z + X = Truck Driver. Hold longer for more points; let go before
              you land. (When you grab, Up / Down pick the grab, not a flip.)

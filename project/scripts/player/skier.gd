@@ -581,23 +581,35 @@ func _air_step(dt: float, spin_in: float, flip_in: float) -> void:
 	# picks the variation (Z: Tip / Japan, X: Blunt / Tail).  Not flipping yet? then the arrow
 	# picks the grab instead of starting a flip.
 	var lean_raw := _in("lean_forward") - _in("lean_back")
-	if (gl or gr) and grab_name == "":
-		_grab_flip_lock = absf(flip_vel) < 1.5
-		if gl and gr:
-			grab_name = "Truck Driver"
-		elif gl:
-			grab_name = "Tip" if lean_raw > 0.5 else ("Japan" if lean_raw < -0.5 else "Mute")
-		else:
-			grab_name = "Blunt" if lean_raw > 0.5 else ("Tail" if lean_raw < -0.5 else "Safety")
-	elif gl and gr and grab_name != "Truck Driver" and grab_time < 0.15:
-		grab_name = "Truck Driver"
-	if grab_name != "":
-		_jump_grab = grab_name
 	if gl or gr:
-		if grab_l > 0.8 or grab_r > 0.8:
-			grab_time += dt
+		if grab_name == "":
+			_grab_flip_lock = absf(flip_vel) < 1.5
+		# the grab follows the keys while held: both hands = Truck Driver; Up / Down (pressed at
+		# any time during the grab) picks the variation and it sticks until you let go of the grab
+		var want := grab_name
+		if gl and gr:
+			want = "Truck Driver"
+		elif gl:
+			if lean_raw > 0.5:
+				want = "Tip"
+			elif lean_raw < -0.5:
+				want = "Japan"
+			elif not (want in ["Tip", "Japan"]):
+				want = "Mute"
+		else:
+			if lean_raw > 0.5:
+				want = "Blunt"
+			elif lean_raw < -0.5:
+				want = "Tail"
+			elif not (want in ["Blunt", "Tail"]):
+				want = "Safety"
+		grab_name = want
 	elif grab_l < 0.05 and grab_r < 0.05:
 		grab_name = ""
+	if grab_name != "":
+		_jump_grab = grab_name
+	if (gl or gr) and (grab_l > 0.8 or grab_r > 0.8):
+		grab_time += dt
 	# where the hand goes: leaning forward reaches the tip, leaning back the tail
 	var kind := "tip" if flip_in > 0.5 else ("tail" if flip_in < -0.5 else "")
 	if gl and grab_l < 0.05:

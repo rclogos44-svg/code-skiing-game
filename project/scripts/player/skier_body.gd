@@ -396,6 +396,8 @@ func _compute_pose(dt: float) -> void:
 	var live := s.grab_name if s.airborne and (s.grab_l > 0.3 or s.grab_r > 0.3) else ""
 	var want := preview_grab if preview_grab != "" else live
 	if want != "":
+		if _ag != "" and want != _ag and preview_grab == "":
+			_gw *= 0.35                     # switching grabs: ease out of the old one, into the new
 		_ag = want
 	_gw = 1.0 if preview_grab != "" else lerpf(_gw, 1.0 if want != "" else 0.0, 1.0 - exp(-12.0 * dt))
 	if _gw < 0.01:
