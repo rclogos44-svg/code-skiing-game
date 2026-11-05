@@ -47,42 +47,130 @@ var _prev_edgeb := 0.0
 var _push_ph := 0.0            # double-pole push cycle 0..1 (reach, push, recover)
 var _push_amt := 0.0
 var _hands := {}
-## Grab poses (preview; not wired to input yet).  Per hand: [ski "l"/"r", along the ski (-Z tip,
-## +Z tail, m), edge (+1 outside, -1 inside)].  Per leg: foot offset in the body frame and ski
-## pitch (rad, + = tips up).  "pitch": extra forward bend of the torso (deg).
+## Grab poses (preview; not wired to input yet).  Legs are driven ONLY by joint angles inside
+## human limits; the ski is locked to the shin by the boot, so where the ski points follows from
+## the hip and knee.  Per leg [hip flexion, hip abduction (+ out, - across), hip internal rotation,
+## knee flexion] in degrees.  Per hand [ski, along the ski (-tip / +tail, m), edge +1 out / -1 in].
+## "free": where the other hand goes (torso frame).  "pitch"/"twist"/"side": spine (deg / rad).
+const LEG_LIMITS := {"flex": [-15.0, 125.0], "abd": [-25.0, 45.0], "rot": [-40.0, 40.0], "knee": [0.0, 140.0]}
+const BOOT_LEAN := 15.0        # shin leans this far forward of the boot's up axis (deg)
 const GRAB_POSES := {
-	# reference photo: skis crossed in an X, left hand across the body onto the right ski's outside
-	# edge by the binding, torso twisted and dropped toward it, right arm thrown high
-	"Mute": {"l": ["r", -0.22, 1.0], "free": {"r": Vector3(0.32, 0.42, 0.05)},
-		"feet": {"l": Vector3(0.06, 0.34, -0.02), "r": Vector3(-0.1, 0.44, -0.06)},
-		"rot": {"l": 0.1, "r": 0.3}, "yaw": {"l": -0.8, "r": 0.75}, "roll": {"l": 0.35, "r": -0.55},
-		"pitch": 30.0, "twist": -0.45, "side": -0.3},
+	"Mute": {"l": ["r", -0.2, 1.0], "free": {"r": Vector3(0.32, 0.42, 0.05)},
+		"legs": {"l": [65.0, 8.0, 35.0, 105.0], "r": [95.0, -15.0, 32.0, 112.0]}, "pitch": 32.0, "twist": -0.4, "side": -0.25},
 	"Safety": {"r": ["r", -0.02, 1.0], "free": {"l": Vector3(-0.45, 0.25, -0.15)},
-		"feet": {"l": Vector3(-0.02, 0.3, 0.0), "r": Vector3(0.12, 0.42, 0.02)},
-		"rot": {"l": 0.1, "r": 0.25}, "yaw": {"l": 0.15, "r": -0.25}, "roll": {"l": 0.0, "r": 0.55},
-		"pitch": 28.0, "twist": 0.2, "side": 0.32},
-	"Japan": {"l": ["r", -0.12, 1.0], "free": {"r": Vector3(0.28, 0.45, -0.1)},
-		"feet": {"l": Vector3(0.04, 0.38, 0.3), "r": Vector3(-0.06, 0.5, 0.36)},
-		"rot": {"l": -1.0, "r": -1.2}, "yaw": {"l": -0.2, "r": 0.35}, "roll": {"l": 0.2, "r": -0.5},
-		"pitch": 14.0, "twist": -0.35, "side": -0.2},
-	"Tail": {"r": ["r", 0.62, 1.0], "free": {"l": Vector3(-0.35, 0.3, -0.3)},
-		"feet": {"l": Vector3(-0.02, 0.3, -0.16), "r": Vector3(0.1, 0.4, -0.06)},
-		"rot": {"l": 0.55, "r": 0.85}, "yaw": {"l": 0.1, "r": -0.2}, "roll": {"l": 0.0, "r": 0.35},
-		"pitch": 22.0, "twist": 0.4, "side": 0.25},
-	"Tip": {"l": ["l", -0.72, 1.0], "free": {"r": Vector3(0.38, 0.3, 0.2)},
-		"feet": {"l": Vector3(-0.04, 0.46, -0.1), "r": Vector3(0.04, 0.34, 0.08)},
-		"rot": {"l": 0.6, "r": 0.4}, "yaw": {"l": 0.25, "r": -0.1}, "roll": {"l": -0.3, "r": 0.0},
-		"pitch": 42.0, "twist": 0.25, "side": -0.2},
+		"legs": {"l": [55.0, 5.0, 10.0, 95.0], "r": [92.0, 28.0, -10.0, 122.0]}, "pitch": 30.0, "twist": 0.2, "side": 0.3},
+	"Japan": {"l": ["r", -0.1, 1.0], "free": {"r": Vector3(0.28, 0.45, -0.1)},
+		"legs": {"l": [25.0, 5.0, 18.0, 125.0], "r": [38.0, -12.0, 30.0, 135.0]}, "pitch": 18.0, "twist": -0.35, "side": -0.2},
+	"Tail": {"r": ["r", 0.6, 1.0], "free": {"l": Vector3(-0.35, 0.3, -0.3)},
+		"legs": {"l": [70.0, 5.0, 5.0, 95.0], "r": [100.0, 12.0, -5.0, 82.0]}, "pitch": 26.0, "twist": 0.35, "side": 0.25},
+	"Tip": {"l": ["l", -0.7, 1.0], "free": {"r": Vector3(0.38, 0.3, 0.2)},
+		"legs": {"l": [118.0, 10.0, 0.0, 62.0], "r": [70.0, 5.0, 5.0, 100.0]}, "pitch": 40.0, "twist": 0.2, "side": -0.15},
 	"Truck Driver": {"l": ["l", -0.45, 1.0], "r": ["r", -0.45, 1.0],
-		"feet": {"l": Vector3(-0.02, 0.5, -0.2), "r": Vector3(0.02, 0.5, -0.2)},
-		"rot": {"l": 0.45, "r": 0.45}, "yaw": {"l": 0.12, "r": -0.12}, "roll": {"l": 0.0, "r": 0.0},
-		"pitch": 40.0, "twist": 0.0, "side": 0.0},
+		"legs": {"l": [110.0, 8.0, 0.0, 88.0], "r": [110.0, 8.0, 0.0, 88.0]}, "pitch": 40.0, "twist": 0.0, "side": 0.0},
 	"Blunt": {"r": ["r", 0.72, 1.0], "free": {"l": Vector3(-0.32, 0.45, 0.0)},
-		"feet": {"l": Vector3(-0.02, 0.36, 0.28), "r": Vector3(0.1, 0.48, 0.36)},
-		"rot": {"l": -1.0, "r": -1.3}, "yaw": {"l": 0.1, "r": -0.3}, "roll": {"l": 0.0, "r": 0.5},
-		"pitch": 12.0, "twist": 0.45, "side": 0.25},
+		"legs": {"l": [30.0, 5.0, 5.0, 120.0], "r": [32.0, 15.0, -10.0, 135.0]}, "pitch": 16.0, "twist": 0.4, "side": 0.25},
 }
-var _grab_pull := {"l": Vector3.ZERO, "r": Vector3.ZERO}   # legs bring the ski to an out-of-reach hand
+var _grab_bend := 0.0            # extra spine bend (rad) so an out-of-reach hand gets to the ski
+var grab_gap := {}               # hand-to-ski distance per hand (m), for checking the poses
+var _fk := {}                    # leg forward kinematics for the current grab: hip / knee per side
+
+
+var _solved := {}                # grab name -> pose solved so the hand really holds the ski
+const SPINE_LIMITS := {"pitch": [0.0, 85.0], "twist": [-0.75, 0.75], "side": [-0.55, 0.55]}
+
+
+## Body-frame geometry of a grab pose: returns the total hand-to-grab-point gap (m) beyond arm reach.
+func _grab_gap(g: Dictionary, legs: Dictionary, sp: Array, ph: float, pz: float) -> float:
+	var tb := Basis(Vector3.UP, sp[1]) * Basis(Vector3(0, 0, 1), sp[2]) * Basis(Vector3(1, 0, 0), -deg_to_rad(sp[0]))
+	var pelvis := Vector3(0, ph, pz)
+	var chest := pelvis + tb.y * (0.07 + TORSO_LEN)
+	var total := 0.0
+	for sd in ["l", "r"]:
+		if not g.has(sd):
+			continue
+		var spec: Array = g[sd]
+		var ss := -1.0 if spec[0] == "l" else 1.0
+		var fk := _leg_fk(Vector3(ss * HIP_HALF, ph - 0.04, pz), ss, legs[spec[0]])
+		var B: Basis = fk[1]
+		var pt: Vector3 = (fk[2] as Vector3) + B * Vector3(ss * 0.07 * float(spec[2]), 0.05, float(spec[1]))
+		var hs := -1.0 if sd == "l" else 1.0
+		var sh := chest - tb.y * 0.07 + tb.x * (hs * SHOULDER_HALF)
+		total += maxf((pt - sh).length() - (UPPER_ARM + FOREARM) * 0.95, 0.0)
+	return total
+
+
+## Coordinate descent over the grabbing legs' joint angles and the spine, all clamped to human
+## limits: stay close to the styled pose, but the hand must reach the ski.
+func _solve_grab(name: String, ph: float, pz: float) -> Dictionary:
+	var g: Dictionary = GRAB_POSES[name]
+	var legs := {"l": (g["legs"]["l"] as Array).duplicate(), "r": (g["legs"]["r"] as Array).duplicate()}
+	var sp := [float(g["pitch"]), float(g["twist"]), float(g["side"])]
+	var legs0 := {"l": (g["legs"]["l"] as Array).duplicate(), "r": (g["legs"]["r"] as Array).duplicate()}
+	var sp0 := sp.duplicate()
+	var keys := ["flex", "abd", "rot", "knee"]
+	var grabbed := []
+	for sd in ["l", "r"]:
+		if g.has(sd) and not grabbed.has(g[sd][0]):
+			grabbed.append(g[sd][0])
+	var cost := func(lg: Dictionary, s2: Array) -> float:
+		var c := pow(_grab_gap(g, lg, s2, ph, pz), 2.0) * 400.0
+		for side in ["l", "r"]:
+			for i in 4:
+				c += pow((float(lg[side][i]) - float(legs0[side][i])) / 40.0, 2.0) * 0.25
+		c += pow((s2[0] - sp0[0]) / 40.0, 2.0) * 0.05 + pow((s2[1] - sp0[1]) / 0.6, 2.0) * 0.05 + pow((s2[2] - sp0[2]) / 0.5, 2.0) * 0.05
+		return c
+	var best: float = cost.call(legs, sp)
+	for step in [12.0, 6.0, 3.0, 1.5]:
+		for it in 30:
+			var improved := false
+			for side in grabbed:
+				for i in 4:
+					for dirn in [-1.0, 1.0]:
+						var v: float = float(legs[side][i]) + dirn * step
+						var lim: Array = LEG_LIMITS[keys[i]]
+						v = clampf(v, lim[0], lim[1])
+						var old: float = legs[side][i]
+						legs[side][i] = v
+						var c: float = cost.call(legs, sp)
+						if c < best - 1e-6:
+							best = c
+							improved = true
+						else:
+							legs[side][i] = old
+			var sp_steps := [step, step / 60.0, step / 60.0]
+			var sp_keys := ["pitch", "twist", "side"]
+			for i in 3:
+				for dirn in [-1.0, 1.0]:
+					var lim2: Array = SPINE_LIMITS[sp_keys[i]]
+					var old2: float = sp[i]
+					sp[i] = clampf(sp[i] + dirn * sp_steps[i], lim2[0], lim2[1])
+					var c2: float = cost.call(legs, sp)
+					if c2 < best - 1e-6:
+						best = c2
+						improved = true
+					else:
+						sp[i] = old2
+			if not improved:
+				break
+	return {"legs": legs, "pitch": sp[0], "twist": sp[1], "side": sp[2], "gap": _grab_gap(g, legs, sp, ph, pz)}
+
+
+## Leg forward kinematics in the body frame (x right, y up, -z forward). Returns [knee, ski basis,
+## ski centre].  Angles are clamped to LEG_LIMITS.
+func _leg_fk(hip: Vector3, sgn: float, a: Array) -> Array:
+	var flex := deg_to_rad(clampf(float(a[0]), LEG_LIMITS["flex"][0], LEG_LIMITS["flex"][1]))
+	var abd := deg_to_rad(clampf(float(a[1]), LEG_LIMITS["abd"][0], LEG_LIMITS["abd"][1]))
+	var rot := deg_to_rad(clampf(float(a[2]), LEG_LIMITS["rot"][0], LEG_LIMITS["rot"][1]))
+	var knee_f := deg_to_rad(clampf(float(a[3]), LEG_LIMITS["knee"][0], LEG_LIMITS["knee"][1]))
+	# hamstrings: with a straight knee the hip only folds to ~75 deg; bending the knee frees it
+	flex = minf(flex, deg_to_rad(75.0) + knee_f * 0.8)
+	var H := Basis(Vector3(0, 0, 1), sgn * abd) * Basis(Vector3(1, 0, 0), flex) * Basis(Vector3.UP, sgn * rot)
+	var knee := hip + H * Vector3(0, -THIGH, 0)
+	var S := H * Basis(Vector3(1, 0, 0), -knee_f)           # knee is a hinge: the shin folds back
+	var ankle := knee + S * Vector3(0, -SHIN, 0)
+	var B := S * Basis(Vector3(1, 0, 0), deg_to_rad(BOOT_LEAN))   # boot locked to the shin
+	var ski_c := ankle - B.y * ANKLE_H - B.z * 0.03
+	return [knee, B, ski_c]
 var preview_grab := ""              # spring-smoothed hand offsets: arms settle after the body
 
 
@@ -291,7 +379,9 @@ func _compute_pose(dt: float) -> void:
 	var pitch := deg_to_rad(27.0 + 38.0 * tuck + 22.0 * s.charge + 25.0 * s.compression + 32.0 * grab * air + 4.0 * edgeb + 30.0 * gear + 12.0 * lf * (1.0 - air))
 	pitch += deg_to_rad(8.0 + 40.0 * drive) * _push_amt
 	if GRAB_POSES.has(preview_grab):
-		pitch = deg_to_rad(float(GRAB_POSES[preview_grab]["pitch"]))
+		if not _solved.has(preview_grab):
+			_solved[preview_grab] = _solve_grab(preview_grab, 0.86, 0.06)
+		pitch = deg_to_rad(float(_solved[preview_grab]["pitch"]))
 	pitch = _sm("pitch", pitch, 10.0, dt) + deg_to_rad(45.0) * _p["ftuck"]
 	# angulation: legs take the full inclination, the torso stays much more upright
 	var counter := _lean * 0.58
@@ -319,10 +409,13 @@ func _compute_pose(dt: float) -> void:
 		foot_local = foot_local.lerp(Vector3(side * 0.11, 0.40, 0.40 + ANKLE_H), layout)
 		var gp: Dictionary = GRAB_POSES.get(preview_grab, {})
 		var sd_key := "l" if side < 0.0 else "r"
+		var fk := []
 		if not gp.is_empty():
-			foot_local = Vector3(side * stance, 0.0, fwd_off) + (gp["feet"][sd_key] as Vector3) + (_grab_pull[sd_key] as Vector3)
-		else:
-			_grab_pull[sd_key] = Vector3.ZERO
+			var hip_local := Vector3(side * HIP_HALF, ph - 0.04, pz)
+			fk = _leg_fk(hip_local, side, _solved[preview_grab]["legs"][sd_key])
+			foot_local = fk[2]
+			_fk["hip_" + sd_key] = L * hip_local
+			_fk["knee_" + sd_key] = L * (fk[0] as Vector3)
 		var foot := L * foot_local
 		if not s.airborne:
 			# both skis stay on the snow: raise/lower each foot onto the ground plane
@@ -332,7 +425,7 @@ func _compute_pose(dt: float) -> void:
 		var yaw := plow * side
 		var sb := L.basis * Basis(Vector3.UP, yaw) * Basis(Vector3(1, 0, 0), -PI * 0.5 * layout)
 		if not gp.is_empty():
-			sb = sb * Basis(Vector3.UP, float(gp["yaw"][sd_key])) * Basis(Vector3(0, 0, 1), float(gp["roll"][sd_key])) * Basis(Vector3(1, 0, 0), float(gp["rot"][sd_key]))
+			sb = L.basis * (fk[1] as Basis)
 		if not s.airborne:
 			# pitch each ski to the snow under its own tip and tail (uneven ground)
 			var tip := foot - sb.z * 0.85
@@ -366,7 +459,7 @@ func _compute_pose(dt: float) -> void:
 	# ---- pelvis & hips
 	var pelvis := L * Vector3(0.0, ph, pz)
 	joints["pelvis"] = pelvis
-	var gpt: Dictionary = GRAB_POSES.get(preview_grab, {})
+	var gpt: Dictionary = _solved.get(preview_grab, {})
 	var g_twist := float(gpt.get("twist", 0.0))
 	var g_side := float(gpt.get("side", 0.0))
 	var tb := L.basis * Basis(Vector3.UP, _torso_yaw + g_twist) * Basis(Vector3(0, 0, 1), counter + g_side) * Basis(Vector3(1, 0, 0), -pitch)
@@ -384,6 +477,10 @@ func _compute_pose(dt: float) -> void:
 		joints["hip_" + sd] = hip
 		var pole_dir := L.basis * Vector3(sgn * 0.25, 0.0, -1.0)
 		joints["knee_" + sd] = ik2(hip, ank, THIGH, SHIN, hip + pole_dir)
+	if GRAB_POSES.has(preview_grab) and _fk.has("knee_l"):
+		for sd in ["l", "r"]:
+			joints["hip_" + sd] = _fk["hip_" + sd]
+			joints["knee_" + sd] = _fk["knee_" + sd]
 	pelvis = (joints["hip_l"] + joints["hip_r"]) * 0.5 + hip_basis.y * 0.04
 	joints["pelvis"] = pelvis
 	var waist := pelvis + tb.y * 0.07
@@ -445,13 +542,7 @@ func _compute_pose(dt: float) -> void:
 			var gs := -1.0 if spec[0] == "l" else 1.0
 			var sx2: Transform3D = ski_l if spec[0] == "l" else ski_r
 			hand = sx2.origin + sx2.basis * Vector3(gs * 0.07 * float(spec[2]), 0.05, float(spec[1]))
-			# out of reach? the leg pulls that ski toward the hand (next frame) until the hand holds it
-			var arm := UPPER_ARM + FOREARM
-			var gap := (hand - sh).length() - arm * 0.97
-			if gap > 0.0:
-				var pull_w := L.basis.inverse() * ((sh - hand).normalized() * gap)
-				var cur: Vector3 = _grab_pull[spec[0]]
-				_grab_pull[spec[0]] = (cur + pull_w * 0.5).limit_length(0.8)
+			grab_gap[sd] = maxf((hand - sh).length() - (UPPER_ARM + FOREARM), 0.0)
 		elif g > 0.01:
 			var sxf := ski_l if sd == "l" else ski_r
 			var kind := s.grab_kind_l if sd == "l" else s.grab_kind_r
