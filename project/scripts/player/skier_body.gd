@@ -59,19 +59,14 @@ const BOOT_LEAN := 15.0        # shin leans this far forward of the boot's up ax
 const GRAB_POSES := {
 	# relaxed, real-world shapes: knees tucked ~90-110 deg, skis close to parallel with a light
 	# tweak, a little twist toward the grab, free arm out to the side for balance
-	# reference: chest faces where he's flying, both skis pushed out to his LEFT side and crossed
-	# in a flat X right under the boots; left hand across onto the right ski by the boot, upper
-	# body counter-leaning right, right arm high
-	"Mute": {"l": ["r", -0.06, 1.0], "free": {"r": Vector3(0.3, 0.42, 0.05)},
-		"legs": {"l": [80.0, 40.0, 10.0, 105.0], "r": [85.0, -24.0, 20.0, 108.0]}, "pitch": 30.0, "twist": -0.2, "side": 0.3,
-		"skis": {"yaw": {"l": 28.0, "r": -28.0}, "gap": 0.06, "stack": 0.07, "side_off": -0.55}, "hips_yaw": 0.15, "roll": -0.45},
-	# preview only (not mapped to a key yet): upright spine curving to his LEFT (C-shape), legs
-	# curving left as well, skis tucked up close under him in a flat X, left hand down the left
-	# side onto the right ski by the boot, right arm up
-	"MuteNew": {"l": ["r", -0.3, 1.0], "free": {"r": Vector3(0.1, 0.56, 0.06)},
+	# copied from the reference photo (mirrored to the left hand): upright spine curving toward the
+	# grab, chest turned to it, left hand down the left side onto the right ski just ahead of the
+	# boot, right arm straight up, knees tucked high with the skis crossed in a flat X under the
+	# boots, whole body tilted off-axis
+	"Mute": {"l": ["r", -0.3, 1.0], "free": {"r": Vector3(0.1, 0.56, 0.06)},
 		"legs": {"l": [105.0, 15.0, 10.0, 118.0], "r": [112.0, -20.0, 25.0, 122.0]}, "pitch": 12.0, "pitch_w": 25.0, "legs_w": 0.15,
 		"twist": 0.4, "side": 0.08, "curve": 0.62,
-		"skis": {"yaw": {"l": 28.0, "r": -28.0}, "gap": 0.06, "stack": 0.07, "side_off": -0.15}, "hips_yaw": 0.1},
+		"skis": {"yaw": {"l": 28.0, "r": -28.0}, "gap": 0.06, "stack": 0.07, "side_off": -0.15}, "hips_yaw": 0.1, "roll": -0.38},
 	"Safety": {"r": ["r", -0.02, 1.0], "free": {"l": Vector3(-0.45, 0.05, -0.1)},
 		"legs": {"l": [70.0, 6.0, 5.0, 100.0], "r": [88.0, 12.0, -5.0, 108.0]}, "pitch": 28.0, "twist": 0.12, "side": 0.12},
 	"Japan": {"l": ["r", 0.0, 1.0], "free": {"r": Vector3(0.4, 0.22, -0.05)},

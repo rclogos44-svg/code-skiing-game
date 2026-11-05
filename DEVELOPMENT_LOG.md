@@ -397,3 +397,16 @@ no map, parks, keep the ragdoll crashes, black baggy gear, only flips, spins and
   cargo pockets, procedural fabric weave normal maps on jacket / pants / gloves / gaiter. The
   chest band that looked like a toy stripe is gone.
 - Physics 86/86.
+
+## Mute copied from a reference photo; skeleton view; slow motion
+
+- The game's skeleton was drawn onto the player's mute reference photo (joints placed by eye,
+  `build/pose_fit/keypoints.py`). An automatic 3D fit from the single photo
+  (`build/pose_fit/fit_pose.py`) proved too ambiguous (depth), so the pose was set by hand from
+  what the photo shows and compared side by side from a similar camera: upright spine curving
+  toward the grab (new three-segment spine with sideways curve, `SkierBody.spine_bases`), chest
+  turned to the grab, grab hand down the side to the ski just ahead of the boot, free arm straight
+  up, knees tucked high, skis crossed flat under the boots, whole body tilted off-axis. Mirrored
+  to the game's left-hand mute (the photo is right-handed). It is now the in-game Mute.
+- V toggles a skeleton view (bones + joints, clothes hidden); B toggles quarter-speed slow motion.
+- Physics 89/89, including all seven grabs off the medium kicker (held, named, clean landing).
