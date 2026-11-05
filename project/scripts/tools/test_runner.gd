@@ -247,6 +247,34 @@ func _park_kickers() -> void:
 				and land_at < (end - knuckle).dot(d) + 6.0,
 				"%.2f s air, landed %.1f m past the knuckle (landing %.1f m)%s%s" % [max_air, land_at, (end - knuckle).dot(d),
 				(" CRASH " + crash) if crash != "" else "", launch])
+	# pole push: tips go into the snow and stay there while planted; speed comes in strokes
+	var stp: Dictionary = world.park.park_start(0)
+	s.teleport(stp["pos"], stp["yaw"])
+	var body = world.body
+	var worst_h := 0.0
+	var worst_slide := 0.0
+	var plants := 0
+	var tip0 := {}
+	for i in 360:
+		s.scripted_input = {"tuck": 1.0}
+		s.step(1.0 / 120.0)
+		s.time += 1.0 / 120.0
+		s._cur_xform = s._compose_xform()
+		s._prev_xform = s._cur_xform
+		body._compute_pose(1.0 / 120.0)
+		for sd in ["l", "r"]:
+			if body._pole_tip.has(sd):
+				var tip: Vector3 = body.joints["pole_grip_" + sd] + body.joints["pole_dir_" + sd] * 1.18
+				worst_h = maxf(worst_h, absf(tip.y - world.terrain.height(tip.x, tip.z)))
+				if not tip0.has(sd):
+					tip0[sd] = tip
+					plants += 1
+				worst_slide = maxf(worst_slide, Vector2(tip.x - tip0[sd].x, tip.z - tip0[sd].z).length())
+			else:
+				tip0.erase(sd)
+	check("pole push: tips plant in the snow and hold still", plants >= 4 and worst_h < 0.12 and worst_slide < 0.05,
+		"%d plants, tip height off the snow %.2f m, tip slide %.3f m" % [plants, worst_h, worst_slide])
+	check("pole push: three seconds of pushing gets you rolling", s.speed > 3.5, "%.1f m/s (%.0f km/h)" % [s.speed, s.speed * 3.6])
 	# grabs off the medium kicker: grab after takeoff, let go ~0.4 s before touching down
 	for gt in [["Mute", {"grab_left": 1.0}], ["Japan", {"grab_left": 1.0, "lean_back": 1.0}], ["Truck Driver", {"grab_left": 1.0, "grab_right": 1.0}],
 			["Tail", {"grab_right": 1.0, "lean_back": 1.0}]]:

@@ -40,7 +40,7 @@ const MAX_HIKE_SLOPE := 40.0
 const GRABS := true
 const WIND_SPIN := 5.4             # spin rate (rad/s) the unwinding body reaches after a full wind-up
 const UNWIND_TIME := 0.35          # the spin builds up over this long after takeoff (hips follow shoulders)
-const PUSH_MAX := 4.0              # W pole-pushes only below this speed (m/s); faster, it does nothing
+const PUSH_MAX := 5.0              # W pole-pushes only below this speed (m/s, 18 km/h); faster, it does nothing
 const FLIP_POP := 3.8              # flip rate (rad/s) from leaning fully at the pop
 ## Easy / Normal / Realistic: in-air spin & flip authority (rad/s^2), spin damping, auto-levelling
 ## toward a clean landing, landing tolerance (deg), impact limit and edge catching.
@@ -94,6 +94,7 @@ var takeoff_pos := Vector3.ZERO
 var max_air_height := 0.0
 var pushing := 0.0
 var _want_push := false
+var push_phase := 0.0             # double-pole stroke 0..1: reach, plant + drive (0.25-0.65), recover
 var steep_time := 0.0
 var carving := false
 var aggressive := false
@@ -507,9 +508,16 @@ func _ground_step(dt: float, n: Vector3, cf: float) -> void:
 	# --- pole push / skating on the flats
 	pushing = 0.0
 	if _want_push and sp < PUSH_MAX and brake < 0.1:
-		var acc := 2.6 * (1.0 - sp / PUSH_MAX)
-		vel += f * acc * dt
+		# the speed comes in bursts while the poles are planted and the arms drive back
+		if push_phase == 0.0:
+			push_phase = 0.2                     # first press: reach and plant straight away
+		push_phase = fmod(push_phase + dt * 1.15, 1.0)
+		if push_phase > 0.25 and push_phase < 0.65:
+			var acc := 9.0 * sin(PI * (push_phase - 0.25) / 0.4) * (1.0 - pow(sp / PUSH_MAX, 2.0))
+			vel += f * acc * dt
 		pushing = 1.0
+	else:
+		push_phase = 0.0
 	# --- static friction when nearly stopped
 	var gt := (g - n * g.dot(n))
 	if (vel - n * vel.dot(n)).length() < 0.35 and (absf(gt.dot(f)) < 0.06 * G or brake > 0.5) and pushing == 0.0:

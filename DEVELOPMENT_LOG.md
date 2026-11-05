@@ -382,3 +382,18 @@ no map, parks, keep the ragdoll crashes, black baggy gear, only flips, spins and
   2 s) times a difficulty factor (Safety 0.9 ... Japan / Blunt 1.3).
 - Tests: physics 84/84, including Mute, Japan, Truck Driver and Tail grabs off the medium kicker:
   held, named, no unwanted flip, clean landing.
+
+## Real pole push and a more human skier
+
+- **Pole push** is driven by the physics stroke (`Skier.push_phase`): reach with nearly straight
+  arms, plant, drive back past the hips, recover. Acceleration only comes while the poles are
+  planted (peak 9 m/s^2, fading toward the 18 km/h push limit, was 14 km/h). Each tip is planted
+  on the actual snow just behind the hand and stays fixed in the world while the skier slides
+  past it; the hand stays on the grip. Test: 8 plants in 3 s, tip within 4 cm of the snow,
+  0.1 cm slide; 17 km/h after 3 s from a standstill.
+- **Body:** shaped thighs / calves / upper arms / forearms (non-round cross-sections with quad,
+  calf and biceps shape under baggy fabric), gloves with thumbs and gauntlets, a neck gaiter
+  over the chin, ski-boot buckles, power strap and tongue, front zip and chest-pocket zips,
+  cargo pockets, procedural fabric weave normal maps on jacket / pants / gloves / gaiter. The
+  chest band that looked like a toy stripe is gone.
+- Physics 86/86.

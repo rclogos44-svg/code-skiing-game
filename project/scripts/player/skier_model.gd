@@ -322,3 +322,111 @@ static func pole() -> Array:
 	var grip := lathe(capsule_profile(0.019, 0.017, 0.13, 2), 1.0, 1.0, 10)
 	var basket := lathe([Vector2(0.0, 1.06), Vector2(0.05, 1.075), Vector2(0.052, 1.085), Vector2(0.0, 1.09)], 1.0, 1.0, 12)
 	return [shaft, grip, basket]
+
+
+## Anatomical limb along +Y (joint at 0, next joint at `length`): rings [y, half width, back
+## depth, front depth].  Placed by SkierBody._seg with the body's x as the hint, a limb pointing
+## down has its local +Z facing forward, so the "front" depth is the shell's +Z side.
+static func anat(rings: Array) -> ArrayMesh:
+	var r2 := []
+	for r in rings:
+		r2.append([r[0], r[1], r[2], r[3]])
+	return shell(r2, 18)
+
+
+static func thigh() -> ArrayMesh:      # baggy snow pants over a quad / hamstring shape
+	return anat([[-0.07, 0.0, 0.0, 0.0], [-0.05, 0.088, 0.085, 0.085], [0.0, 0.112, 0.1, 0.104], [0.1, 0.114, 0.1, 0.112],
+		[0.2, 0.108, 0.094, 0.108], [0.3, 0.1, 0.088, 0.1], [0.4, 0.093, 0.088, 0.092], [0.44, 0.09, 0.088, 0.092],
+		[0.47, 0.06, 0.06, 0.06], [0.49, 0.0, 0.0, 0.0]])
+
+
+static func shin() -> ArrayMesh:       # pant leg over the calf, wider again where it stacks on the boot
+	return anat([[-0.03, 0.0, 0.0, 0.0], [-0.01, 0.086, 0.086, 0.086], [0.05, 0.09, 0.097, 0.088], [0.13, 0.092, 0.102, 0.086],
+		[0.22, 0.09, 0.094, 0.085], [0.32, 0.096, 0.093, 0.092], [0.4, 0.106, 0.102, 0.1], [0.43, 0.108, 0.102, 0.102], [0.44, 0.0, 0.0, 0.0]])
+
+
+static func upper_arm() -> ArrayMesh:  # jacket sleeve over deltoid / biceps
+	return anat([[-0.05, 0.0, 0.0, 0.0], [-0.03, 0.062, 0.062, 0.062], [0.03, 0.072, 0.066, 0.07], [0.12, 0.066, 0.06, 0.068],
+		[0.22, 0.06, 0.056, 0.061], [0.29, 0.056, 0.054, 0.056], [0.31, 0.0, 0.0, 0.0]])
+
+
+static func forearm() -> ArrayMesh:
+	return anat([[-0.02, 0.0, 0.0, 0.0], [0.0, 0.054, 0.054, 0.054], [0.06, 0.057, 0.056, 0.056], [0.17, 0.052, 0.05, 0.05],
+		[0.25, 0.05, 0.049, 0.049], [0.27, 0.05, 0.049, 0.049], [0.28, 0.0, 0.0, 0.0]])
+
+
+## Glove: flat mitt from the wrist (y=0) to the fingertips, width along x; plus a separate thumb.
+static func glove() -> Array:
+	var mitt := shell([[0.0, 0.0, 0.0, 0.0], [0.005, 0.042, 0.028, 0.028], [0.05, 0.05, 0.033, 0.034], [0.11, 0.049, 0.032, 0.031],
+		[0.16, 0.04, 0.026, 0.025], [0.18, 0.026, 0.018, 0.018], [0.188, 0.0, 0.0, 0.0]], 16)
+	var thumb := lathe(capsule_profile(0.018, 0.016, 0.06, 3), 1.0, 1.0, 10)
+	var gauntlet := lathe([Vector2(0.0, -0.09), Vector2(0.062, -0.09), Vector2(0.066, -0.04), Vector2(0.055, 0.0), Vector2(0.0, 0.0)], 1.05, 0.95, 14)
+	return [mitt, thumb, gauntlet]
+
+
+## Neck gaiter pulled up over the chin (head frame, origin at the head centre, -Z forward).
+static func gaiter() -> ArrayMesh:
+	return shell([[-0.2, 0.0, 0.0, 0.0], [-0.195, 0.07, 0.075, 0.07], [-0.15, 0.072, 0.09, 0.068], [-0.09, 0.08, 0.112, 0.08],
+		[-0.05, 0.083, 0.116, 0.088], [-0.035, 0.08, 0.11, 0.087], [-0.03, 0.0, 0.0, 0.0]], 20)
+
+
+## Ski-boot buckles and power strap (boot frame: origin at the ankle, toe toward -Z).
+static func boot_hardware() -> Array:
+	var buckles := SurfaceTool.new()
+	buckles.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for y in [-0.04, 0.05, 0.12]:
+		_box(buckles, Vector3(0.062, y, -0.07), Vector3(0.078, y + 0.022, 0.03))      # on the outside of the shell
+	buckles.generate_normals()
+	var strap := SurfaceTool.new()
+	strap.begin(Mesh.PRIMITIVE_TRIANGLES)
+	_box(strap, Vector3(-0.072, 0.165, -0.1), Vector3(0.072, 0.2, 0.12))
+	_box(strap, Vector3(-0.04, -0.03, -0.105), Vector3(0.04, 0.17, -0.085))           # tongue
+	strap.generate_normals()
+	return [buckles.commit(), strap.commit()]
+
+
+## Jacket details in the torso frame: front zip, two chest-pocket zips, hem band.
+static func jacket_details() -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	# front depth of the torso shell at height y (see torso())
+	var prof := [[-0.305, 0.15], [-0.27, 0.158], [-0.12, 0.145], [0.04, 0.135], [0.18, 0.148], [0.3, 0.158], [0.39, 0.148], [0.45, 0.12], [0.5, 0.09]]
+	for i in prof.size() - 1:
+		var y0: float = prof[i][0]
+		var y1: float = prof[i + 1][0]
+		var dz: float = maxf(prof[i][1], prof[i + 1][1]) + 0.004
+		_box(st, Vector3(-0.007, y0, -dz - 0.006), Vector3(0.007, y1, -dz + 0.004))
+	for x in [-1.0, 1.0]:
+		_box(st, Vector3(x * 0.06 - 0.045, 0.27, -0.168), Vector3(x * 0.06 + 0.045, 0.282, -0.155))
+	st.generate_normals()
+	return st.commit()
+
+
+## Cargo pocket (thigh frame: y along the thigh, x outward is set when placed).
+static func cargo_pocket() -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	_box(st, Vector3(-0.012, -0.07, -0.055), Vector3(0.012, 0.07, 0.055))
+	_box(st, Vector3(-0.016, 0.055, -0.058), Vector3(0.016, 0.075, 0.058))           # flap
+	st.generate_normals()
+	return st.commit()
+
+
+## Fabric material: colour + roughness with a procedural micro-weave normal map.
+static func fabric(color: Color, rough: float, weave := 90.0, strength := 0.5, rim := 0.2) -> StandardMaterial3D:
+	var m := mat(color, rough, 0.0, {"rim": rim})
+	var nz := FastNoiseLite.new()
+	nz.noise_type = FastNoiseLite.TYPE_CELLULAR
+	nz.frequency = 0.08
+	var tex := NoiseTexture2D.new()
+	tex.width = 128
+	tex.height = 128
+	tex.seamless = true
+	tex.as_normal_map = true
+	tex.bump_strength = 4.0
+	tex.noise = nz
+	m.normal_enabled = true
+	m.normal_texture = tex
+	m.normal_scale = strength
+	m.uv1_scale = Vector3(weave / 10.0, weave / 10.0, 1.0)
+	return m
