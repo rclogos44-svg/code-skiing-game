@@ -79,9 +79,10 @@ const GRAB_POSES := {
 	# feet out); the upper back turns and leans toward them, the right shoulder drops back, he looks
 	# back over it at the skis and the right hand takes the tail; left arm forward for balance
 	"Tail": {"r": ["r", 0.68, 1.0], "free": {"l": Vector3(-0.12, 0.22, -0.48)},
-		"legs": {"l": [30.0, 15.0, -40.0, 140.0, 10.0], "r": [30.0, -15.0, 40.0, 140.0, 10.0]}, "pitch": 12.0, "pitch_w": 6.0,
+		"legs": {"l": [30.0, 10.0, -32.0, 122.0, 5.0], "r": [30.0, -5.0, 30.0, 120.0, 5.0]}, "pitch": 12.0, "pitch_w": 6.0,
 		"legs_w": 3.0, "twist": -0.55, "twist_dist": [0.1, 0.5, 1.0], "side": -0.05, "curve": -0.32, "time_in": 0.65,
-		"look": 1.0, "shoulders": {"r": Vector3(0.02, -0.045, 0.08), "l": Vector3(0.0, 0.02, -0.04)}, "auto_grip": true},
+		"look": 1.0, "shoulders": {"r": Vector3(0.02, -0.045, 0.08), "l": Vector3(0.0, 0.02, -0.04)}, "auto_grip": true,
+		"reach": 0.97, "along_range": [0.35, 0.55], "fixed_legs": true, "side_w": 40.0, "twist_w": 6.0},
 	"Tip": {"l": ["l", -0.52, 1.0], "free": {"r": Vector3(0.42, 0.08, 0.05)},
 		"legs": {"l": [100.0, 6.0, 0.0, 80.0], "r": [72.0, 5.0, 5.0, 100.0]}, "pitch": 38.0, "twist": 0.12, "side": -0.08},
 	"Truck Driver": {"l": ["l", -0.3, 1.0], "r": ["r", -0.3, 1.0],
@@ -134,25 +135,36 @@ func _arm_ski_clearance(sh: Vector3, el: Vector3, hand: Vector3) -> float:
 
 
 ## Body-frame geometry of a grab pose: returns the total hand-to-grab-point gap (m) beyond arm reach.
-func _grab_gap(g: Dictionary, legs: Dictionary, sp: Array, ph: float, pz: float) -> float:
+func _grab_gap(g: Dictionary, legs: Dictionary, sp: Array, ph: float, pz: float, al := {}) -> float:
+	var total := 0.0
+	for d in _grab_dists(g, legs, sp, ph, pz, al):
+		total += maxf(float(d) - (UPPER_ARM + FOREARM) * 0.95, 0.0)
+	return total
+
+
+## Shoulder-to-grip distances (m) of the grabbing hands for a candidate pose; `al` overrides where
+## along the ski each hand grips (solver variable for poses with "along_range").
+func _grab_dists(g: Dictionary, legs: Dictionary, sp: Array, ph: float, pz: float, al := {}) -> Array:
 	var sb3 := spine_bases(Basis(Vector3.UP, -float(g.get("hips_yaw", 0.0))), sp[2], float(g.get("curve", 0.0)), deg_to_rad(sp[0]),
 		sp[1], g.get("twist_dist", [1.0, 1.0, 1.0]))
 	var tb: Basis = sb3[2]
 	var pelvis := Vector3(0, ph, pz)
 	var chest := pelvis + (sb3[0] as Basis).y * 0.23 + (sb3[1] as Basis).y * 0.16 + tb.y * (TORSO_LEN - 0.32)
-	var total := 0.0
+	var out := []
 	for sd in ["l", "r"]:
 		if not g.has(sd):
 			continue
-		var spec: Array = g[sd]
+		var spec: Array = (g[sd] as Array).duplicate()
+		if al.has(sd):
+			spec[1] = al[sd]
 		var ss := -1.0 if spec[0] == "l" else 1.0
 		var fk := _leg_fk(Vector3(ss * HIP_HALF, ph - 0.04, pz), ss, legs[spec[0]])
 		var B: Basis = fk[1]
 		var hs := -1.0 if sd == "l" else 1.0
 		var sh := chest - tb.y * 0.07 + tb.x * (hs * SHOULDER_HALF) + tb * (g.get("shoulders", {}).get(sd, Vector3.ZERO) as Vector3)
 		var pt := grip_point(fk[2], B, ss, spec, sh, bool(g.get("auto_grip", false)))
-		total += maxf((pt - sh).length() - (UPPER_ARM + FOREARM) * 0.95, 0.0)
-	return total
+		out.append((pt - sh).length())
+	return out
 
 
 ## Coordinate descent over the grabbing legs' joint angles and the spine, all clamped to human
@@ -170,14 +182,27 @@ func _solve_grab(name: String, ph: float, pz: float) -> Dictionary:
 			grabbed.append(g[sd][0])
 	if g.has("skis"):
 		grabbed = ["l", "r"]
+	if g.get("fixed_legs", false):
+		grabbed = []              # the legs are set exactly; only the grip and the upper body adjust
+	# optional: the hand's grip point along the ski is free within "along_range", and the arm should
+	# be this straight ("reach" = shoulder-to-hand distance / arm length; 0.975 ~ 155 deg elbow)
+	var al := {}
+	if g.has("along_range"):
+		for sd in ["l", "r"]:
+			if g.has(sd):
+				al[sd] = float(g[sd][1])
 	var cost := func(lg: Dictionary, s2: Array) -> float:
-		var c := pow(_grab_gap(g, lg, s2, ph, pz), 2.0) * 4000.0
+		var c := pow(_grab_gap(g, lg, s2, ph, pz, al), 2.0) * 4000.0
+		if g.has("reach"):
+			for d in _grab_dists(g, lg, s2, ph, pz, al):
+				c += pow((float(d) - float(g["reach"]) * (UPPER_ARM + FOREARM)) / 0.02, 2.0)
 		if g.has("skis"):
 			c += _ski_target_cost(g["skis"], lg, ph, pz)
 		for side in ["l", "r"]:
 			for i in (lg[side] as Array).size():
 				c += pow((float(lg[side][i]) - float(legs0[side][i])) / 40.0, 2.0) * float(g.get("legs_w", 1.0))
-		c += pow((s2[0] - sp0[0]) / 40.0, 2.0) * float(g.get("pitch_w", 0.12)) + pow((s2[1] - sp0[1]) / 0.6, 2.0) * 0.25 + pow((s2[2] - sp0[2]) / 0.5, 2.0) * 0.25
+		c += pow((s2[0] - sp0[0]) / 40.0, 2.0) * float(g.get("pitch_w", 0.12)) + pow((s2[1] - sp0[1]) / 0.6, 2.0) * float(g.get("twist_w", 0.25)) \
+			+ pow((s2[2] - sp0[2]) / 0.5, 2.0) * float(g.get("side_w", 0.25))
 		return c
 	var best: float = cost.call(legs, sp)
 	for step in [12.0, 6.0, 3.0, 1.5]:
@@ -197,6 +222,17 @@ func _solve_grab(name: String, ph: float, pz: float) -> Dictionary:
 							improved = true
 						else:
 							legs[side][i] = old
+			for sd in al:
+				for dirn in [-1.0, 1.0]:
+					var old3: float = al[sd]
+					var rng: Array = g["along_range"]
+					al[sd] = clampf(old3 + dirn * step / 100.0, float(rng[0]), float(rng[1]))
+					var c3: float = cost.call(legs, sp)
+					if c3 < best - 1e-6:
+						best = c3
+						improved = true
+					else:
+						al[sd] = old3
 			var sp_steps := [step, step / 60.0, step / 60.0]
 			var sp_keys := ["pitch", "twist", "side"]
 			for i in 3:
@@ -212,7 +248,7 @@ func _solve_grab(name: String, ph: float, pz: float) -> Dictionary:
 						sp[i] = old2
 			if not improved:
 				break
-	return {"legs": legs, "pitch": sp[0], "twist": sp[1], "side": sp[2], "gap": _grab_gap(g, legs, sp, ph, pz)}
+	return {"legs": legs, "pitch": sp[0], "twist": sp[1], "side": sp[2], "gap": _grab_gap(g, legs, sp, ph, pz, al), "along": al}
 
 
 ## How far the skis are from a target shape: yaw of each ski (deg, + = tip to the right), flat
@@ -737,7 +773,11 @@ func _compute_pose(dt: float) -> void:
 			var spec: Array = gpose[sd]
 			var gs := -1.0 if spec[0] == "l" else 1.0
 			var sx2: Transform3D = ski_l if spec[0] == "l" else ski_r
-			hand = hand.lerp(grip_point(sx2.origin, sx2.basis, gs, spec, sh, bool(gpose.get("auto_grip", false))), g)
+			var spec_live := spec.duplicate()
+			var sal: Dictionary = _solved.get(_ag, {}).get("along", {})
+			if sal.has(sd):
+				spec_live[1] = sal[sd]
+			hand = hand.lerp(grip_point(sx2.origin, sx2.basis, gs, spec_live, sh, bool(gpose.get("auto_grip", false))), g)
 			grab_gap[sd] = maxf((hand - sh).length() - (UPPER_ARM + FOREARM), 0.0)
 		elif g > 0.01:
 			var sxf := ski_l if sd == "l" else ski_r

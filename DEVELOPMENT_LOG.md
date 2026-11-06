@@ -448,3 +448,10 @@ no map, parks, keep the ragdoll crashes, black baggy gear, only flips, spins and
   (`auto_grip`), and for every grab, if an arm would intersect a ski (arm and skis treated as
   rounded bars), the elbow swings around the shoulder-hand line to the clearest side. The grab
   preview prints the arm-to-ski clearance: all seven grabs 5-8 cm clear.
+- Tail grab arm straightened (was folded to 37 deg at the elbow with the hand on the shoulder):
+  the right ski sits a little further back while staying out to his side (right leg 30 / -5 / 30 /
+  120 deg, boot flex 5, found by a joint-limited search against the game's shoulder position), the
+  solver may move the grip point along the ski (0.35-0.55 m behind the boot) and aims for a nearly
+  straight arm ("reach"), with the legs and the lean toward the skis held fixed. Grabbing elbow
+  now 145 deg, pointing out and back. New physics check: every grab's grabbing elbow > 110 deg
+  (worst now 142) and arms clear of the skis. Physics 92/92.

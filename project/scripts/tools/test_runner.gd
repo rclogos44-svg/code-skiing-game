@@ -295,6 +295,37 @@ func _park_kickers() -> void:
 	check("grabs ease in (mute ~0.75 s) and let go smoothly (~0.35 s)",
 		w_at[12] < 0.08 and w_at[30] > 0.1 and w_at[30] < 0.5 and w_at[94] > 0.97 and w_at[140] < 0.05,
 		"pose %.2f at 0.1 s, %.2f at 0.25 s, %.2f at 0.78 s, %.2f 0.37 s after letting go" % [w_at[12], w_at[30], w_at[94], w_at[140]])
+	# every grab pose: the grabbing arm is a real reach (elbow not folded up) and clear of the skis
+	var worst_elbow := 180.0
+	var worst_clear := 1.0
+	var worst_name := ""
+	for gname in gbody.GRAB_POSES:
+		s.teleport(stp["pos"], stp["yaw"])
+		s.position.y += 40.0
+		s.airborne = true
+		s._cur_xform = s._compose_xform()
+		s._prev_xform = s._cur_xform
+		gbody.preview_grab = gname
+		gbody.arm_clear = {}
+		for i in 40:
+			gbody._compute_pose(0.03)
+		var gp: Dictionary = gbody.GRAB_POSES[gname]
+		for sd in ["l", "r"]:
+			if not gp.has(sd):
+				continue
+			var j: Dictionary = gbody.joints
+			var ang := rad_to_deg((j["shoulder_" + sd] - j["elbow_" + sd]).angle_to(j["hand_" + sd] - j["elbow_" + sd]))
+			if ang < worst_elbow:
+				worst_elbow = ang
+				worst_name = gname
+			worst_clear = minf(worst_clear, float(gbody.arm_clear.get(sd, 1.0)))
+	gbody.preview_grab = ""
+	gbody._gp = 0.0                # start the next check from no grab
+	gbody._gw = 0.0
+	gbody._ag = ""
+	check("grab arms reach (no folded elbows) and stay clear of the skis", worst_elbow > 110.0 and worst_clear >= 0.0,
+		"most bent grabbing elbow %.0f deg (%s), closest arm-to-ski %.2f m" % [worst_elbow, worst_name, worst_clear])
+	s.airborne = false
 	# the mute's skis start parallel and swing across into the X over time (not crossed at once)
 	s.teleport(stp["pos"], stp["yaw"])
 	s.position.y += 40.0
@@ -1357,6 +1388,15 @@ func _grab_shots() -> void:
 		var kr: float = rad_to_deg((body.joints["hip_r"] - body.joints["knee_r"]).angle_to(body.joints["ankle_r"] - body.joints["knee_r"]))
 		print("[TEST] grab %-12s hand-to-ski gap %s  arm-to-ski clearance %s  knee angles %.0f / %.0f" % [gname,
 			str(body.grab_gap), str(body.arm_clear), kl, kr])
+		var elb := {}
+		for sd in ["l", "r"]:
+			var j: Dictionary = body.joints
+			var ang := rad_to_deg((j["shoulder_" + sd] - j["elbow_" + sd]).angle_to(j["hand_" + sd] - j["elbow_" + sd]))
+			var out_dir: Vector3 = (j["elbow_" + sd] - (j["shoulder_" + sd] + j["hand_" + sd]) * 0.5)
+			var tbx: Basis = body.torso_basis
+			elb[sd] = "%.0f deg (straight = 180), elbow points %s" % [ang, str((tbx.inverse() * out_dir.normalized()).snapped(Vector3(0.01, 0.01, 0.01)))]
+		print("[TEST] grab %-12s elbows: L %s | R %s" % [gname, elb["l"], elb["r"]])
+		print("[TEST] grab %-12s grip along the ski: %s" % [gname, str(body._solved.get(gname, {}).get("along", {}))])
 		body._apply_parts()
 		var fz: Vector3 = -body.pelvis_basis.z                # the way his hips face
 		var fwd := Vector3(fz.x, 0, fz.z).normalized()
