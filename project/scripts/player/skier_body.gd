@@ -74,8 +74,15 @@ const GRAB_POSES := {
 		"time_in": 0.75},
 	"Safety": {"r": ["r", -0.02, 1.0], "free": {"l": Vector3(-0.45, 0.05, -0.1)},
 		"legs": {"l": [70.0, 6.0, 5.0, 100.0], "r": [88.0, 12.0, -5.0, 108.0]}, "pitch": 28.0, "twist": 0.12, "side": 0.12},
-	"Japan": {"l": ["r", 0.0, 1.0], "free": {"r": Vector3(0.4, 0.22, -0.05)},
-		"legs": {"l": [45.0, 5.0, 10.0, 118.0], "r": [55.0, -6.0, 18.0, 125.0]}, "pitch": 22.0, "twist": -0.2, "side": -0.1},
+	# after the player's Japan reference: torso nearly upright (~15 deg); the left knee comes up and
+	# the left ski is pulled tail-up behind at ~35 deg with the tip down in front, while the right
+	# ski stays flat under him (the two cross in an X from the side); the left hand holds the left
+	# ski behind the boot (an opposite-hand grab can't reach a ski there with the body upright),
+	# chest turned toward it, right arm punching forward, eyes ahead
+	"Japan": {"l": ["l", 0.5, 1.0], "free": {"r": Vector3(0.22, -0.02, -0.42)},
+		"legs": {"l": [80.0, -5.0, 40.0, 140.0, 0.0], "r": [85.0, 6.0, 0.0, 100.0, 0.0]}, "pitch": 15.0, "pitch_w": 20.0,
+		"twist": 0.6, "twist_w": 6.0, "side": 0.0, "side_w": 10.0, "fixed_legs": true, "along_range": [0.3, 0.6],
+		"reach": 0.96, "auto_grip": true, "time_in": 0.6},
 	# tail grab from the reference photos: body upright (no off-axis tilt); knees bent right up so
 	# the skis stand upright, tips down, out to his RIGHT side and a little behind (hips rotated in,
 	# feet out); the upper back turns and leans toward them, the right shoulder drops back, he looks

@@ -517,3 +517,10 @@ no map, parks, keep the ragdoll crashes, black baggy gear, only flips, spins and
   pole reaches straight down in the upright body frame so the tip meets the snow on its own.
   New check: hand within arm's reach all through the push (0.000 m over), pole turn <= 4.7 deg
   per frame. Physics 101/101.
+- Japan rebuilt after the player's Japan photo (used as inspiration, no skeleton overlay): torso
+  nearly upright (chest 9 deg forward, was 47), left knee up with the left ski pulled tail-up
+  behind at ~35 deg while the right ski stays flat (an X from the side), left hand on the left ski
+  behind the boot, chest turned toward it, right arm punching forward. A search over the joint-
+  limited legs showed an opposite-hand grab can't reach a ski there with the body upright, so the
+  Japan is now a same-side grab (still Q + S). Legs are fixed; the solver only moves the grip and
+  upper body.
