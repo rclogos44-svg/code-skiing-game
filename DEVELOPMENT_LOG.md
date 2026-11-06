@@ -509,3 +509,11 @@ no map, parks, keep the ragdoll crashes, black baggy gear, only flips, spins and
   max pole turn per frame 3.4 deg (was a 54 deg jump at the plant).
 - Physics 100/100 incl. arrow ollie, arrow backflip (L kicker), arrow left 360 (M kicker), arrow
   rail ollie, Backflip Tip with arrows + Q/W.
+- Push fix: with the stronger push the skier slid past a planted pole faster than arm + pole could
+  stretch, so the planted-pole constraint dragged the hand beyond arm's reach - invisible on the
+  skeleton (bones stretch) but the rigid sleeve and glove came apart. The planted hand now
+  satisfies both arm reach and pole length; a pole that runs out of reach (or is left behind by a
+  respawn) comes out of the snow for the rest of the stroke; the reaching hands are lower and the
+  pole reaches straight down in the upright body frame so the tip meets the snow on its own.
+  New check: hand within arm's reach all through the push (0.000 m over), pole turn <= 4.7 deg
+  per frame. Physics 101/101.

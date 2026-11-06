@@ -47,7 +47,8 @@ var _prev_edgeb := 0.0
 var _push_ph := 0.0            # double-pole push cycle 0..1 (reach, push, recover)
 var _push_amt := 0.0
 var _pole_tip := {}
-var _pole_dir_s := {}         # smoothed pole directions (no snapping when a pole leaves the snow)           # planted pole tips (world) during the drive
+var _pole_dir_s := {}
+var _pole_done := {}          # this stroke's plant is over for that pole (it reached the end of the arm)         # smoothed pole directions (no snapping when a pole leaves the snow)           # planted pole tips (world) during the drive
 const POLE_LEN := 1.12
 var _hands := {}
 ## Grab poses (preview; not wired to input yet).  Legs are driven ONLY by joint angles inside
@@ -753,7 +754,7 @@ func _compute_pose(dt: float) -> void:
 		hand_local = hand_local.lerp(Vector3(sgn * 0.40, -0.05, -0.05), layout * 0.6)  # layout: arms wide
 		if _push_amt > 0.02:
 			# reach: hands forward at chest height -> push: driven down and back past the hips
-			var reach_p := Vector3(sgn * 0.19, -0.06, -0.6)          # arms out in front, nearly straight
+			var reach_p := Vector3(sgn * 0.19, -0.2, -0.52)          # arms out in front, low enough for the tips to reach the snow
 			var end_p := Vector3(sgn * 0.22, -0.55, 0.26)            # driven back past the hips
 			var hp := reach_p.lerp(end_p, drive)
 			if _push_ph > 0.65:
@@ -842,7 +843,12 @@ func _compute_pose(dt: float) -> void:
 		if _push_amt > 0.5 and not s.airborne and _push_ph > 0.22 and _push_ph < 0.68:
 			# plant: the tip goes into the snow just behind the hand, then stays put while the
 			# skier slides past it and the arms drive back
-			if not _pole_tip.has(sd):
+			# out of reach (the skier has slid past it, or a respawn left it behind): the pole
+			# comes out of the snow for the rest of this stroke instead of stretching the arm
+			if _pole_tip.has(sd) and (_pole_tip[sd] - sh).length() > (POLE_LEN + UPPER_ARM + FOREARM) * 0.97:
+				_pole_tip.erase(sd)
+				_pole_done[sd] = true
+			if not _pole_tip.has(sd) and not _pole_done.get(sd, false):
 				# the swinging pole plants where its tip actually reaches the snow (no jump to a
 				# precomputed spot); if it hasn't got there by mid-stroke it plants where it is
 				var cur: Vector3 = _pole_dir_s.get(sd, Vector3.DOWN)
@@ -862,8 +868,15 @@ func _compute_pose(dt: float) -> void:
 		if _pole_tip.has(sd) and _push_amt > 0.5 and not s.airborne and _push_ph > 0.22 and _push_ph < 0.68:
 			var tipw: Vector3 = _pole_tip[sd]
 			var tg := hand - tipw
-			if absf(tg.length() - POLE_LEN) > 0.001:     # the hand stays on the grip of a planted pole
-				hand = tipw + tg.normalized() * POLE_LEN
+			if absf(tg.length() - POLE_LEN) > 0.001 or (hand - sh).length() > UPPER_ARM + FOREARM:
+				# the hand stays on the grip of the planted pole AND within arm's reach of the
+				# shoulder (the sleeve and glove are rigid, the arm can't stretch): alternate the two
+				# constraints until they agree, finishing on the pole so its tip stays in the snow
+				var arm_len := (UPPER_ARM + FOREARM) * 0.995
+				for it in 8:
+					if (hand - sh).length() > arm_len:
+						hand = sh + (hand - sh).normalized() * arm_len
+					hand = tipw + (hand - tipw).normalized() * POLE_LEN
 				joints["hand_" + sd] = hand
 				joints["elbow_" + sd] = ik2(sh, hand, UPPER_ARM, FOREARM, elbow_pole)
 			# the arm spring carries on from where the hand really is, so it doesn't jump on release
@@ -872,10 +885,14 @@ func _compute_pose(dt: float) -> void:
 			planted = true
 		else:
 			_pole_tip.erase(sd)
+			if _push_ph < 0.22 or _push_ph >= 0.68 or _push_amt <= 0.5:
+				_pole_done.erase(sd)     # next stroke may plant again
 		if _push_amt > 0.02 and not planted:
 			# recovery: poles swing forward, baskets trailing, ready for the next plant
 			var rt := 1.0       # reaching for the snow (stroke started, tip not down yet)
-			if _push_ph < 0.22:
+			if _pole_done.get(sd, false):
+				rt = 0.0         # released early: trailing behind like at the end of the drive
+			elif _push_ph < 0.22:
 				rt = (_push_ph + 0.32) / 0.54
 			elif _push_ph >= 0.68:
 				rt = (_push_ph - 0.68) / 0.54
@@ -890,10 +907,12 @@ func _compute_pose(dt: float) -> void:
 			# a pole swings, it doesn't snap: ease toward the new direction (slower while pushing)
 			var prev: Vector3 = _pole_dir_s.get(sd, joints["pole_dir_" + sd])
 			var tgt: Vector3 = joints["pole_dir_" + sd]
-			var reaching := _push_amt > 0.02 and _push_ph > 0.15 and _push_ph < 0.68
-			if _push_amt > 0.02 and _push_ph > 0.22 and _push_ph < 0.68:
-				tgt = (tb * Vector3(sgn * 0.06, -0.98, 0.12)).normalized()      # reach the tip down to the snow
-			var k := 1.0 - exp(-(12.0 if reaching else (5.0 if _push_amt > 0.02 else 14.0)) * dt)
+			var reaching: bool = _push_amt > 0.02 and _push_ph > 0.15 and _push_ph < 0.68 and not bool(_pole_done.get(sd, false))
+			if _push_amt > 0.02 and _push_ph > 0.22 and _push_ph < 0.68 and not _pole_done.get(sd, false):
+				# reach the tip down to the snow (in the upright body frame: the bent torso mustn't
+				# tilt the pole backwards, away from the snow)
+				tgt = (L.basis * Vector3(sgn * 0.06, -0.98, 0.1)).normalized()
+			var k := 1.0 - exp(-(9.0 if reaching else (5.0 if _push_amt > 0.02 else 14.0)) * dt)
 			joints["pole_dir_" + sd] = prev.slerp(tgt, k).normalized() if prev.dot(tgt) > -0.99 else tgt
 		_pole_dir_s[sd] = joints["pole_dir_" + sd]
 		joints["pole_grip_" + sd] = hand - joints["pole_dir_" + sd] * 0.06

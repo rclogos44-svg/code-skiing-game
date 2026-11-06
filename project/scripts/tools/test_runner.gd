@@ -258,6 +258,8 @@ func _park_kickers() -> void:
 	var plants := 0
 	var tip0 := {}
 	var worst_swing := 0.0
+	var worst_reach := -1.0
+	var worst_fore := 0.0
 	var prev_dir := {}
 	for i in 360:
 		s.scripted_input = {"tuck": 1.0}
@@ -267,6 +269,11 @@ func _park_kickers() -> void:
 		s._prev_xform = s._cur_xform
 		body._compute_pose(1.0 / 120.0)
 		for sd in ["l", "r"]:
+			# the hand must stay on the arm: shoulder-to-hand never longer than the arm
+			var sh_hand: float = (body.joints["hand_" + sd] - body.joints["shoulder_" + sd]).length()
+			worst_reach = maxf(worst_reach, sh_hand - (body.UPPER_ARM + body.FOREARM))
+			var el_hand: float = (body.joints["hand_" + sd] - body.joints["elbow_" + sd]).length()
+			worst_fore = maxf(worst_fore, absf(el_hand - body.FOREARM))
 			var pdir: Vector3 = body.joints["pole_dir_" + sd]
 			if prev_dir.has(sd) and i > 30:
 				var sw := rad_to_deg((prev_dir[sd] as Vector3).angle_to(pdir))
@@ -278,8 +285,9 @@ func _park_kickers() -> void:
 			if body._pole_tip.has(sd):
 				var tip: Vector3 = body.joints["pole_grip_" + sd] + body.joints["pole_dir_" + sd] * 1.18
 				worst_h = maxf(worst_h, absf(tip.y - world.terrain.height(tip.x, tip.z)))
-				if not tip0.has(sd):
+				if not tip0.has(sd) or (body._pole_tip[sd] as Vector3).distance_to(tip0[sd + "_w"]) > 0.001:
 					tip0[sd] = tip
+					tip0[sd + "_w"] = body._pole_tip[sd]
 					plants += 1
 				worst_slide = maxf(worst_slide, Vector2(tip.x - tip0[sd].x, tip.z - tip0[sd].z).length())
 			else:
@@ -288,6 +296,8 @@ func _park_kickers() -> void:
 		"%d plants, tip height off the snow %.2f m, tip slide %.3f m" % [plants, worst_h, worst_slide])
 	check("pole push: three seconds of pushing gets you rolling (stronger push)", s.speed > 5.2, "%.1f m/s (%.0f km/h)" % [s.speed, s.speed * 3.6])
 	check("pole push: poles swing, never snap (max turn per 1/120 s frame)", worst_swing < 6.0, "%.1f deg" % worst_swing)
+	check("pole push: hands stay on the arms (no stretching past arm length)", worst_reach <= 0.005 and worst_fore <= 0.005,
+		"shoulder-to-hand at most %.3f m past full reach, forearm length off by %.3f m" % [maxf(worst_reach, 0.0), worst_fore])
 	# grab timing: the pose eases in over ~0.55 s and out over ~0.35 s (it takes time irl)
 	var gbody = world.body
 	s.teleport(stp["pos"], stp["yaw"])
