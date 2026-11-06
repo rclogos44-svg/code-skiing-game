@@ -8,8 +8,8 @@ const PATH := "user://settings.cfg"
 
 ## Rebindable gameplay actions. "keys" are physical keycodes or mouse buttons (negative = mouse button).
 const ACTIONS := {
-	"tuck": {"label": "Pole push (slow)", "keys": [KEY_W]},
-	"brake": {"label": "Brake (hockey stop)", "keys": [KEY_S]},
+	"tuck": {"label": "Pole push (slow) · in the air: grab the front of the ski", "keys": [KEY_W]},
+	"brake": {"label": "Brake (hockey stop) · in the air: grab the back of the ski", "keys": [KEY_S]},
 	"steer_left": {"label": "Carve left", "keys": [KEY_A]},
 	"steer_right": {"label": "Carve right", "keys": [KEY_D]},
 	"carve": {"label": "Aggressive carve", "keys": [KEY_SHIFT]},
@@ -18,10 +18,8 @@ const ACTIONS := {
 	"lean_back": {"label": "Lean back (load the tails) / back flip", "keys": [KEY_DOWN]},
 	"lean_left": {"label": "Wind up / spin left", "keys": [KEY_LEFT]},
 	"lean_right": {"label": "Wind up / spin right", "keys": [KEY_RIGHT]},
-	"grab_left": {"label": "Grab, left hand (Mute; + Up: Tip, + Down: Japan)", "keys": [KEY_Z]},
-	"grab_right": {"label": "Grab, right hand (Safety; + Up: Blunt, + Down: Tail)", "keys": [KEY_X]},
-	"spin_left": {"label": "Spin left (air)", "keys": [KEY_Q]},
-	"spin_right": {"label": "Spin right (air)", "keys": [KEY_E]},
+	"grab_left": {"label": "Grab, left hand (Mute; + W: Tip, + S: Japan)", "keys": [KEY_Q]},
+	"grab_right": {"label": "Grab, right hand (Safety; + W: Blunt, + S: Tail)", "keys": [KEY_E]},
 	"camera_switch": {"label": "Switch camera", "keys": [KEY_C]},
 	"first_person": {"label": "First-person view", "keys": [KEY_F]},
 	"respawn": {"label": "Respawn", "keys": [KEY_R]},
@@ -254,6 +252,17 @@ func apply_input() -> void:
 			ja.axis = JOY_AXES[action][0]
 			ja.axis_value = JOY_AXES[action][1]
 			InputMap.action_add_event(action, ja)
+	# gamepad-only actions (e.g. spins on the shoulder buttons; on a keyboard the arrows spin)
+	for action in JOY_BUTTONS:
+		if ACTIONS.has(action):
+			continue
+		if not InputMap.has_action(action):
+			InputMap.add_action(action, 0.2)
+		InputMap.action_erase_events(action)
+		for b in JOY_BUTTONS[action]:
+			var jb := InputEventJoypadButton.new()
+			jb.button_index = b
+			InputMap.action_add_event(action, jb)
 	# Escape always opens the pause menu (not rebindable)
 	if not InputMap.has_action("menu"):
 		InputMap.add_action("menu")

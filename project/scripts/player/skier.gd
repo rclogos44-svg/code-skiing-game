@@ -132,7 +132,8 @@ var grab_held := false             # a grab key is held (the pose eases in while
 var grab_name := ""                # the grab being held: Mute, Safety, Japan, Tail, Tip, Truck Driver, Blunt
 var grab_time := 0.0
 var _jump_grab := ""               # the grab done on this jump (scored at landing)
-var _grab_flip_lock := false      # the grab took the arrow keys: they pick the grab, not a flip
+var _s_grabbed := false           # S was used to pick a back-of-ski grab on this jump
+var _brake_block := false          # ... and is still held after landing: it doesn't brake until re-pressed
 var grab_kind_r := ""
 var _ground_pitch := 0.0           # pitch of the snow along the direction of travel
 var _ground_pitch_rate := 0.0      # how fast it changes (a kicker's lip throws you backward)
@@ -292,8 +293,16 @@ func step(dt: float) -> void:
 	aggressive = _pressed("carve")
 	var want_tuck := _pressed("tuck")
 	var want_brake := _pressed("brake")
+	# S in the air picks a grab, not the brake: don't let it hockey-stop you on landing
+	if airborne:
+		want_brake = false
+	elif _brake_block:
+		if want_brake:
+			want_brake = false
+		else:
+			_brake_block = false
 	var jump_held := _pressed("jump")
-	# arrows: body lean fore/aft and wind-up / spin (Q/E still spin as well)
+	# arrows: body lean fore/aft and wind-up / spin (gamepad shoulders also spin)
 	var spin_in := clampf(_in("spin_right") - _in("spin_left") + _in("lean_right") - _in("lean_left"), -1.0, 1.0)
 	var lean_in := _in("lean_forward") - _in("lean_back")
 	lean_fa = move_toward(lean_fa, lean_in, 5.0 * dt)
@@ -535,9 +544,6 @@ func _ground_step(dt: float, n: Vector3, cf: float) -> void:
 
 
 func _air_step(dt: float, spin_in: float, flip_in: float) -> void:
-	var grab_keys := GRABS and (_pressed("grab_left") or _pressed("grab_right"))
-	if grab_keys and _grab_flip_lock:
-		flip_in = 0.0
 	vel += Vector3(0, -G, 0) * dt
 	var sp := vel.length()
 	var compact := maxf(tuck, (grab_l + grab_r) * 0.5)
@@ -581,29 +587,27 @@ func _air_step(dt: float, spin_in: float, flip_in: float) -> void:
 	var gl := GRABS and _pressed("grab_left")
 	var gr := GRABS and _pressed("grab_right")
 	grab_held = gl or gr
-	# which grab: Z = left hand, X = right hand, both = Truck Driver; Up / Down when you grab
-	# picks the variation (Z: Tip / Japan, X: Blunt / Tail).  Not flipping yet? then the arrow
-	# picks the grab instead of starting a flip.
-	var lean_raw := _in("lean_forward") - _in("lean_back")
+	# which grab: Q = left hand, E = right hand, both = Truck Driver; W / S (pressed any time during
+	# the grab) pick the front / back of the ski and stick until you let go. The arrows never pick
+	# grabs, so flips and spins work the same with or without a grab.
+	var gv := _in("tuck") - _in("brake")
 	if gl or gr:
-		if grab_name == "":
-			_grab_flip_lock = absf(flip_vel) < 1.5
-		# the grab follows the keys while held: both hands = Truck Driver; Up / Down (pressed at
-		# any time during the grab) picks the variation and it sticks until you let go of the grab
+		if gv < -0.5:
+			_s_grabbed = true
 		var want := grab_name
 		if gl and gr:
 			want = "Truck Driver"
 		elif gl:
-			if lean_raw > 0.5:
+			if gv > 0.5:
 				want = "Tip"
-			elif lean_raw < -0.5:
+			elif gv < -0.5:
 				want = "Japan"
 			elif not (want in ["Tip", "Japan"]):
 				want = "Mute"
 		else:
-			if lean_raw > 0.5:
+			if gv > 0.5:
 				want = "Blunt"
-			elif lean_raw < -0.5:
+			elif gv < -0.5:
 				want = "Tail"
 			elif not (want in ["Blunt", "Tail"]):
 				want = "Safety"
@@ -615,7 +619,7 @@ func _air_step(dt: float, spin_in: float, flip_in: float) -> void:
 	if (gl or gr) and (grab_l > 0.8 or grab_r > 0.8):
 		grab_time += dt
 	# where the hand goes: leaning forward reaches the tip, leaning back the tail
-	var kind := "tip" if flip_in > 0.5 else ("tail" if flip_in < -0.5 else "")
+	var kind := "tip" if gv > 0.5 else ("tail" if gv < -0.5 else "")
 	if gl and grab_l < 0.05:
 		grab_kind_l = kind
 	if gr and grab_r < 0.05:
@@ -680,12 +684,15 @@ func _take_off(from_jump := false) -> void:
 	grab_name = ""
 	grab_held = false
 	grab_time = 0.0
+	_s_grabbed = false
 	_jump_grab = ""
 	took_off.emit()
 
 
 func _land(n: Vector3, impact: float) -> void:
 	airborne = false
+	if _s_grabbed and _pressed("brake"):
+		_brake_block = true          # S was a grab key on this jump: no hockey stop until it's re-pressed
 	var hv := vel - n * vel.dot(n)
 	var sp := hv.length()
 	var vel_yaw := yaw_of(hv) if sp > 0.5 else heading

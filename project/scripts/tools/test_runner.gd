@@ -354,8 +354,8 @@ func _park_kickers() -> void:
 	# grabs off the medium kicker: grab after takeoff, let go ~0.4 s before touching down
 	# [name, keys from the start of the grab, extra keys pressed 0.2 s later (as a player would)]
 	for gt in [["Mute", {"grab_left": 1.0}, {}], ["Safety", {"grab_right": 1.0}, {}],
-			["Japan", {"grab_left": 1.0}, {"lean_back": 1.0}], ["Tip", {"grab_left": 1.0}, {"lean_forward": 1.0}],
-			["Tail", {"grab_right": 1.0}, {"lean_back": 1.0}], ["Blunt", {"grab_right": 1.0}, {"lean_forward": 1.0}],
+			["Japan", {"grab_left": 1.0}, {"brake": 1.0}], ["Tip", {"grab_left": 1.0}, {"tuck": 1.0}],
+			["Tail", {"grab_right": 1.0}, {"brake": 1.0}], ["Blunt", {"grab_right": 1.0}, {"tuck": 1.0}],
 			["Truck Driver", {"grab_left": 1.0}, {"grab_right": 1.0}]]:
 		var mk: Dictionary = {}
 		for k in world.terrain.layout["parks"][0]["kickers"]:
@@ -389,6 +389,84 @@ func _park_kickers() -> void:
 			and str(tr.get("name", "")).contains(gt[0]) and absf(float(gi["flip"])) < 0.6,
 			"held '%s' %.2f s -> '%s' %s, flip %.0f deg" % [held_name, float(gi.get("grab_time", 0.0)), tr.get("name", "-"), gi.get("crash", "no landing"),
 			rad_to_deg(float(gi.get("flip", 0.0)))])
+	# grab keys (Q/E + W/S) never touch the flip: same rotation with and without a grab held
+	var flip_with := {}
+	for with_grab in [false, true]:
+		s.teleport(stp["pos"], stp["yaw"])
+		s.position.y += 40.0
+		s.airborne = true
+		s.vel = Vector3.ZERO
+		s.air_pitch = 0.0
+		s.flip_vel = -3.0
+		for i in 48:
+			var keys := {"lean_back": 1.0}
+			if with_grab:
+				keys.merge({"grab_left": 1.0, "tuck": 1.0})
+			s.scripted_input = keys
+			s.step(1.0 / 120.0)
+		flip_with[with_grab] = s.air_pitch
+	s.airborne = false
+	check("a grab (Q + W) doesn't change the flip", absf(float(flip_with[true]) - float(flip_with[false])) < 0.01,
+		"%.0f deg without, %.0f deg with the grab after 0.4 s" % [rad_to_deg(flip_with[false]), rad_to_deg(flip_with[true])])
+	# backflip + tip grab off the large kicker: hold Down at the lip, Q + W in the air
+	var lk: Dictionary = {}
+	for k in world.terrain.layout["parks"][0]["kickers"]:
+		if k["size"] == "L":
+			lk = k
+	var ld := Vector3(lk["dir"][0], 0, lk["dir"][1])
+	var llip := Vector3(lk["lip"][0], 0, lk["lip"][1])
+	s.teleport(Vector3(lk["origin"][0], 0, lk["origin"][1]) - ld * 12.0, Skier.yaw_of(ld), float(lk["approach_speed"]) - 1.0)
+	var bbox := {}
+	var bcb := func(info): bbox["info"] = info
+	s.landed.connect(bcb)
+	for i in 1200:
+		var to_lip := (llip - s.position).dot(ld)
+		var keys := {}
+		if not s.airborne:
+			keys = {"jump": 1.0, "lean_back": 1.0} if to_lip > 0.4 and to_lip < 3.0 else {}
+		else:
+			if s.air_pitch > -TAU * 0.55:
+				keys["lean_back"] = 1.0
+			var below := s.position.y - world.terrain.height(s.position.x, s.position.z)
+			if s.air_time > 0.15 and not (s.vel.y < 0.0 and below < 2.4):
+				keys.merge({"grab_left": 1.0, "tuck": 1.0})
+		s.scripted_input = keys
+		s.step(1.0 / 120.0)
+		s.time += 1.0 / 120.0
+		if bbox.has("info") or s.is_crashed:
+			break
+	s.landed.disconnect(bcb)
+	var bi: Dictionary = bbox.get("info", {})
+	var btr: Dictionary = TrickSystem.evaluate(bi) if not bi.is_empty() else {}
+	check("Backflip Tip off the large kicker (Down at the lip, Q + W in the air)", not bi.is_empty() and bi["crash"] == ""
+		and str(btr.get("name", "")).contains("Backflip") and str(btr.get("name", "")).contains("Tip"),
+		"'%s' %s" % [btr.get("name", "-"), bi.get("crash", "no landing")])
+	# S used for a Japan and still held when landing: no hockey stop until it's pressed again
+	var sp_after := {}
+	for hold_s in [false, true]:
+		s.teleport(Vector3(lk["origin"][0], 0, lk["origin"][1]) - ld * 12.0, Skier.yaw_of(ld), float(lk["approach_speed"]) - 1.0)
+		var landed_at := -1
+		for i in 1200:
+			var keys := {}
+			var below := s.position.y - world.terrain.height(s.position.x, s.position.z)
+			if s.airborne and s.air_time > 0.15 and not (s.vel.y < 0.0 and below < 2.4):
+				keys = {"grab_left": 1.0, "brake": 1.0}
+			elif s.airborne and hold_s:
+				keys = {"brake": 1.0}
+			elif not s.airborne and landed_at >= 0 and hold_s:
+				keys = {"brake": 1.0}
+			s.scripted_input = keys
+			var was_air := s.airborne
+			s.step(1.0 / 120.0)
+			s.time += 1.0 / 120.0
+			if was_air and not s.airborne and landed_at < 0:
+				landed_at = i
+			if landed_at >= 0 and i - landed_at >= 60:
+				break
+		sp_after[hold_s] = s.speed
+	check("holding S through the landing after a Japan doesn't hockey-stop", float(sp_after[true]) > float(sp_after[false]) - 0.3,
+		"%.1f m/s with S still held vs %.1f m/s without, 0.5 s after landing" % [sp_after[true], sp_after[false]])
+	s.scripted_input = {}
 	s.difficulty = saved
 
 

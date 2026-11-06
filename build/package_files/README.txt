@@ -40,14 +40,15 @@ Space        Hold to crouch, release to pop - let go right at the lip
 Up / Down    Shift your weight forward / back. Keep holding Down (or Up) as
              you pop for a backflip (front flip); in the air Up / Down keep
              flipping. Hold W (tuck) in a flip to tuck it, let go to lay it out.
-Left / Right Spins. For a right 360: hold Left on the run-in (shoulders coil
+Left / Right Spins (gamepad: LB / RB). For a right 360: hold Left on the run-in (shoulders coil
              left), pop at the lip, then press Right in the air. Mirror it for left.
              Keep pulling a flip past the first rotation and you tuck for more.
-Z / X        Grabs (in the air; tap Up / Down any time while holding to switch).
-             Z = left hand: Mute; Z + Up = Tip; Z + Down =
-             Japan. X = right hand: Safety; X + Up = Blunt; X + Down = Tail.
-             Z + X = Truck Driver. Hold longer for more points; let go before
-             you land. (When you grab, Up / Down pick the grab, not a flip.)
+Q / E        Grabs (in the air). Q = left hand: Mute; Q + W = Tip; Q + S = Japan.
+             E = right hand: Safety; E + W = Blunt; E + S = Tail. Q + E = Truck
+             Driver. W / S can be pressed any time during the grab and stick. The
+             arrows only flip and spin, so e.g. hold Down at the pop and Q + W in
+             the air for a Backflip Tip. Hold longer for more points; let go
+             before you land.
 Difficulty   Settings > Controls: Easy (default: lots of air control,
              forgiving landings and rails), Normal, Realistic (rotation only
              from your takeoff, edges catch, rails need balancing)

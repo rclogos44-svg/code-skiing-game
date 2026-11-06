@@ -479,3 +479,15 @@ no map, parks, keep the ragdoll crashes, black baggy gear, only flips, spins and
   (`shell` rings take an optional back-drop value). Loose sleeves gathered at the wrist; shoulder
   and elbow fills no bigger than the sleeve. Ripstop fabric: faint darker grid ~2.5 cm, mottling,
   and soft large wrinkles in the normal map (generated in code).
+
+## Grab keys: Q / E with W / S (arrows only flip and spin)
+
+- The arrows used to both flip and pick the grab variation, so e.g. a backflip (hold Down) turned
+  a Tip grab into a Japan. Now: Q = left hand (Mute; + W Tip; + S Japan), E = right hand (Safety;
+  + W Blunt; + S Tail), Q + E = Truck Driver. W / S reuse the push / brake actions (they do nothing
+  in the air), can be pressed any time during the grab and stick. Arrows never pick grabs.
+- Q / E no longer spin on the keyboard (the arrows do); gamepad spins stay on LB / RB.
+- S doesn't brake in the air, and if it picked a grab it won't hockey-stop you on landing until
+  it is pressed again.
+- Tests: a grab leaves the flip unchanged; Backflip Tip off the large kicker lands clean; holding S
+  through a landing after a Japan keeps full speed. Physics 95/95.
