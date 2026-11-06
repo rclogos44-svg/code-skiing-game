@@ -42,7 +42,7 @@ const GRAB_IN := 0.55               # seconds to reach a grab (it takes time to 
 const GRAB_OUT := 0.35              # seconds to let go and open back up
 const WIND_SPIN := 5.4             # spin rate (rad/s) the unwinding body reaches after a full wind-up
 const UNWIND_TIME := 0.35          # the spin builds up over this long after takeoff (hips follow shoulders)
-const PUSH_MAX := 5.0              # W pole-pushes only below this speed (m/s, 18 km/h); faster, it does nothing
+const PUSH_MAX := 6.5              # W pole-pushes only below this speed (m/s, ~23 km/h); faster, it does nothing
 const FLIP_POP := 3.8              # flip rate (rad/s) from leaning fully at the pop
 ## Easy / Normal / Realistic: in-air spin & flip authority (rad/s^2), spin damping, auto-levelling
 ## toward a clean landing, landing tolerance (deg), impact limit and edge catching.
@@ -156,6 +156,15 @@ var _safe_timer := 0.0
 var _last_land_t := -10.0
 var _brush_cd := 0.0
 var _jump_buffer := 0.0
+## Arrow tricks (no jump key needed): hold an arrow to "set" (crouch / coil), then press the
+## opposite arrow to pop and do that trick - set Up then Down = backflip, set Down then Up = front
+## flip, set Right then Left = left spin, set Left then Right = right spin (set two arrows for a
+## flip + spin). Let go of the set arrow without pressing the opposite = a straight pop (ollie).
+var trick_set := Vector2i.ZERO     # x: +1 Right / -1 Left set; y: +1 Up / -1 Down set
+var _set_time := 0.0
+var _arrow_trick := false          # the coming takeoff is an arrow pop: flip from _pop_flip, not the lean
+var _pop_flip := 0.0
+var _latched := {}                 # set arrows still held after the pop: ignored until released
 var _coyote := 0.0
 var _prev_xform := Transform3D.IDENTITY
 var _cur_xform := Transform3D.IDENTITY
@@ -283,6 +292,85 @@ func _physics_process(dt: float) -> void:
 	_cur_xform = _compose_xform()
 
 
+func _ink(action: String) -> float:
+	return 0.0 if _latched.has(action) else _in(action)
+
+
+## Arrow trick input (see trick_set): set, then pop with the opposite arrow, or let go to ollie.
+func _arrow_tricks(dt: float) -> void:
+	var r := _ink("lean_right") > 0.5
+	var l := _ink("lean_left") > 0.5
+	var u := _ink("lean_forward") > 0.5
+	var d := _ink("lean_back") > 0.5
+	if is_crashed or mode != Mode.SKI:
+		trick_set = Vector2i.ZERO
+		return
+	if airborne and _coyote <= 0.0:
+		# rolled off the lip still set without popping: the set arrows mustn't start a rotation
+		if trick_set != Vector2i.ZERO:
+			_latch_set()
+			trick_set = Vector2i.ZERO
+			_set_time = 0.0
+		return
+	# pop: the arrow opposite a set one
+	var trig := Vector2i.ZERO
+	if (trick_set.x == 1 and l) or (trick_set.x == -1 and r):
+		trig.x = -trick_set.x
+	if (trick_set.y == 1 and d) or (trick_set.y == -1 and u):
+		trig.y = -trick_set.y
+	if trig != Vector2i.ZERO:
+		if trig.x == 0:
+			trig.x = -trick_set.x          # a second set arrow still held turns into its trick too
+		if trig.y == 0:
+			trig.y = -trick_set.y
+		_arrow_pop(trig)
+		return
+	# let go of a set arrow without popping the opposite one
+	var was_set := trick_set != Vector2i.ZERO
+	if (trick_set.x == 1 and not r) or (trick_set.x == -1 and not l):
+		trick_set.x = 0
+	if (trick_set.y == 1 and not u) or (trick_set.y == -1 and not d):
+		trick_set.y = 0
+	if was_set and trick_set == Vector2i.ZERO:
+		if _set_time > 0.1:
+			_arrow_pop(Vector2i.ZERO)       # straight pop (ollie)
+		_set_time = 0.0
+		return
+	# new set
+	if trick_set.x == 0 and r != l:
+		trick_set.x = 1 if r else -1
+	if trick_set.y == 0 and u != d:
+		trick_set.y = 1 if u else -1
+	if trick_set != Vector2i.ZERO:
+		_set_time += dt
+		charge = minf(charge + dt / 0.55, 1.0)      # crouch / load while set
+
+
+func _latch_set() -> void:
+	if trick_set.x != 0:
+		_latched["lean_right" if trick_set.x == 1 else "lean_left"] = true
+	if trick_set.y != 0:
+		_latched["lean_forward" if trick_set.y == 1 else "lean_back"] = true
+
+
+func _arrow_pop(trig: Vector2i) -> void:
+	# the set arrows are still held: they mustn't fight the trick in the air
+	_latch_set()
+	if trig.x != 0:
+		wind = float(trig.x) * maxf(absf(wind), 0.75)    # + = right spin
+	else:
+		wind = 0.0
+	_pop_flip = float(trig.y)                            # +1 front flip, -1 backflip
+	_arrow_trick = true
+	if airborne:
+		airborne = false        # popped a moment after leaving the lip: still counts as the takeoff
+	trick_set = Vector2i.ZERO
+	_set_time = 0.0
+	_do_jump()
+	_arrow_trick = false
+	_spin_latch = 0.0
+
+
 ## One physics step (public for automated tests).
 func step(dt: float) -> void:
 	if mode == Mode.WALK:
@@ -303,8 +391,11 @@ func step(dt: float) -> void:
 			_brake_block = false
 	var jump_held := _pressed("jump")
 	# arrows: body lean fore/aft and wind-up / spin (gamepad shoulders also spin)
-	var spin_in := clampf(_in("spin_right") - _in("spin_left") + _in("lean_right") - _in("lean_left"), -1.0, 1.0)
-	var lean_in := _in("lean_forward") - _in("lean_back")
+	for a in _latched.keys():
+		if _in(a) < 0.5:
+			_latched.erase(a)
+	var spin_in := clampf(_in("spin_right") - _in("spin_left") + _ink("lean_right") - _ink("lean_left"), -1.0, 1.0)
+	var lean_in := _ink("lean_forward") - _ink("lean_back")
 	lean_fa = move_toward(lean_fa, lean_in, 5.0 * dt)
 	if not airborne:
 		# hold Left to coil the shoulders left, which loads a RIGHT spin (and the other way round)
@@ -332,7 +423,9 @@ func step(dt: float) -> void:
 		if not airborne or _coyote > 0.0:
 			_do_jump()
 			_jump_buffer = 0.0
-	if not charging and _jump_buffer <= 0.0:
+	if not jump_held and not charging and _jump_buffer <= 0.0:
+		_arrow_tricks(dt)
+	if not charging and _jump_buffer <= 0.0 and trick_set == Vector2i.ZERO:
 		charge = move_toward(charge, 0.0, 3.0 * dt)
 	_coyote = maxf(_coyote - dt, 0.0)
 	if not grind.is_empty():
@@ -525,7 +618,7 @@ func _ground_step(dt: float, n: Vector3, cf: float) -> void:
 			push_phase = 0.2                     # first press: reach and plant straight away
 		push_phase = fmod(push_phase + dt * 1.15, 1.0)
 		if push_phase > 0.25 and push_phase < 0.65:
-			var acc := 9.0 * sin(PI * (push_phase - 0.25) / 0.4) * (1.0 - pow(sp / PUSH_MAX, 2.0))
+			var acc := 13.0 * sin(PI * (push_phase - 0.25) / 0.4) * (1.0 - pow(sp / PUSH_MAX, 2.0))
 			vel += f * acc * dt
 		pushing = 1.0
 	else:
@@ -657,6 +750,8 @@ func _do_jump() -> void:
 func _take_off(from_jump := false) -> void:
 	if airborne:
 		return
+	if not from_jump and trick_set.x != 0:
+		wind = 0.0              # set but not popped: rolling off the lip doesn't unwind into a spin
 	airborne = true
 	air_time = 0.0
 	air_rotation = 0.0
@@ -676,7 +771,7 @@ func _take_off(from_jump := false) -> void:
 	# ... the lip pitches you backward, and leaning at the pop starts a front / back flip
 	flip_vel = clampf(_ground_pitch_rate * 0.35, -1.0, 1.0)
 	if from_jump:
-		flip_vel += lean_fa * FLIP_POP
+		flip_vel += (_pop_flip if _arrow_trick else lean_fa) * FLIP_POP
 	air_pitch = 0.0
 	air_pitch_peak = 0.0
 	grab_kind_l = ""
@@ -987,7 +1082,7 @@ func _walk_step(dt: float) -> void:
 	p.x += hv.x * dt
 	p.z += hv.z * dt
 	var gh := terrain.height(p.x, p.z)
-	var jump := _pressed("jump")
+	var jump := _pressed("jump") or _pressed("lean_forward")     # on foot: Up hops
 	if _walk_air:
 		_walk_vy -= G * dt
 		p.y += _walk_vy * dt

@@ -36,18 +36,22 @@ W            Pole push - only when slow (no tuck)
 S            Hockey stop (tap: check speed, hold: stop; + A/D picks the side)
 A / D        Carve left / right. On a rail or box: keep your balance
 Left Shift   Aggressive edge carving (tighter turns, scrubs speed)
-Space        Hold to crouch, release to pop - let go right at the lip
-Up / Down    Shift your weight forward / back. Keep holding Down (or Up) as
-             you pop for a backflip (front flip); in the air Up / Down keep
-             flipping. Hold W (tuck) in a flip to tuck it, let go to lay it out.
-Left / Right Spins (gamepad: LB / RB). For a right 360: hold Left on the run-in (shoulders coil
-             left), pop at the lip, then press Right in the air. Mirror it for left.
-             Keep pulling a flip past the first rotation and you tuck for more.
+Arrows       Tricks, no jump key: hold an arrow to SET (crouch / coil), then press
+             the OPPOSITE arrow to POP and do the trick:
+               hold Up, press Down     = backflip
+               hold Down, press Up     = front flip
+               hold Right, press Left  = left spin
+               hold Left, press Right  = right spin
+             (hold two arrows to set a flip and a spin together). Let go of the
+             set arrow without pressing the opposite one = a straight pop (ollie),
+             e.g. onto a rail. Press at the lip; a moment after it still counts.
+             In the air the pop arrow keeps rotating (keep holding Down for more
+             backflips - the body tucks after the first one).
 Q / E        Grabs (in the air). Q = left hand: Mute; Q + W = Tip; Q + S = Japan.
              E = right hand: Safety; E + W = Blunt; E + S = Tail. Q + E = Truck
              Driver. W / S can be pressed any time during the grab and stick. The
-             arrows only flip and spin, so e.g. hold Down at the pop and Q + W in
-             the air for a Backflip Tip. Hold longer for more points; let go
+             arrows only flip and spin, so e.g. hold Up, press Down at the lip and
+             Q + W in the air for a Backflip Tip. Hold longer for more points; let go
              before you land.
 Difficulty   Settings > Controls: Easy (default: lots of air control,
              forgiving landings and rails), Normal, Realistic (rotation only

@@ -180,7 +180,7 @@ func _mark_kicker(k: Dictionary, pk: Dictionary) -> void:
 func c_label(k: Dictionary) -> String:
 	if k["line"] != "prog":
 		return "%s JUMP · %d KM/H" % [{"S": "SMALL", "M": "MEDIUM", "L": "LARGE"}[k["size"]], roundi(float(k["approach_speed"]) * 3.6)]
-	return "HOLD SPACE · LET GO AT THE LIP" if float(k["start_s"]) < 100.0 else "HOLD ↓ AT THE LIP FOR A BACKFLIP"
+	return "HOLD ↑ · LET GO AT THE LIP TO POP" if float(k["start_s"]) < 100.0 else "HOLD ↑ · PRESS ↓ AT THE LIP: BACKFLIP"
 
 
 func _staging(pk: Dictionary) -> void:

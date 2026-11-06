@@ -343,15 +343,18 @@ func show_controls_hint() -> void:
 	var b := func(a: String) -> String: return Settings.binding_label(a)
 	if skier and skier.mode == Skier.Mode.WALK:
 		hint_label.text = "ON FOOT:  %s%s%s%s walk · %s jog · %s hop · %s skis on · %s ride lift · %s map" % [
-			b.call("tuck"), b.call("steer_left"), b.call("brake"), b.call("steer_right"), b.call("carve"), b.call("jump"),
+			b.call("tuck"), b.call("steer_left"), b.call("brake"), b.call("steer_right"), b.call("carve"), b.call("lean_forward"),
 			b.call("skis"), b.call("interact"), b.call("map")]
 		return
 	if skier and skier.mode == Skier.Mode.LIFT:
 		hint_label.text = "Mouse: look around · hold %s to skip to the top · %s map" % [b.call("interact"), b.call("map")]
 		return
-	hint_label.text = "%s/%s turn · %s pole push (slow only) · %s hockey stop · %s crouch, let go at the lip · hold %s/%s at the pop: backflip / front flip · 360 right: hold %s on the run-in, then %s in the air (and the other way round) · grabs: %s / %s (+ %s / %s for front / back of the ski) · on rails %s/%s balance · %s back to the top · %s slow-mo · %s skeleton" % [
-		b.call("steer_left"), b.call("steer_right"), b.call("tuck"), b.call("brake"), b.call("jump"), b.call("lean_back"),
-		b.call("lean_forward"), b.call("lean_left"), b.call("lean_right"), b.call("grab_left"), b.call("grab_right"), b.call("tuck"), b.call("brake"), b.call("steer_left"), b.call("steer_right"), b.call("map"), b.call("slow_mo"), b.call("skeleton_view")]
+	hint_label.text = "%s/%s turn · %s pole push · %s hockey stop · TRICKS: hold an arrow to set, press the opposite one to pop · %s then %s: backflip · %s then %s: front flip · %s then %s: left spin · %s then %s: right spin · let go without the opposite: ollie · grabs: %s / %s (+ %s / %s for front / back of the ski) · on rails %s/%s balance · %s back to the top · %s slow-mo · %s skeleton" % [
+		b.call("steer_left"), b.call("steer_right"), b.call("tuck"), b.call("brake"),
+		b.call("lean_forward"), b.call("lean_back"), b.call("lean_back"), b.call("lean_forward"),
+		b.call("lean_right"), b.call("lean_left"), b.call("lean_left"), b.call("lean_right"),
+		b.call("grab_left"), b.call("grab_right"), b.call("tuck"), b.call("brake"), b.call("steer_left"), b.call("steer_right"),
+		b.call("map"), b.call("slow_mo"), b.call("skeleton_view")]
 
 
 func show_region(name: String) -> void:

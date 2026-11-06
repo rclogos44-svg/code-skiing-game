@@ -257,6 +257,8 @@ func _park_kickers() -> void:
 	var worst_slide := 0.0
 	var plants := 0
 	var tip0 := {}
+	var worst_swing := 0.0
+	var prev_dir := {}
 	for i in 360:
 		s.scripted_input = {"tuck": 1.0}
 		s.step(1.0 / 120.0)
@@ -264,6 +266,14 @@ func _park_kickers() -> void:
 		s._cur_xform = s._compose_xform()
 		s._prev_xform = s._cur_xform
 		body._compute_pose(1.0 / 120.0)
+		for sd in ["l", "r"]:
+			var pdir: Vector3 = body.joints["pole_dir_" + sd]
+			if prev_dir.has(sd) and i > 30:
+				var sw := rad_to_deg((prev_dir[sd] as Vector3).angle_to(pdir))
+				if sw > worst_swing and Game.test_args.has("pole_debug"):
+					print("[TEST]   pole %s swing %.1f deg at phase %.3f planted %s push_amt %.2f" % [sd, sw, s.push_phase, body._pole_tip.has(sd), body._push_amt])
+				worst_swing = maxf(worst_swing, sw)
+			prev_dir[sd] = pdir
 		for sd in ["l", "r"]:
 			if body._pole_tip.has(sd):
 				var tip: Vector3 = body.joints["pole_grip_" + sd] + body.joints["pole_dir_" + sd] * 1.18
@@ -276,7 +286,8 @@ func _park_kickers() -> void:
 				tip0.erase(sd)
 	check("pole push: tips plant in the snow and hold still", plants >= 4 and worst_h < 0.12 and worst_slide < 0.05,
 		"%d plants, tip height off the snow %.2f m, tip slide %.3f m" % [plants, worst_h, worst_slide])
-	check("pole push: three seconds of pushing gets you rolling", s.speed > 3.5, "%.1f m/s (%.0f km/h)" % [s.speed, s.speed * 3.6])
+	check("pole push: three seconds of pushing gets you rolling (stronger push)", s.speed > 5.2, "%.1f m/s (%.0f km/h)" % [s.speed, s.speed * 3.6])
+	check("pole push: poles swing, never snap (max turn per 1/120 s frame)", worst_swing < 6.0, "%.1f deg" % worst_swing)
 	# grab timing: the pose eases in over ~0.55 s and out over ~0.35 s (it takes time irl)
 	var gbody = world.body
 	s.teleport(stp["pos"], stp["yaw"])
@@ -389,6 +400,56 @@ func _park_kickers() -> void:
 			and str(tr.get("name", "")).contains(gt[0]) and absf(float(gi["flip"])) < 0.6,
 			"held '%s' %.2f s -> '%s' %s, flip %.0f deg" % [held_name, float(gi.get("grab_time", 0.0)), tr.get("name", "-"), gi.get("crash", "no landing"),
 			rad_to_deg(float(gi.get("flip", 0.0)))])
+	# arrow tricks: ollie (set and let go), arrow backflip, arrow left 360, arrow rail pop
+	var ost: Dictionary = world.park.park_start(0)
+	s.teleport(ost["pos"], ost["yaw"], 4.0)
+	var popped := false
+	var opitch := 0.0
+	var orot := 0.0
+	for i in 240:
+		s.scripted_input = {"lean_forward": 1.0} if i < 48 else {}
+		s.step(1.0 / 120.0)
+		if s.airborne:
+			popped = true
+			opitch = maxf(opitch, absf(s.air_pitch))
+			orot = maxf(orot, absf(s.air_rotation))
+		elif popped:
+			break
+	check("arrows: hold Up and let go = straight ollie", popped and opitch < 0.35 and orot < 0.35,
+		"popped %s, max flip %.0f deg, max spin %.0f deg" % [popped, rad_to_deg(opitch), rad_to_deg(orot)])
+	for at in [["L", "backflip", {"lean_forward": 1.0}, {"lean_back": 1.0}], ["M", "left 360", {"lean_right": 1.0}, {"lean_left": 1.0}]]:
+		var ak: Dictionary = {}
+		for k in world.terrain.layout["parks"][0]["kickers"]:
+			if k["size"] == at[0] and k["line"] == "jump":
+				ak = k
+		var adir := Vector3(ak["dir"][0], 0, ak["dir"][1])
+		var alip := Vector3(ak["lip"][0], 0, ak["lip"][1])
+		s.teleport(Vector3(ak["origin"][0], 0, ak["origin"][1]) - adir * 12.0, Skier.yaw_of(adir), float(ak["approach_speed"]) - 1.0)
+		var abox := {}
+		var acb := func(info): abox["info"] = info
+		s.landed.connect(acb)
+		for i in 1200:
+			var keys: Dictionary = (at[2] as Dictionary).duplicate()
+			if (alip - s.position).dot(adir) < 0.4 or s.airborne:
+				keys.merge(at[3])
+			if s.airborne:
+				if at[1] == "backflip" and s.air_pitch < -TAU * 0.55:
+					keys.erase("lean_back")
+				if at[1] == "left 360" and absf(s.air_rotation) + s.spin_vel * s.spin_vel / (2.0 * float(s.diff()["spin_damp"])) > deg_to_rad(350.0):
+					keys.erase("lean_left")
+			s.scripted_input = keys
+			s.step(1.0 / 120.0)
+			s.time += 1.0 / 120.0
+			if abox.has("info") or s.is_crashed:
+				break
+		s.landed.disconnect(acb)
+		var ai: Dictionary = abox.get("info", {})
+		var atr: Dictionary = TrickSystem.evaluate(ai) if not ai.is_empty() else {}
+		var want := "Backflip" if at[1] == "backflip" else "Left 360"
+		check("arrows: %s off the %s kicker (set, then the opposite arrow at the lip)" % [at[1], at[0]],
+			not ai.is_empty() and ai["crash"] == "" and str(atr.get("name", "")).contains(want),
+			"'%s' %s" % [atr.get("name", "-"), ai.get("crash", "no landing")])
+	s.scripted_input = {}
 	# grab keys (Q/E + W/S) never touch the flip: same rotation with and without a grab held
 	var flip_with := {}
 	for with_grab in [false, true]:
@@ -423,10 +484,11 @@ func _park_kickers() -> void:
 		var to_lip := (llip - s.position).dot(ld)
 		var keys := {}
 		if not s.airborne:
-			keys = {"jump": 1.0, "lean_back": 1.0} if to_lip > 0.4 and to_lip < 3.0 else {}
+			keys = {"lean_forward": 1.0} if to_lip > 0.4 else {"lean_forward": 1.0, "lean_back": 1.0}
 		else:
 			if s.air_pitch > -TAU * 0.55:
 				keys["lean_back"] = 1.0
+			keys["lean_forward"] = 1.0       # the set arrow still held: must be ignored in the air
 			var below := s.position.y - world.terrain.height(s.position.x, s.position.z)
 			if s.air_time > 0.15 and not (s.vel.y < 0.0 and below < 2.4):
 				keys.merge({"grab_left": 1.0, "tuck": 1.0})
@@ -438,7 +500,7 @@ func _park_kickers() -> void:
 	s.landed.disconnect(bcb)
 	var bi: Dictionary = bbox.get("info", {})
 	var btr: Dictionary = TrickSystem.evaluate(bi) if not bi.is_empty() else {}
-	check("Backflip Tip off the large kicker (Down at the lip, Q + W in the air)", not bi.is_empty() and bi["crash"] == ""
+	check("Backflip Tip off the large kicker (hold Up, press Down at the lip, Q + W in the air)", not bi.is_empty() and bi["crash"] == ""
 		and str(btr.get("name", "")).contains("Backflip") and str(btr.get("name", "")).contains("Tip"),
 		"'%s' %s" % [btr.get("name", "-"), bi.get("crash", "no landing")])
 	# S used for a Japan and still held when landing: no hockey stop until it's pressed again
@@ -608,6 +670,11 @@ func _jibs() -> void:
 		return {"jump": 1.0} if dist > 4.0 else {}
 	var r3 := _jib_run(rls[0], 11.0, 8.5, popper)
 	check("rail: pop onto it", r3["mounted"], "%s %s" % [r3["info"].get("how", "no slide"), r3["crash"]])
+	var arrow_popper := func(sk: Skier):
+		var dist: float = (rls[0]["a"] as Vector3 - sk.position).dot((rls[0]["b"] - rls[0]["a"]).normalized())
+		return {"lean_forward": 1.0} if dist > 4.0 else {}
+	var r3b := _jib_run(rls[0], 11.0, 8.5, arrow_popper)
+	check("rail: arrow ollie onto it (hold Up, let go)", r3b["mounted"], "%s %s" % [r3b["info"].get("how", "no slide"), r3b["crash"]])
 	var longest: Dictionary = boxes[0]
 	for b in boxes:
 		if float(b["length"]) > float(longest["length"]):

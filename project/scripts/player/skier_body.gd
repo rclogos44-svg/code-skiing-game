@@ -46,7 +46,8 @@ var _stop_pop := 0.0
 var _prev_edgeb := 0.0
 var _push_ph := 0.0            # double-pole push cycle 0..1 (reach, push, recover)
 var _push_amt := 0.0
-var _pole_tip := {}           # planted pole tips (world) during the drive
+var _pole_tip := {}
+var _pole_dir_s := {}         # smoothed pole directions (no snapping when a pole leaves the snow)           # planted pole tips (world) during the drive
 const POLE_LEN := 1.12
 var _hands := {}
 ## Grab poses (preview; not wired to input yet).  Legs are driven ONLY by joint angles inside
@@ -842,26 +843,42 @@ func _compute_pose(dt: float) -> void:
 			# plant: the tip goes into the snow just behind the hand, then stays put while the
 			# skier slides past it and the arms drive back
 			if not _pole_tip.has(sd):
-				var fw := -L.basis.z
-				fw = Vector3(fw.x, 0.0, fw.z).normalized()
-				var gnd := s.terrain.height(hand.x, hand.z)
-				var hh := maxf(hand.y - gnd, 0.1)
-				var back := sqrt(maxf(POLE_LEN * POLE_LEN - hh * hh, 0.04))
-				var tip := hand - fw * back * 0.6 + L.basis.x * (sgn * 0.08)
-				tip.y = s.terrain.height(tip.x, tip.z) - 0.04
-				_pole_tip[sd] = tip
+				# the swinging pole plants where its tip actually reaches the snow (no jump to a
+				# precomputed spot); if it hasn't got there by mid-stroke it plants where it is
+				var cur: Vector3 = _pole_dir_s.get(sd, Vector3.DOWN)
+				var probe := hand + cur * POLE_LEN
+				var gnd_p := s.terrain.height(probe.x, probe.z)
+				if probe.y <= gnd_p + 0.03:
+					probe.y = gnd_p - 0.04
+					_pole_tip[sd] = probe
+				elif _push_ph > 0.34 and cur.y < -0.2:
+					# not down yet: plant where the pole's own line meets the snow (no rotation;
+					# the arm reaches a little further down along the pole instead)
+					var gh := s.terrain.height(hand.x, hand.z)
+					var t := clampf((hand.y - gh) / -cur.y, 0.0, POLE_LEN * 1.3)
+					var tp := hand + cur * t
+					tp.y = s.terrain.height(tp.x, tp.z) - 0.04
+					_pole_tip[sd] = tp
+		if _pole_tip.has(sd) and _push_amt > 0.5 and not s.airborne and _push_ph > 0.22 and _push_ph < 0.68:
 			var tipw: Vector3 = _pole_tip[sd]
 			var tg := hand - tipw
 			if absf(tg.length() - POLE_LEN) > 0.001:     # the hand stays on the grip of a planted pole
 				hand = tipw + tg.normalized() * POLE_LEN
 				joints["hand_" + sd] = hand
 				joints["elbow_" + sd] = ik2(sh, hand, UPPER_ARM, FOREARM, elbow_pole)
+			# the arm spring carries on from where the hand really is, so it doesn't jump on release
+			_hands[sd] = tb.orthonormalized().inverse() * (hand - sh)
+			_hands[sd + "_v"] = Vector3.ZERO
 			planted = true
 		else:
 			_pole_tip.erase(sd)
 		if _push_amt > 0.02 and not planted:
 			# recovery: poles swing forward, baskets trailing, ready for the next plant
-			var rt := (_push_ph + 0.32) / 0.54 if _push_ph < 0.22 else (_push_ph - 0.68) / 0.54
+			var rt := 1.0       # reaching for the snow (stroke started, tip not down yet)
+			if _push_ph < 0.22:
+				rt = (_push_ph + 0.32) / 0.54
+			elif _push_ph >= 0.68:
+				rt = (_push_ph - 0.68) / 0.54
 			var swing := Vector3(sgn * 0.05, -0.4, 0.92).lerp(Vector3(sgn * 0.06, -0.96, 0.25), smoothstep(0.0, 1.0, clampf(rt, 0.0, 1.0)))
 			pd = pd.lerp(swing, _push_amt)
 		if g > 0.01:
@@ -869,6 +886,16 @@ func _compute_pose(dt: float) -> void:
 		joints["pole_dir_" + sd] = (tb * pd).normalized()
 		if planted:
 			joints["pole_dir_" + sd] = (_pole_tip[sd] - hand).normalized()
+		else:
+			# a pole swings, it doesn't snap: ease toward the new direction (slower while pushing)
+			var prev: Vector3 = _pole_dir_s.get(sd, joints["pole_dir_" + sd])
+			var tgt: Vector3 = joints["pole_dir_" + sd]
+			var reaching := _push_amt > 0.02 and _push_ph > 0.15 and _push_ph < 0.68
+			if _push_amt > 0.02 and _push_ph > 0.22 and _push_ph < 0.68:
+				tgt = (tb * Vector3(sgn * 0.06, -0.98, 0.12)).normalized()      # reach the tip down to the snow
+			var k := 1.0 - exp(-(12.0 if reaching else (5.0 if _push_amt > 0.02 else 14.0)) * dt)
+			joints["pole_dir_" + sd] = prev.slerp(tgt, k).normalized() if prev.dot(tgt) > -0.99 else tgt
+		_pole_dir_s[sd] = joints["pole_dir_" + sd]
 		joints["pole_grip_" + sd] = hand - joints["pole_dir_" + sd] * 0.06
 
 

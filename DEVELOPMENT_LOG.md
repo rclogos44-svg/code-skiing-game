@@ -491,3 +491,21 @@ no map, parks, keep the ragdoll crashes, black baggy gear, only flips, spins and
   it is pressed again.
 - Tests: a grab leaves the flip unchanged; Backflip Tip off the large kicker lands clean; holding S
   through a landing after a Japan keeps full speed. Physics 95/95.
+
+## Arrow tricks (no jump key), stronger push, smooth poles
+
+- Space removed. Tricks in the style the player asked for: hold an arrow to SET (crouch and
+  coil; charge builds), press the OPPOSITE arrow to POP into that trick - set Up then Down =
+  backflip, Down then Up = front flip, Right then Left = left spin, Left then Right = right spin;
+  two set arrows give a flip + spin. Letting go of the set arrow without the opposite = a straight
+  ollie (e.g. onto rails). The pop counts for 0.12 s after rolling off a lip; set arrows still held
+  after the pop are ignored until released, and rolling off a lip while set but not popped doesn't
+  rotate. The pop arrow keeps rotating in the air (hold Down for more backflips). Gamepad keeps A
+  to jump. Park tip signs, hints, page and README updated.
+- Push: stronger stroke (peak 13 m/s^2, was 9) and works up to 23 km/h (was 18): 22 km/h after 3 s
+  from a standstill (was 17).
+- Poles: they plant where the swinging tip actually reaches the snow (or along their own line),
+  the arm spring continues from the planted hand, and unplanted poles ease toward their target -
+  max pole turn per frame 3.4 deg (was a 54 deg jump at the plant).
+- Physics 100/100 incl. arrow ollie, arrow backflip (L kicker), arrow left 360 (M kicker), arrow
+  rail ollie, Backflip Tip with arrows + Q/W.
