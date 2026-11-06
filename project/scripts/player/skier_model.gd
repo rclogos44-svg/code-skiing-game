@@ -342,9 +342,12 @@ static func thigh() -> ArrayMesh:      # baggy snow pants over a quad / hamstrin
 
 
 static func shin() -> ArrayMesh:       # pant leg over the calf, wider again where it stacks on the boot
-	# straight wide leg (no calf shape showing), widening toward the hem where it pools on the boot
-	return anat([[-0.03, 0.0, 0.0, 0.0], [-0.01, 0.134, 0.142, 0.142], [0.05, 0.136, 0.146, 0.143], [0.13, 0.137, 0.148, 0.144],
-		[0.22, 0.139, 0.15, 0.146], [0.32, 0.143, 0.152, 0.15], [0.4, 0.15, 0.158, 0.158], [0.43, 0.155, 0.161, 0.161], [0.44, 0.0, 0.0, 0.0]])
+	# wide leg that blouses out over the boot and is gathered in at the ankle (elastic cuff), with a
+	# couple of soft folds above the cuff - one smooth piece, no separate stack or knee bulge
+	return anat([[-0.03, 0.0, 0.0, 0.0], [-0.01, 0.134, 0.142, 0.142], [0.06, 0.137, 0.146, 0.144], [0.15, 0.14, 0.149, 0.146],
+		[0.24, 0.146, 0.153, 0.15], [0.31, 0.153, 0.158, 0.156], [0.35, 0.157, 0.161, 0.159], [0.375, 0.151, 0.155, 0.153],
+		[0.395, 0.152, 0.156, 0.154], [0.415, 0.136, 0.14, 0.138], [0.432, 0.114, 0.118, 0.118], [0.44, 0.105, 0.11, 0.11],
+		[0.445, 0.0, 0.0, 0.0]])
 
 
 static func upper_arm() -> ArrayMesh:  # jacket sleeve over deltoid / biceps

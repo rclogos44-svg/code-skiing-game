@@ -470,3 +470,7 @@ no map, parks, keep the ragdoll crashes, black baggy gear, only flips, spins and
   ~30 cm across each leg), widening at the hem where they pool over the boots; the patch texture is
   no longer used. Headwear: a navy knit beanie with a folded cuff replaces the helmet (helmet parts
   built but hidden), goggles scaled to sit on the face with the strap round the beanie.
+- Pants smoothed after a second pants reference: each leg is one wide tube that blouses out above
+  the boot and is gathered in at the ankle (soft folds above the cuff); the separate ankle "stack"
+  rings and the cargo-pocket boxes are no longer shown, and the knee fill is smaller than the leg
+  so the knees don't bulge.

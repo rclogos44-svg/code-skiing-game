@@ -292,7 +292,7 @@ func _leg_fk(hip: Vector3, sgn: float, a: Array) -> Array:
 	var ski_c := ankle - B.y * ANKLE_H - B.z * 0.03
 	return [knee, B, ski_c]
 var preview_grab := ""
-const HIDDEN_PARTS := ["stripe", "backpack", "helmet", "helmet_trim", "helmet_dark"]   # built but not worn (beanie, no pack)
+const HIDDEN_PARTS := ["stripe", "backpack", "helmet", "helmet_trim", "helmet_dark", "stack_l", "stack_r", "pocket_l", "pocket_r"]   # built but not worn (beanie, no pack)
 var skeleton_view := false        # V: hide the clothes and show bones + joints
 const BONES := [["pelvis", "hip_l"], ["pelvis", "hip_r"], ["hip_l", "knee_l"], ["knee_l", "ankle_l"], ["hip_r", "knee_r"],
 	["knee_r", "ankle_r"], ["pelvis", "waist"], ["waist", "lumbar"], ["lumbar", "thoracic"], ["thoracic", "chest"], ["chest", "head"],
@@ -387,7 +387,7 @@ func _build() -> void:
 		# joints: rounded caps so knees, elbows and shoulders bend like joints, not pipes
 		_add("shoulder_cap_" + side, SkierModel.sphere(0.072, 1.0, 1.0, 1.0), jacket)
 		_add("elbow_cap_" + side, SkierModel.sphere(0.053), jacket)
-		_add("knee_cap_" + side, SkierModel.sphere(0.138, 1.0, 1.0, 1.05), pants)
+		_add("knee_cap_" + side, SkierModel.sphere(0.128, 1.0, 1.0, 1.0), pants)   # fills the bend, stays inside the leg
 		_add("stack_" + side, SkierModel.lathe([Vector2(0.0, -0.035), Vector2(0.155, -0.035), Vector2(0.176, 0.025), Vector2(0.168, 0.1), Vector2(0.0, 0.1)], 1.0, 1.12, 16), pants)
 		_add("thigh_" + side, SkierModel.thigh(), pants)
 		_add("shin_" + side, SkierModel.shin(), pants)
