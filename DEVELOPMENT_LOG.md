@@ -455,3 +455,14 @@ no map, parks, keep the ragdoll crashes, black baggy gear, only flips, spins and
   straight arm ("reach"), with the legs and the lean toward the skis held fixed. Grabbing elbow
   now 145 deg, pointing out and back. New physics check: every grab's grabbing elbow > 110 deg
   (worst now 142) and arms clear of the skis. Physics 92/92.
+
+## Outfit after the player's park-skier reference; zip fix
+
+- Removed the "stick" between the legs: the jacket's front zip still ran down to the old hem
+  (the hem was raised 9 cm when the torso was shortened), so its last 9 cm hung below the jacket.
+  The zip now ends at the hem.
+- New colours / look after the reference the player sent: loose cream jacket (zip and pocket zips
+  in a darker cream), baggy mid-grey pants with darker grey patches (procedural patch texture +
+  twill normal), dark grey cargo pockets, dark navy helmet and neck gaiter, black gloves, dark grey
+  boots, dark pole shafts with brown baskets; the backpack is no longer worn. Shapes unchanged.
+- Physics 92/92; checked in close-ups (front / side / back) and the browser chase view.

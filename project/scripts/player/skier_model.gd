@@ -390,7 +390,7 @@ static func jacket_details() -> ArrayMesh:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	# front depth of the torso shell at height y (see torso())
-	var prof := [[-0.305, 0.15], [-0.27, 0.158], [-0.12, 0.145], [0.04, 0.135], [0.18, 0.148], [0.3, 0.158], [0.39, 0.148], [0.45, 0.12], [0.5, 0.09]]
+	var prof := [[-0.205, 0.155], [-0.12, 0.145], [0.04, 0.135], [0.18, 0.148], [0.3, 0.158], [0.39, 0.148], [0.45, 0.12], [0.5, 0.09]]
 	for i in prof.size() - 1:
 		var y0: float = prof[i][0]
 		var y1: float = prof[i + 1][0]
@@ -429,4 +429,39 @@ static func fabric(color: Color, rough: float, weave := 90.0, strength := 0.5, r
 	m.normal_texture = tex
 	m.normal_scale = strength
 	m.uv1_scale = Vector3(weave / 10.0, weave / 10.0, 1.0)
+	return m
+
+
+## Baggy park pants in a light grey with darker grey patches (camo-like), fine twill weave on top.
+## The patch texture is large (uv1 scale ~1.5 over a limb); the weave normal is fine noise.
+static func patched_fabric(base: Color, patch: Color, rough: float, rim := 0.15) -> StandardMaterial3D:
+	var m := mat(base, rough, 0.0, {"rim": rim})
+	var pn := FastNoiseLite.new()
+	pn.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	pn.frequency = 0.03
+	pn.seed = 7
+	var ramp := Gradient.new()
+	ramp.offsets = PackedFloat32Array([0.0, 0.66, 0.69, 1.0])
+	ramp.colors = PackedColorArray([Color.WHITE, Color.WHITE, Color(patch.r / base.r, patch.g / base.g, patch.b / base.b), Color(patch.r / base.r, patch.g / base.g, patch.b / base.b)])
+	var tex := NoiseTexture2D.new()
+	tex.width = 256
+	tex.height = 256
+	tex.seamless = true
+	tex.noise = pn
+	tex.color_ramp = ramp
+	m.albedo_texture = tex
+	var nz := FastNoiseLite.new()
+	nz.noise_type = FastNoiseLite.TYPE_CELLULAR
+	nz.frequency = 0.5
+	var nt := NoiseTexture2D.new()
+	nt.width = 256
+	nt.height = 256
+	nt.seamless = true
+	nt.as_normal_map = true
+	nt.bump_strength = 4.0
+	nt.noise = nz
+	m.normal_enabled = true
+	m.normal_texture = nt
+	m.normal_scale = 0.5
+	m.uv1_scale = Vector3(1.5, 1.5, 1.0)
 	return m

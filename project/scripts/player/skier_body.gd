@@ -292,6 +292,7 @@ func _leg_fk(hip: Vector3, sgn: float, a: Array) -> Array:
 	var ski_c := ankle - B.y * ANKLE_H - B.z * 0.03
 	return [knee, B, ski_c]
 var preview_grab := ""
+const HIDDEN_PARTS := ["stripe", "backpack"]   # built but not worn (the reference outfit has no pack)
 var skeleton_view := false        # V: hide the clothes and show bones + joints
 const BONES := [["pelvis", "hip_l"], ["pelvis", "hip_r"], ["hip_l", "knee_l"], ["knee_l", "ankle_l"], ["hip_r", "knee_r"],
 	["knee_r", "ankle_r"], ["pelvis", "waist"], ["waist", "lumbar"], ["lumbar", "thoracic"], ["thoracic", "chest"], ["chest", "head"],
@@ -329,31 +330,35 @@ func setup(s: Skier) -> void:
 ## helmet with orange goggles, black gloves and charcoal twin-tips.  Slightly different blacks and
 ## roughness keep the jacket, pants and gear readable.
 func _build() -> void:
-	var jacket := SkierModel.fabric(Color(0.07, 0.072, 0.08), 0.62, 60.0, 0.45, 0.25)
-	var jacket_dark := SkierModel.mat(Color(0.11, 0.115, 0.125), 0.8)
-	var pants := SkierModel.fabric(Color(0.04, 0.042, 0.046), 0.85, 90.0, 0.6, 0.18)
-	var helmet := SkierModel.mat(Color(0.56, 0.57, 0.55), 0.55, 0.0, {"clearcoat": 0.3})
+	# outfit after the player's reference (a park skier): loose cream jacket, baggy light-grey pants
+	# with dark grey patches, dark navy headwear, black gloves, dark boots and poles
+	var jacket := SkierModel.fabric(Color(0.88, 0.86, 0.8), 0.85, 60.0, 0.35, 0.12)
+	var jacket_dark := SkierModel.mat(Color(0.78, 0.76, 0.7), 0.9)
+	var pants := SkierModel.patched_fabric(Color(0.44, 0.44, 0.42), Color(0.2, 0.2, 0.2), 0.9)
+	var pocket_m := SkierModel.fabric(Color(0.3, 0.3, 0.3), 0.9, 90.0, 0.5, 0.1)
+	var helmet := SkierModel.mat(Color(0.1, 0.12, 0.18), 0.6, 0.0, {"clearcoat": 0.2})
 	var skin := SkierModel.mat(Color(0.85, 0.66, 0.55), 0.6)
 	var lens := SkierModel.mat(Color(0.12, 0.32, 0.85), 0.04, 0.85, {"clearcoat": 1.0})
 	var strap := SkierModel.mat(Color(0.03, 0.03, 0.035), 0.6)
 	var glove := SkierModel.fabric(Color(0.05, 0.05, 0.055), 0.5, 40.0, 0.4, 0.15)
-	var gaiter := SkierModel.fabric(Color(0.17, 0.175, 0.19), 0.95, 120.0, 0.6, 0.1)
+	var gaiter := SkierModel.fabric(Color(0.1, 0.12, 0.18), 0.95, 120.0, 0.6, 0.1)
 	var metal := SkierModel.mat(Color(0.7, 0.72, 0.75), 0.3, 0.9)
-	var boot := SkierModel.mat(Color(0.13, 0.135, 0.15), 0.35, 0.0, {"clearcoat": 0.5})
+	var boot := SkierModel.mat(Color(0.2, 0.2, 0.22), 0.4, 0.0, {"clearcoat": 0.4})
 	var bind := SkierModel.mat(Color(0.12, 0.12, 0.13), 0.4, 0.4)
-	var pole_m := SkierModel.mat(Color(0.75, 0.77, 0.8), 0.3, 0.8)
-	var grip_m := SkierModel.mat(Color(0.1, 0.1, 0.1), 0.6)
+	var pole_m := SkierModel.mat(Color(0.12, 0.12, 0.13), 0.35, 0.6)
+	var grip_m := SkierModel.mat(Color(0.08, 0.08, 0.08), 0.6)
+	var basket_m := SkierModel.mat(Color(0.45, 0.3, 0.14), 0.6)
 	var accent := SkierModel.mat(Color(0.16, 0.165, 0.18), 0.7)
 	_add("pelvis", SkierModel.pelvis(), pants)
 	_add("torso", SkierModel.torso(), jacket)
 	var hd := SkierModel.hood()
 	_add("hood", hd[0], jacket)
-	_add("hood_rim", hd[1], SkierModel.mat(Color(0.2, 0.205, 0.22), 0.9))
+	_add("hood_rim", hd[1], SkierModel.mat(Color(0.7, 0.68, 0.62), 0.9))
 	_add("backpack", SkierModel.backpack(), SkierModel.mat(Color(0.14, 0.145, 0.16), 0.75))
 	_add("collar", SkierModel.lathe([Vector2(0.0, -0.01), Vector2(0.085, -0.01), Vector2(0.08, 0.06), Vector2(0.0, 0.06)], 1.0, 1.0, 12), jacket_dark)
 	_add("neck", SkierModel.limb(0.05, 0.048, 0.08), skin)
 	_add("gaiter", SkierModel.gaiter(), gaiter, true)
-	_add("jacket_details", SkierModel.jacket_details(), strap)
+	_add("jacket_details", SkierModel.jacket_details(), SkierModel.mat(Color(0.62, 0.6, 0.55), 0.7))
 	_add("head", SkierModel.sphere(0.105, 0.95, 1.12, 1.05), skin, true)
 	_add("helmet", SkierModel.helmet(), helmet, true)
 	var hdet := SkierModel.helmet_details()
@@ -370,7 +375,7 @@ func _build() -> void:
 		_add("hand_" + side, gl[0], glove)
 		_add("thumb_" + side, gl[1], glove)
 		_add("cuff_" + side, gl[2], glove)
-		_add("pocket_" + side, SkierModel.cargo_pocket(), pants)
+		_add("pocket_" + side, SkierModel.cargo_pocket(), pocket_m)
 		var bh := SkierModel.boot_hardware()
 		_add("buckles_" + side, bh[0], metal)
 		_add("bootstrap_" + side, bh[1], strap)
@@ -390,10 +395,11 @@ func _build() -> void:
 		var pl := SkierModel.pole()
 		_add("pole_" + side, pl[0], pole_m)
 		_add("grip_" + side, pl[1], grip_m)
-		_add("basket_" + side, pl[2], grip_m)
+		_add("basket_" + side, pl[2], basket_m)
 	# a stripe of accent colour on the jacket
 	_add("stripe", SkierModel.lathe([Vector2(0.0, 0.0), Vector2(0.18, 0.0), Vector2(0.183, 0.035), Vector2(0.0, 0.035)], 1.19, 0.73, 18), accent)
-	parts["stripe"].visible = false
+	for k in HIDDEN_PARTS:
+		parts[k].visible = false
 	var bone_m := SkierModel.mat(Color(0.95, 0.95, 0.92), 0.6)
 	var joint_m := SkierModel.mat(Color(1.0, 0.45, 0.1), 0.5)
 	var cyl := CylinderMesh.new()
@@ -1200,7 +1206,7 @@ func _set_skeleton(on: bool) -> void:
 		var keep := name.begins_with("ski_") or name.begins_with("bind_") or name.begins_with("pole_") or name.begins_with("grip_") or name.begins_with("basket_")
 		if name.begins_with("sk_") or name.begins_with("skj_"):
 			parts[k].visible = on
-		elif name != "stripe" and not keep:
+		elif not (name in HIDDEN_PARTS) and not keep:
 			parts[k].visible = not on
 
 
