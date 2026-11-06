@@ -466,3 +466,7 @@ no map, parks, keep the ragdoll crashes, black baggy gear, only flips, spins and
   twill normal), dark grey cargo pockets, dark navy helmet and neck gaiter, black gloves, dark grey
   boots, dark pole shafts with brown baskets; the backpack is no longer worn. Shapes unchanged.
 - Physics 92/92; checked in close-ups (front / side / back) and the browser chase view.
+- Pants after the player's pants reference: plain warm taupe, very wide straight legs (no taper,
+  ~30 cm across each leg), widening at the hem where they pool over the boots; the patch texture is
+  no longer used. Headwear: a navy knit beanie with a folded cuff replaces the helmet (helmet parts
+  built but hidden), goggles scaled to sit on the face with the strap round the beanie.

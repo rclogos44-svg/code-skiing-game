@@ -292,7 +292,7 @@ func _leg_fk(hip: Vector3, sgn: float, a: Array) -> Array:
 	var ski_c := ankle - B.y * ANKLE_H - B.z * 0.03
 	return [knee, B, ski_c]
 var preview_grab := ""
-const HIDDEN_PARTS := ["stripe", "backpack"]   # built but not worn (the reference outfit has no pack)
+const HIDDEN_PARTS := ["stripe", "backpack", "helmet", "helmet_trim", "helmet_dark"]   # built but not worn (beanie, no pack)
 var skeleton_view := false        # V: hide the clothes and show bones + joints
 const BONES := [["pelvis", "hip_l"], ["pelvis", "hip_r"], ["hip_l", "knee_l"], ["knee_l", "ankle_l"], ["hip_r", "knee_r"],
 	["knee_r", "ankle_r"], ["pelvis", "waist"], ["waist", "lumbar"], ["lumbar", "thoracic"], ["thoracic", "chest"], ["chest", "head"],
@@ -334,8 +334,9 @@ func _build() -> void:
 	# with dark grey patches, dark navy headwear, black gloves, dark boots and poles
 	var jacket := SkierModel.fabric(Color(0.88, 0.86, 0.8), 0.85, 60.0, 0.35, 0.12)
 	var jacket_dark := SkierModel.mat(Color(0.78, 0.76, 0.7), 0.9)
-	var pants := SkierModel.patched_fabric(Color(0.44, 0.44, 0.42), Color(0.2, 0.2, 0.2), 0.9)
-	var pocket_m := SkierModel.fabric(Color(0.3, 0.3, 0.3), 0.9, 90.0, 0.5, 0.1)
+	# pants after the player's pants reference: plain warm taupe nylon, very wide, pooling on the boots
+	var pants := SkierModel.fabric(Color(0.47, 0.42, 0.38), 0.85, 90.0, 0.55, 0.12)
+	var pocket_m := SkierModel.fabric(Color(0.42, 0.375, 0.34), 0.85, 90.0, 0.55, 0.1)
 	var helmet := SkierModel.mat(Color(0.1, 0.12, 0.18), 0.6, 0.0, {"clearcoat": 0.2})
 	var skin := SkierModel.mat(Color(0.85, 0.66, 0.55), 0.6)
 	var lens := SkierModel.mat(Color(0.12, 0.32, 0.85), 0.04, 0.85, {"clearcoat": 1.0})
@@ -364,7 +365,11 @@ func _build() -> void:
 	var hdet := SkierModel.helmet_details()
 	_add("helmet_trim", hdet[0], helmet, true)
 	_add("helmet_dark", hdet[1], strap, true)
-	var g := SkierModel.goggles()
+	var knit := SkierModel.fabric(Color(0.1, 0.12, 0.18), 0.95, 45.0, 0.9, 0.1)
+	var bn := SkierModel.beanie()
+	_add("beanie", bn[0], knit, true)
+	_add("beanie_cuff", bn[1], knit, true)
+	var g := SkierModel.goggles(0.8)       # sized for a beanie: on the face, strap round the hat
 	_add("goggle_band", g[0], strap, true)
 	_add("goggle_lens", g[1], lens, true)
 	_add("goggle_frame", g[2], strap, true)
@@ -382,8 +387,8 @@ func _build() -> void:
 		# joints: rounded caps so knees, elbows and shoulders bend like joints, not pipes
 		_add("shoulder_cap_" + side, SkierModel.sphere(0.072, 1.0, 1.0, 1.0), jacket)
 		_add("elbow_cap_" + side, SkierModel.sphere(0.053), jacket)
-		_add("knee_cap_" + side, SkierModel.sphere(0.096, 1.0, 1.0, 1.05), pants)
-		_add("stack_" + side, SkierModel.lathe([Vector2(0.0, -0.02), Vector2(0.105, -0.02), Vector2(0.118, 0.03), Vector2(0.108, 0.09), Vector2(0.0, 0.09)], 1.0, 1.1, 14), pants)
+		_add("knee_cap_" + side, SkierModel.sphere(0.138, 1.0, 1.0, 1.05), pants)
+		_add("stack_" + side, SkierModel.lathe([Vector2(0.0, -0.035), Vector2(0.155, -0.035), Vector2(0.176, 0.025), Vector2(0.168, 0.1), Vector2(0.0, 0.1)], 1.0, 1.12, 16), pants)
 		_add("thigh_" + side, SkierModel.thigh(), pants)
 		_add("shin_" + side, SkierModel.shin(), pants)
 		_add("boot_" + side, SkierModel.boot(), boot)
@@ -1140,9 +1145,11 @@ func _apply_parts() -> void:
 	var hc: Vector3 = joints["head"]
 	parts["head"].global_transform = Transform3D(hb, hc)
 	parts["helmet"].global_transform = Transform3D(hb, hc + hb.y * 0.015)
-	parts["goggle_band"].global_transform = Transform3D(hb, hc + hb.y * 0.025)
-	parts["goggle_lens"].global_transform = Transform3D(hb, hc + hb.y * 0.025)
-	parts["goggle_frame"].global_transform = Transform3D(hb, hc + hb.y * 0.025)
+	parts["beanie"].global_transform = Transform3D(hb, hc)
+	parts["beanie_cuff"].global_transform = Transform3D(hb, hc)
+	parts["goggle_band"].global_transform = Transform3D(hb, hc + hb.y * 0.022)
+	parts["goggle_lens"].global_transform = Transform3D(hb, hc + hb.y * 0.022)
+	parts["goggle_frame"].global_transform = Transform3D(hb, hc + hb.y * 0.022)
 	parts["gaiter"].global_transform = Transform3D(hb, hc)
 	parts["jacket_details"].global_transform = Transform3D(tb, joints["waist"])
 	parts["helmet_trim"].global_transform = Transform3D(hb, hc + hb.y * 0.015)
@@ -1160,7 +1167,7 @@ func _apply_parts() -> void:
 		var sxf: Transform3D = ski_l if sd == "l" else ski_r
 		_seg("thigh_" + sd, joints["hip_" + sd], joints["knee_" + sd], tb.x)
 		var txf: Transform3D = parts["thigh_" + sd].global_transform
-		parts["pocket_" + sd].global_transform = Transform3D(txf.basis, txf.origin + txf.basis * Vector3(sgn * 0.108, 0.24, 0.0))
+		parts["pocket_" + sd].global_transform = Transform3D(txf.basis, txf.origin + txf.basis * Vector3(sgn * 0.152, 0.24, 0.0))
 		parts["knee_cap_" + sd].global_transform = Transform3D(tb, joints["knee_" + sd])
 		parts["elbow_cap_" + sd].global_transform = Transform3D(tb, joints["elbow_" + sd])
 		parts["shoulder_cap_" + sd].global_transform = Transform3D(tb, joints["shoulder_" + sd])
@@ -1251,4 +1258,4 @@ static func _basis_y(y: Vector3, hint: Vector3) -> Basis:
 
 func set_first_person(on: bool) -> void:
 	for mi in head_parts:
-		mi.visible = not on
+		mi.visible = not on and not (String(mi.name) in HIDDEN_PARTS)

@@ -136,7 +136,7 @@ static func backpack() -> ArrayMesh:
 static func pelvis() -> ArrayMesh:
 	var pts := [Vector2(0.0, -0.10), Vector2(0.10, -0.095), Vector2(0.155, -0.04), Vector2(0.165, 0.04),
 		Vector2(0.15, 0.10), Vector2(0.0, 0.11)]
-	return lathe(pts, 1.12, 0.78, 16)
+	return lathe(pts, 1.28, 0.86, 16)
 
 
 ## Park helmet: round shell, the back drops lower than the front, with a short brim over the
@@ -201,18 +201,18 @@ static func _arc_band(st: SurfaceTool, a0: float, a1: float, y0: float, y1: floa
 ## Big frameless-look goggles over the helmet: [strap, lens, frame].  Origin at the head centre
 ## (+0.025 up); -Z is forward.  Cylindrical lens wider than the face, black frame behind its edge,
 ## black strap around the helmet.
-static func goggles() -> Array:
+static func goggles(k := 1.0) -> Array:
 	var strap := SurfaceTool.new()
 	strap.begin(Mesh.PRIMITIVE_TRIANGLES)
-	_arc_band(strap, -PI * 0.5 + 1.05, PI * 1.5 - 1.05, -0.022, 0.018, 0.152, 0.171, 0.006, 26)
+	_arc_band(strap, -PI * 0.5 + 1.05, PI * 1.5 - 1.05, -0.022, 0.018, 0.152 * k, 0.171 * k, 0.006, 26)
 	strap.generate_normals()
 	var lens := SurfaceTool.new()
 	lens.begin(Mesh.PRIMITIVE_TRIANGLES)
-	_arc_band(lens, -PI * 0.5 - 1.0, -PI * 0.5 + 1.0, -0.05, 0.036, 0.142, 0.168, 0.004, 24)
+	_arc_band(lens, -PI * 0.5 - 1.0, -PI * 0.5 + 1.0, -0.05, 0.036, 0.142 * k, 0.168 * k, 0.004, 24)
 	lens.generate_normals()
 	var frame := SurfaceTool.new()
 	frame.begin(Mesh.PRIMITIVE_TRIANGLES)
-	_arc_band(frame, -PI * 0.5 - 1.1, -PI * 0.5 + 1.1, -0.056, 0.042, 0.137, 0.161, 0.018, 24)
+	_arc_band(frame, -PI * 0.5 - 1.1, -PI * 0.5 + 1.1, -0.056, 0.042, 0.137 * k, 0.161 * k, 0.018, 24)
 	frame.generate_normals()
 	return [strap.commit(), lens.commit(), frame.commit()]
 
@@ -335,14 +335,16 @@ static func anat(rings: Array) -> ArrayMesh:
 
 
 static func thigh() -> ArrayMesh:      # baggy snow pants over a quad / hamstring shape
-	return anat([[-0.07, 0.0, 0.0, 0.0], [-0.05, 0.088, 0.085, 0.085], [0.0, 0.112, 0.1, 0.104], [0.1, 0.114, 0.1, 0.112],
-		[0.2, 0.108, 0.094, 0.108], [0.3, 0.1, 0.088, 0.1], [0.4, 0.093, 0.088, 0.092], [0.44, 0.09, 0.088, 0.092],
-		[0.47, 0.06, 0.06, 0.06], [0.49, 0.0, 0.0, 0.0]])
+	# very wide straight-leg pants (player's reference): no taper at all, the fabric hangs off the hips
+	return anat([[-0.07, 0.0, 0.0, 0.0], [-0.05, 0.122, 0.116, 0.116], [0.0, 0.146, 0.142, 0.146], [0.1, 0.151, 0.15, 0.156],
+		[0.2, 0.15, 0.15, 0.156], [0.3, 0.147, 0.148, 0.153], [0.4, 0.143, 0.146, 0.149], [0.44, 0.14, 0.143, 0.146],
+		[0.47, 0.1, 0.1, 0.1], [0.49, 0.0, 0.0, 0.0]])
 
 
 static func shin() -> ArrayMesh:       # pant leg over the calf, wider again where it stacks on the boot
-	return anat([[-0.03, 0.0, 0.0, 0.0], [-0.01, 0.086, 0.086, 0.086], [0.05, 0.09, 0.097, 0.088], [0.13, 0.092, 0.102, 0.086],
-		[0.22, 0.09, 0.094, 0.085], [0.32, 0.096, 0.093, 0.092], [0.4, 0.106, 0.102, 0.1], [0.43, 0.108, 0.102, 0.102], [0.44, 0.0, 0.0, 0.0]])
+	# straight wide leg (no calf shape showing), widening toward the hem where it pools on the boot
+	return anat([[-0.03, 0.0, 0.0, 0.0], [-0.01, 0.134, 0.142, 0.142], [0.05, 0.136, 0.146, 0.143], [0.13, 0.137, 0.148, 0.144],
+		[0.22, 0.139, 0.15, 0.146], [0.32, 0.143, 0.152, 0.15], [0.4, 0.15, 0.158, 0.158], [0.43, 0.155, 0.161, 0.161], [0.44, 0.0, 0.0, 0.0]])
 
 
 static func upper_arm() -> ArrayMesh:  # jacket sleeve over deltoid / biceps
@@ -465,3 +467,18 @@ static func patched_fabric(base: Color, patch: Color, rough: float, rim := 0.15)
 	m.normal_scale = 0.5
 	m.uv1_scale = Vector3(1.5, 1.5, 1.0)
 	return m
+
+
+## Knit beanie (origin at the head centre, -Z forward): slouches a little to the back, with a
+## folded cuff round the bottom. Returns [crown, cuff].
+static func beanie() -> Array:
+	var rings := [[0.006, 0.0, 0.0, 0.0]]
+	for i in 11:
+		var a := PI * 0.5 * float(i) / 10.0
+		var c := cos(a)
+		rings.append([0.006 + 0.13 * sin(a), 0.108 * c + 0.002, 0.117 * c + 0.002, 0.13 * c + 0.002, 0.016 * sin(a)])
+	rings.append([0.14, 0.0, 0.0, 0.0, 0.016])
+	var crown := shell(rings, 26)
+	var cuff := shell([[-0.042, 0.0, 0.0, 0.0], [-0.042, 0.113, 0.121, 0.124], [-0.03, 0.117, 0.125, 0.128],
+		[0.0, 0.118, 0.126, 0.13], [0.012, 0.115, 0.123, 0.127], [0.016, 0.0, 0.0, 0.0]], 26)
+	return [crown, cuff]
