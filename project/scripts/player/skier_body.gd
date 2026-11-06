@@ -92,8 +92,12 @@ const GRAB_POSES := {
 		"legs_w": 3.0, "twist": -0.55, "twist_dist": [0.1, 0.5, 1.0], "side": -0.05, "curve": -0.32, "time_in": 0.65,
 		"look": 1.0, "shoulders": {"r": Vector3(0.02, -0.045, 0.08), "l": Vector3(0.0, 0.02, -0.04)}, "auto_grip": true,
 		"reach": 0.97, "along_range": [0.35, 0.55], "fixed_legs": true, "side_w": 40.0, "twist_w": 6.0},
-	"Tip": {"l": ["l", -0.52, 1.0], "free": {"r": Vector3(0.42, 0.08, 0.05)},
-		"legs": {"l": [100.0, 6.0, 0.0, 80.0], "r": [72.0, 5.0, 5.0, 100.0]}, "pitch": 38.0, "twist": 0.12, "side": -0.08},
+	# the hand really holds the TIP (the last ~15 cm, where it turns up): the left leg kicks out
+	# forward and a little to the side, nearly straight, so the ski stands tip-up ~70 deg in front
+	# and the tip comes to the hand; chest leans in a little, right arm back for balance
+	"Tip": {"l": ["l", -0.8, 1.0], "free": {"r": Vector3(0.35, 0.12, 0.3)},
+		"legs": {"l": [75.0, 40.0, 0.0, 8.0, 15.0], "r": [80.0, 5.0, 5.0, 105.0, 0.0]}, "pitch": 28.0, "pitch_w": 6.0,
+		"legs_w": 2.0, "twist": -0.2, "side": 0.12, "along_range": [-0.86, -0.76], "reach": 0.95, "auto_grip": true, "time_in": 0.6},
 	"Truck Driver": {"l": ["l", -0.3, 1.0], "r": ["r", -0.3, 1.0],
 		"legs": {"l": [95.0, 8.0, 0.0, 95.0], "r": [95.0, 8.0, 0.0, 95.0]}, "pitch": 38.0, "twist": 0.0, "side": 0.0},
 	"Blunt": {"r": ["r", 0.72, 1.0], "free": {"l": Vector3(-0.4, 0.22, -0.05)},

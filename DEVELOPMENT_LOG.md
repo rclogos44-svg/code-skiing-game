@@ -524,3 +524,7 @@ no map, parks, keep the ragdoll crashes, black baggy gear, only flips, spins and
   limited legs showed an opposite-hand grab can't reach a ski there with the body upright, so the
   Japan is now a same-side grab (still Q + S). Legs are fixed; the solver only moves the grip and
   upper body.
+- Tip grab now holds the actual tip (0.86 m in front of the boot, where it turns up; it held the
+  ski 0.52 m in front before). A joint-limited search showed the tip of a 1.76 m ski is only in
+  arm's reach with the leg kicked out forward and a little to the side, nearly straight, the ski
+  standing tip-up ~70 deg: that's the new pose (chest 19 deg forward, elbow 140 deg).
