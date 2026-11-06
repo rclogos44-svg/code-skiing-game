@@ -96,8 +96,9 @@ const GRAB_POSES := {
 	# forward and a little to the side, nearly straight, so the ski stands tip-up ~70 deg in front
 	# and the tip comes to the hand; chest leans in a little, right arm back for balance
 	"Tip": {"l": ["l", -0.8, 1.0], "free": {"r": Vector3(0.35, 0.12, 0.3)},
-		"legs": {"l": [75.0, 40.0, 0.0, 8.0, 15.0], "r": [80.0, 5.0, 5.0, 105.0, 0.0]}, "pitch": 28.0, "pitch_w": 6.0,
-		"legs_w": 2.0, "twist": -0.2, "side": 0.12, "along_range": [-0.86, -0.76], "reach": 0.95, "auto_grip": true, "time_in": 0.6},
+		"legs": {"l": [75.0, 18.0, 0.0, 10.0, 15.0], "r": [80.0, 5.0, 5.0, 105.0, 0.0]}, "pitch": 42.0, "pitch_w": 0.3,
+		"legs_w": 4.0, "twist": -0.2, "side": 0.1, "along_range": [-0.86, -0.76], "reach": 0.97, "auto_grip": true, "time_in": 0.6,
+		"ski_up": {"l": 60.0}},
 	"Truck Driver": {"l": ["l", -0.3, 1.0], "r": ["r", -0.3, 1.0],
 		"legs": {"l": [95.0, 8.0, 0.0, 95.0], "r": [95.0, 8.0, 0.0, 95.0]}, "pitch": 38.0, "twist": 0.0, "side": 0.0},
 	"Blunt": {"r": ["r", 0.72, 1.0], "free": {"l": Vector3(-0.4, 0.22, -0.05)},
@@ -211,6 +212,13 @@ func _solve_grab(name: String, ph: float, pz: float) -> Dictionary:
 				c += pow((float(d) - float(g["reach"]) * (UPPER_ARM + FOREARM)) / 0.02, 2.0)
 		if g.has("skis"):
 			c += _ski_target_cost(g["skis"], lg, ph, pz)
+		if g.has("ski_up"):
+			# how steeply a ski points tip-up (deg above horizontal, body frame)
+			for sd2 in g["ski_up"]:
+				var ss2 := -1.0 if sd2 == "l" else 1.0
+				var fk2 := _leg_fk(Vector3(ss2 * HIP_HALF, ph - 0.04, pz), ss2, lg[sd2])
+				var up_deg := rad_to_deg(asin(clampf(-(fk2[1] as Basis).z.y, -1.0, 1.0)))
+				c += pow((up_deg - float(g["ski_up"][sd2])) / 5.0, 2.0) * 3.0
 		for side in ["l", "r"]:
 			for i in (lg[side] as Array).size():
 				c += pow((float(lg[side][i]) - float(legs0[side][i])) / 40.0, 2.0) * float(g.get("legs_w", 1.0))

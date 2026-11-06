@@ -1552,6 +1552,10 @@ func _grab_shots() -> void:
 			elb[sd] = "%.0f deg (straight = 180), elbow points %s" % [ang, str((tbx.inverse() * out_dir.normalized()).snapped(Vector3(0.01, 0.01, 0.01)))]
 		print("[TEST] grab %-12s elbows: L %s | R %s" % [gname, elb["l"], elb["r"]])
 		print("[TEST] grab %-12s grip along the ski: %s" % [gname, str(body._solved.get(gname, {}).get("along", {}))])
+		var ups := []
+		for sx: Transform3D in [body.ski_l, body.ski_r]:
+			ups.append("%.0f" % rad_to_deg(asin(clampf(-sx.basis.z.normalized().y, -1.0, 1.0))))
+		print("[TEST] grab %-12s ski tip-up angle L / R: %s deg" % [gname, " / ".join(ups)])
 		body._apply_parts()
 		var fz: Vector3 = -body.pelvis_basis.z                # the way his hips face
 		var fwd := Vector3(fz.x, 0, fz.z).normalized()

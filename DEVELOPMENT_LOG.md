@@ -528,3 +528,6 @@ no map, parks, keep the ragdoll crashes, black baggy gear, only flips, spins and
   ski 0.52 m in front before). A joint-limited search showed the tip of a 1.76 m ski is only in
   arm's reach with the leg kicked out forward and a little to the side, nearly straight, the ski
   standing tip-up ~70 deg: that's the new pose (chest 19 deg forward, elbow 140 deg).
+- Tip grab: the grabbed ski now stands ~60 deg tip-up (was ~85-90) and he leans in and reaches
+  forward to its tip instead of pulling the ski up to his hand; the leg sits more in front (17 cm
+  out, was 34). The pose solver gained a "ski_up" target (tip-up angle per ski).
