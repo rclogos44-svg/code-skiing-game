@@ -90,8 +90,9 @@ static func shell(rings: Array, segs := 22) -> ArrayMesh:
 			var sz := sin(a)
 			var depth: float = r[2] if sz < 0.0 else r[3]
 			var zs: float = r[4] if r.size() > 4 else 0.0
+			var drop: float = float(r[5]) * maxf(sz, 0.0) if r.size() > 5 else 0.0
 			st.set_uv(Vector2(float(k) / segs, float(i) / (rings.size() - 1)))
-			st.add_vertex(Vector3(cos(a) * float(r[1]), float(r[0]), sz * depth + zs))
+			st.add_vertex(Vector3(cos(a) * float(r[1]), float(r[0]) + drop, sz * depth + zs))
 	for i in rings.size() - 1:
 		for k in segs:
 			var a0 := i * (segs + 1) + k
@@ -103,14 +104,14 @@ static func shell(rings: Array, segs := 22) -> ArrayMesh:
 
 
 static func torso() -> ArrayMesh:
-	# waist (y=0) to neck base (y=0.54): a long baggy jacket, hem at mid-thigh, broad shoulders,
-	# a chest in front and a rounded upper back (shoulder joints sit at y=0.43, x=+-0.185)
+	# waist (y=0) to neck base (y=0.54): a loose, boxy park jacket, wide enough at the hem to hang
+	# over the baggy pants, with a drop-tail back (the back hem hangs ~6 cm lower than the front)
 	return shell([
-		[-0.22, 0.0, 0.0, 0.0], [-0.215, 0.2, 0.15, 0.16], [-0.18, 0.214, 0.155, 0.165],
-		[-0.12, 0.2, 0.145, 0.155], [0.04, 0.188, 0.135, 0.145], [0.18, 0.2, 0.148, 0.15],
-		[0.30, 0.222, 0.158, 0.155, 0.005], [0.39, 0.238, 0.148, 0.16, 0.01], [0.45, 0.225, 0.12, 0.15, 0.015],
+		[-0.2, 0.0, 0.0, 0.0], [-0.22, 0.235, 0.18, 0.2, 0.0, -0.06], [-0.19, 0.24, 0.182, 0.202, 0.0, -0.05],
+		[-0.12, 0.232, 0.175, 0.195, 0.0, -0.02], [0.04, 0.222, 0.165, 0.185], [0.18, 0.226, 0.168, 0.178],
+		[0.30, 0.236, 0.168, 0.17, 0.005], [0.39, 0.245, 0.155, 0.168, 0.01], [0.45, 0.228, 0.125, 0.155, 0.015],
 		[0.5, 0.17, 0.09, 0.12, 0.015], [0.53, 0.1, 0.07, 0.085, 0.01], [0.545, 0.0, 0.0, 0.0],
-	])
+	], 24)
 
 
 ## Hood down: a rolled cowl of fabric lying on the shoulders behind the neck, with an opening.
@@ -136,7 +137,7 @@ static func backpack() -> ArrayMesh:
 static func pelvis() -> ArrayMesh:
 	var pts := [Vector2(0.0, -0.10), Vector2(0.10, -0.095), Vector2(0.155, -0.04), Vector2(0.165, 0.04),
 		Vector2(0.15, 0.10), Vector2(0.0, 0.11)]
-	return lathe(pts, 1.28, 0.86, 16)
+	return lathe(pts, 1.4, 0.9, 16)
 
 
 ## Park helmet: round shell, the back drops lower than the front, with a short brim over the
@@ -350,14 +351,14 @@ static func shin() -> ArrayMesh:       # pant leg over the calf, wider again whe
 		[0.445, 0.0, 0.0, 0.0]])
 
 
-static func upper_arm() -> ArrayMesh:  # jacket sleeve over deltoid / biceps
-	return anat([[-0.05, 0.0, 0.0, 0.0], [-0.03, 0.062, 0.062, 0.062], [0.03, 0.072, 0.066, 0.07], [0.12, 0.066, 0.06, 0.068],
-		[0.22, 0.06, 0.056, 0.061], [0.29, 0.056, 0.054, 0.056], [0.31, 0.0, 0.0, 0.0]])
+static func upper_arm() -> ArrayMesh:  # loose jacket sleeve
+	return anat([[-0.05, 0.0, 0.0, 0.0], [-0.03, 0.082, 0.082, 0.082], [0.03, 0.092, 0.088, 0.09], [0.12, 0.091, 0.087, 0.09],
+		[0.22, 0.088, 0.085, 0.088], [0.29, 0.085, 0.083, 0.085], [0.32, 0.0, 0.0, 0.0]])
 
 
-static func forearm() -> ArrayMesh:
-	return anat([[-0.02, 0.0, 0.0, 0.0], [0.0, 0.054, 0.054, 0.054], [0.06, 0.057, 0.056, 0.056], [0.17, 0.052, 0.05, 0.05],
-		[0.25, 0.05, 0.049, 0.049], [0.27, 0.05, 0.049, 0.049], [0.28, 0.0, 0.0, 0.0]])
+static func forearm() -> ArrayMesh:    # loose sleeve, gathered in at the wrist over the glove
+	return anat([[-0.03, 0.0, 0.0, 0.0], [-0.01, 0.083, 0.081, 0.081], [0.06, 0.086, 0.084, 0.084], [0.15, 0.084, 0.082, 0.082],
+		[0.21, 0.08, 0.078, 0.078], [0.245, 0.07, 0.068, 0.068], [0.265, 0.06, 0.059, 0.059], [0.28, 0.0, 0.0, 0.0]])
 
 
 ## Glove: flat mitt from the wrist (y=0) to the fingertips, width along x; plus a separate thumb.
@@ -395,14 +396,14 @@ static func jacket_details() -> ArrayMesh:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	# front depth of the torso shell at height y (see torso())
-	var prof := [[-0.205, 0.155], [-0.12, 0.145], [0.04, 0.135], [0.18, 0.148], [0.3, 0.158], [0.39, 0.148], [0.45, 0.12], [0.5, 0.09]]
+	var prof := [[-0.215, 0.181], [-0.12, 0.175], [0.04, 0.165], [0.18, 0.168], [0.3, 0.168], [0.39, 0.155], [0.45, 0.125], [0.5, 0.09]]
 	for i in prof.size() - 1:
 		var y0: float = prof[i][0]
 		var y1: float = prof[i + 1][0]
 		var dz: float = maxf(prof[i][1], prof[i + 1][1]) + 0.004
 		_box(st, Vector3(-0.007, y0, -dz - 0.006), Vector3(0.007, y1, -dz + 0.004))
 	for x in [-1.0, 1.0]:
-		_box(st, Vector3(x * 0.06 - 0.045, 0.27, -0.168), Vector3(x * 0.06 + 0.045, 0.282, -0.155))
+		_box(st, Vector3(x * 0.065 - 0.045, 0.27, -0.176), Vector3(x * 0.065 + 0.045, 0.282, -0.164))
 	st.generate_normals()
 	return st.commit()
 
@@ -485,3 +486,39 @@ static func beanie() -> Array:
 	var cuff := shell([[-0.042, 0.0, 0.0, 0.0], [-0.042, 0.113, 0.121, 0.124], [-0.03, 0.117, 0.125, 0.128],
 		[0.0, 0.118, 0.126, 0.13], [0.012, 0.115, 0.123, 0.127], [0.016, 0.0, 0.0, 0.0]], 26)
 	return [crown, cuff]
+
+
+## Jacket shell fabric: ripstop grid woven into the colour (faint darker lines ~2.5 cm apart on the
+## body), mottling, and soft wrinkles in the normal map.
+static func jacket_fabric(color: Color, rough: float) -> StandardMaterial3D:
+	var m := mat(Color.WHITE, rough, 0.0, {"rim": 0.12})
+	var n := 128
+	var img := Image.create(n, n, false, Image.FORMAT_RGB8)
+	var mot := FastNoiseLite.new()
+	mot.frequency = 0.06
+	for y in n:
+		for x in n:
+			var f := 1.0 + 0.035 * mot.get_noise_2d(x, y)
+			if x % 16 == 0 or y % 16 == 0:
+				f *= 0.9
+			elif x % 16 == 1 or y % 16 == 1:
+				f *= 0.96
+			img.set_pixel(x, y, Color(color.r * f, color.g * f, color.b * f))
+	img.generate_mipmaps()
+	m.albedo_texture = ImageTexture.create_from_image(img)
+	var wn := FastNoiseLite.new()
+	wn.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	wn.fractal_octaves = 2
+	wn.frequency = 0.011
+	var wt := NoiseTexture2D.new()
+	wt.width = 128
+	wt.height = 128
+	wt.seamless = true
+	wt.as_normal_map = true
+	wt.bump_strength = 4.0
+	wt.noise = wn
+	m.normal_enabled = true
+	m.normal_texture = wt
+	m.normal_scale = 0.35
+	m.uv1_scale = Vector3(6.0, 4.0, 1.0)
+	return m

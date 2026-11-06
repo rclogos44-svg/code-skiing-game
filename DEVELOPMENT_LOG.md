@@ -474,3 +474,8 @@ no map, parks, keep the ragdoll crashes, black baggy gear, only flips, spins and
   the boot and is gathered in at the ankle (soft folds above the cuff); the separate ankle "stack"
   rings and the cargo-pocket boxes are no longer shown, and the knee fill is smaller than the leg
   so the knees don't bulge.
+- Jacket: boxier and wider (hem ~47 cm across) so it hangs over the baggy pants instead of the
+  pants poking out from under its edge, with a drop-tail back hem 6 cm lower than the front
+  (`shell` rings take an optional back-drop value). Loose sleeves gathered at the wrist; shoulder
+  and elbow fills no bigger than the sleeve. Ripstop fabric: faint darker grid ~2.5 cm, mottling,
+  and soft large wrinkles in the normal map (generated in code).

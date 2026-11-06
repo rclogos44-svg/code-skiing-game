@@ -332,7 +332,7 @@ func setup(s: Skier) -> void:
 func _build() -> void:
 	# outfit after the player's reference (a park skier): loose cream jacket, baggy light-grey pants
 	# with dark grey patches, dark navy headwear, black gloves, dark boots and poles
-	var jacket := SkierModel.fabric(Color(0.88, 0.86, 0.8), 0.85, 60.0, 0.35, 0.12)
+	var jacket := SkierModel.jacket_fabric(Color(0.88, 0.86, 0.8), 0.85)
 	var jacket_dark := SkierModel.mat(Color(0.78, 0.76, 0.7), 0.9)
 	# pants after the player's pants reference: plain warm taupe nylon, very wide, pooling on the boots
 	var pants := SkierModel.fabric(Color(0.47, 0.42, 0.38), 0.85, 90.0, 0.55, 0.12)
@@ -385,8 +385,9 @@ func _build() -> void:
 		_add("buckles_" + side, bh[0], metal)
 		_add("bootstrap_" + side, bh[1], strap)
 		# joints: rounded caps so knees, elbows and shoulders bend like joints, not pipes
-		_add("shoulder_cap_" + side, SkierModel.sphere(0.072, 1.0, 1.0, 1.0), jacket)
-		_add("elbow_cap_" + side, SkierModel.sphere(0.053), jacket)
+		# joint fills no bigger than the sleeve, so the shoulders and elbows don't bulge
+		_add("shoulder_cap_" + side, SkierModel.sphere(0.084, 1.0, 1.0, 1.0), jacket)
+		_add("elbow_cap_" + side, SkierModel.sphere(0.078), jacket)
 		_add("knee_cap_" + side, SkierModel.sphere(0.128, 1.0, 1.0, 1.0), pants)   # fills the bend, stays inside the leg
 		_add("stack_" + side, SkierModel.lathe([Vector2(0.0, -0.035), Vector2(0.155, -0.035), Vector2(0.176, 0.025), Vector2(0.168, 0.1), Vector2(0.0, 0.1)], 1.0, 1.12, 16), pants)
 		_add("thigh_" + side, SkierModel.thigh(), pants)
