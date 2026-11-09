@@ -48,6 +48,8 @@ func run(w: World) -> void:
 			_line_report()
 		"pipe":
 			_pipe_report()
+		"pipe_anim":
+			await _pipe_anim()
 		_:
 			print("[TEST] unknown test mode ", Game.test_mode)
 			failures += 1
@@ -279,7 +281,7 @@ func _line_report() -> void:
 ## Ride into a superpipe wall: start on the flat bottom `t0` m into the pipe, heading `ang` deg
 ## off the pipe's axis toward its right wall at `v0` m/s, no input.  Returns the hits: per wall,
 ## height reached above the coping, airtime, crash; and a short trace.
-func _pipe_ride(t0: float, ang: float, v0: float, max_hits := 3, trace := false) -> Dictionary:
+func _pipe_ride(t0: float, ang: float, v0: float, max_hits := 3, trace := false, air_input := {}, wall_ctl := Callable()) -> Dictionary:
 	var s := world.skier
 	var pp: Dictionary = {}
 	for pk in world.terrain.layout.get("parks", []):
@@ -303,7 +305,12 @@ func _pipe_ride(t0: float, ang: float, v0: float, max_hits := 3, trace := false)
 	var hits := []
 	var peak := -INF
 	var lines := []
+	var last_up := Vector3.UP
 	for f in 120 * 20:
+		var hb := s.position.y - world.terrain.base_height(s.position.x, s.position.z)
+		s.scripted_input = air_input if s.airborne else (wall_ctl.call(hb, float(pp["wall_h"])) if wall_ctl.is_valid() else {})
+		if s.airborne:
+			last_up = s.air_up
 		s.step(1.0 / 120.0)
 		s.time += 1.0 / 120.0
 		var base := world.terrain.base_height(s.position.x, s.position.z)
@@ -311,13 +318,14 @@ func _pipe_ride(t0: float, ang: float, v0: float, max_hits := 3, trace := false)
 		if s.airborne:
 			peak = maxf(peak, s.position.y - coping)
 		if trace and f % 12 == 0:
-			lines.append("t%.1f u%.1f h%.2f v%.1f %s" % [f / 120.0, (s.position - o).dot(side), s.position.y - base, s.speed, "AIR" if s.airborne else ""])
+			lines.append("t%.1f u%.1f h%.2f v%.1f %s fv%.2f ap%.0f set%s" % [f / 120.0, (s.position - o).dot(side), s.position.y - base, s.speed, "AIR" if s.airborne else "", s.flip_vel, rad_to_deg(s.air_pitch), str(s.trick_set)])
 		if box.has("info"):
 			var info: Dictionary = box["info"]
 			box.erase("info")
 			if float(info["air_time"]) > 0.3:
 				hits.append({"above_coping": peak, "air": info["air_time"], "crash": info["crash"], "switch": info["switch"],
-					"misalign": info["misalign"], "impact": info["impact"]})
+					"misalign": info["misalign"], "impact": info["impact"], "flip": rad_to_deg(float(info["flip"])),
+					"tilt_err": rad_to_deg(last_up.angle_to(s.ground_n))})
 				peak = -INF
 		if s.is_crashed or hits.size() >= max_hits or s.speed < 1.0:
 			break
@@ -327,9 +335,68 @@ func _pipe_ride(t0: float, ang: float, v0: float, max_hits := 3, trace := false)
 	return {"hits": hits, "trace": lines, "crashed": box.get("crash", "") if s.is_crashed else "", "speed": s.speed}
 
 
+## Frames of a pipe air: across the flat into the right wall, backflip popped at the coping.
+func _pipe_anim() -> void:
+	var s := world.skier
+	var body = world.body
+	var pp: Dictionary = {}
+	var pki := 0
+	for i in world.terrain.layout["parks"].size():
+		if not world.terrain.layout["parks"][i].get("pipes", []).is_empty():
+			pp = world.terrain.layout["parks"][i]["pipes"][0]
+			pki = i
+	var st: Dictionary = world.park.park_start(pki)
+	world.spawn(st["pos"], st["yaw"])
+	await _frames(10)
+	s.set_physics_process(false)
+	body.set_process(false)
+	var d := Vector3(pp["dir"][0], 0, pp["dir"][1]).normalized()
+	var side := Vector3(-d.z, 0, d.x)
+	var o := Vector3(pp["origin"][0], 0, pp["origin"][1])
+	var dir := (d * cos(deg_to_rad(65.0)) + side * sin(deg_to_rad(65.0))).normalized()
+	s.teleport(o + d * 50.0, Skier.yaw_of(dir), 15.0)
+	var pop: String = Game.test_args.get("pop", "back")
+	var set_a := "lean_forward" if pop == "back" else "lean_back"
+	var pop_a := "lean_back" if pop == "back" else "lean_forward"
+	var shot := 0
+	var cam := o + d * 60.0 + side * 8.0
+	cam.y = world.terrain.base_height(cam.x, cam.z) + 4.5
+	for f in 120 * 4:
+		var h := s.position.y - world.terrain.base_height(s.position.x, s.position.z)
+		var wh := float(pp["wall_h"])
+		s.scripted_input = {} if s.airborne else ({set_a: 1.0, pop_a: 1.0} if h > wh - 0.6 else ({set_a: 1.0} if h > 0.5 else {}))
+		s.step(1.0 / 120.0)
+		s.time += 1.0 / 120.0
+		s._prev_xform = s._cur_xform
+		s._cur_xform = s._compose_xform()
+		body._compute_pose(1.0 / 120.0)
+		body._cloth_step(1.0 / 120.0)
+		if h > 2.0 and f % 15 == 0 and shot < 14:
+			body._apply_parts()
+			body._cloth_apply()
+			_free_cam(cam, s.position + Vector3.UP * 0.6)
+			await _frames(2)
+			await _snap("pipe_%02d" % shot)
+			shot += 1
+		if s.is_crashed:
+			break
+	s.set_physics_process(true)
+
+
 ## --test=pipe [--t0=40 --ang=55 --v0=13]: ride into the pipe and print the hits and a trace.
 func _pipe_report() -> void:
-	var r := _pipe_ride(float(Game.test_args.get("t0", "40")), float(Game.test_args.get("ang", "55")), float(Game.test_args.get("v0", "13")), 4, true)
+	var ai := {}
+	if Game.test_args.has("air"):
+		ai[Game.test_args["air"]] = 1.0
+	var wc := Callable()
+	if Game.test_args.has("pop"):         # hold one arrow up the wall, press the other near the coping
+		var set_a: String = "lean_forward" if Game.test_args["pop"] == "back" else "lean_back"
+		var pop_a: String = "lean_back" if Game.test_args["pop"] == "back" else "lean_forward"
+		wc = func(h: float, wh: float) -> Dictionary:
+			if h > wh - 0.6:
+				return {set_a: 1.0, pop_a: 1.0}
+			return {set_a: 1.0} if h > 0.5 else {}
+	var r := _pipe_ride(float(Game.test_args.get("t0", "40")), float(Game.test_args.get("ang", "55")), float(Game.test_args.get("v0", "13")), 4, true, ai, wc)
 	for ln in r.get("trace", []):
 		print("[TEST] PIPE ", ln)
 	for h in r.get("hits", []):
@@ -353,6 +420,7 @@ func _park_kickers() -> void:
 		var past := (s.position - o).dot(Vector3(world.park.parks[i]["dir"][0], 0, world.park.parks[i]["dir"][1]))
 		check("%s: pole-pushing from the top gets you into the park" % st["name"], past > 0.0 and s.speed > 4.0, "%.0f m past the drop-in at %.1f m/s after 8 s" % [past, s.speed])
 		check("%s: W stops helping once you're moving" % st["name"], s.pushing == 0.0 or s.speed < Skier.PUSH_MAX)
+	var worst_tilt := 0.0
 	for pk in world.terrain.layout.get("parks", []):
 		for k in pk["kickers"]:
 			var d := Vector3(k["dir"][0], 0, k["dir"][1]).normalized()       # hips point off the fall line
@@ -368,8 +436,11 @@ func _park_kickers() -> void:
 			var land_at := 0.0
 			var crash := ""
 			var launch := ""
+			var up_before := Vector3.UP
 			for i in 900:
 				var was_air := s.airborne
+				if s.airborne:
+					up_before = s.air_up
 				s.step(1.0 / 120.0)
 				s.time += 1.0 / 120.0
 				if s.airborne and not was_air and launch == "":
@@ -385,6 +456,7 @@ func _park_kickers() -> void:
 						max_air = info["air_time"]
 						land_at = (s.position - knuckle).dot(d)
 						crash = info["crash"]
+						worst_tilt = maxf(worst_tilt, rad_to_deg(up_before.angle_to(s.ground_n)))
 					box.erase("info")
 				if (s.position - knuckle).dot(d) > 45.0:
 					break
@@ -393,6 +465,7 @@ func _park_kickers() -> void:
 				and land_at < (end - knuckle).dot(d) + 6.0,
 				"%.2f s air, landed %.1f m past the knuckle (landing %.1f m)%s%s" % [max_air, land_at, (end - knuckle).dot(d),
 				(" CRASH " + crash) if crash != "" else "", launch])
+	check("in the air the body tilts to meet each kicker's landing slope", worst_tilt < 10.0, "worst %.1f deg off the landing at touchdown" % worst_tilt)
 	# the Big Air and Sierra Main Park jump lines flow: ridden from the top with no input (after a
 	# push-off), every jump is sized for the speed carried from the one before, so each lands
 	for pi2 in world.terrain.layout.get("parks", []).size():
@@ -416,6 +489,16 @@ func _park_kickers() -> void:
 		var clean: int = (pr2["hits"] as Array).filter(func(h): return h["crash"] == "").size()
 		check("mega pipe: wall to wall, 3+ hits without a crash", clean >= 3 and pr2["crashed"] == "",
 			"%d hits, %d clean, crash '%s'" % [pr2["hits"].size(), clean, pr2["crashed"]])
+		# flips off the wall go the way they're popped: hold Up up the wall, Down at the coping = backflip
+		for pop in [["lean_forward", "lean_back", -1.0, "backflip"], ["lean_back", "lean_forward", 1.0, "front flip"]]:
+			var wc := func(h: float, wh: float) -> Dictionary:
+				if h > wh - 0.6:
+					return {pop[0]: 1.0, pop[1]: 1.0}
+				return {pop[0]: 1.0} if h > 0.5 else {}
+			var pf := _pipe_ride(50.0, 65.0, 15.0, 1, false, {}, wc)
+			var hf: Dictionary = pf["hits"][0] if not pf["hits"].is_empty() else {}
+			check("mega pipe: a %s off the wall rotates that way and lands" % pop[3], not hf.is_empty() and hf["crash"] == ""
+				and float(hf["flip"]) * float(pop[2]) > 200.0 and float(hf["tilt_err"]) < 8.0, str(hf))
 	# pole push: tips go into the snow and stay there while planted; speed comes in strokes
 	var stp: Dictionary = world.park.park_start(0)
 	s.teleport(stp["pos"], stp["yaw"])

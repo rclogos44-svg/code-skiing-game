@@ -615,3 +615,16 @@ no map, parks, keep the ragdoll crashes, black baggy gear, only flips, spins and
   your line along the wall; a landing with no horizontal speed can't count as sideways. New
   checks: ride across the flat into the wall, air ~1.8 m above the coping and land back in; wall
   to wall, 4 hits, none crash. --test=pipe prints a trace for tuning. Physics 126/126.
+- Pipe flips (player: "my flips only go forward in the halfpipe"): rolling over the coping onto
+  the deck read as a kicker lip and added ~1 rad/s of front flip to every pipe air - pipe takeoffs
+  now add none; flips come from the arrows. Popping on a pipe wall used to throw you off the wall
+  into the middle (the pop went along the wall's horizontal normal): it now goes straight up and
+  adds a little (a coping ollie). The landing assist no longer brakes a popped flip in its first
+  half (it was pulling pipe backflips back to upright at ~56 deg); it still settles the landing.
+- Tilting to the landing: in the air the body's "up" starts square to the snow he left (lip, pipe
+  wall) and turns toward the predicted landing surface's normal (ballistic probe ~30 times a
+  second), faster as touchdown nears - he meets a 32 deg landing or a vertical pipe wall square
+  instead of snapping onto it (flips/spins rotate on top of that). New checks: worst kicker
+  touchdown 3.6 deg off the landing slope; pipe backflip (-307 deg) and front flip (+321 deg)
+  popped at the coping land clean, body 0.0 deg off the wall. --test=pipe_anim renders a pipe air.
+  Physics 129/129.

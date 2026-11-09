@@ -125,6 +125,11 @@ var _spin_latch := 0.0             # direction of the wind-up key still held aft
 var tail_load := 0.0               # crouching while leaning back: extra pop
 var flip_vel := 0.0                # rad/s, + = forward (front flip)
 var air_pitch := 0.0               # flip rotation so far (rad)
+var air_up := Vector3.UP           # body "up" in the air before flips: leaves the lip square to it and
+                                   # tilts toward the slope (or pipe wall) he's going to land on
+var land_n := Vector3.UP           # predicted landing surface normal, and how long until touchdown
+var land_t := 9.0
+var _land_probe := 0
 var air_pitch_peak := 0.0          # largest |pitch| reached in this jump (corks)
 var sketchy := 0.0                 # > 0 while recovering from a sketchy landing (s)
 var grab_kind_l := ""              # "", "tip" or "tail"
@@ -212,6 +217,8 @@ func teleport(pos: Vector3, yaw: float, initial_speed := 0.0, keep_mode := false
 	position = Vector3(pos.x, h + 0.02, pos.z)
 	heading = yaw
 	ground_n = terrain.normal(pos.x, pos.z, 1.2)
+	air_up = Vector3.UP
+	land_t = 9.0
 	var f := forward_flat()
 	vel = (f - ground_n * f.dot(ground_n)).normalized() * initial_speed
 	speed = initial_speed
@@ -643,6 +650,7 @@ func _ground_step(dt: float, n: Vector3, cf: float) -> void:
 
 func _air_step(dt: float, spin_in: float, flip_in: float) -> void:
 	vel += Vector3(0, -G, 0) * dt
+	_tilt_for_landing(dt)
 	var sp := vel.length()
 	var compact := maxf(tuck, (grab_l + grab_r) * 0.5)
 	var cda := lerpf(0.0042, 0.0022, compact)
@@ -664,7 +672,8 @@ func _air_step(dt: float, spin_in: float, flip_in: float) -> void:
 		spin_vel = move_toward(spin_vel, 0.0, float(d["spin_damp"]) * dt)
 	if absf(flip_in) > 0.1:
 		flip_vel = move_toward(flip_vel, signf(flip_in) * SPIN_MAX * 0.7, float(d["air_flip"]) * dt)
-	elif float(d["level"]) > 0.0 and absf(roundf(air_pitch / TAU) * TAU - air_pitch) < deg_to_rad(60.0):
+	elif float(d["level"]) > 0.0 and absf(roundf(air_pitch / TAU) * TAU - air_pitch) < deg_to_rad(60.0) \
+			and not (absf(air_pitch) < PI and absf(flip_vel) > 2.0):     # leave a popped flip alone till it's past halfway
 		# assist: settle a small tilt toward a clean landing (it cannot rescue an upside-down one)
 		var target := roundf(air_pitch / TAU) * TAU
 		flip_vel += ((target - air_pitch) * float(d["level"]) * 2.0 - flip_vel * float(d["level"])) * dt
@@ -735,6 +744,35 @@ func _air_step(dt: float, spin_in: float, flip_in: float) -> void:
 	carve_g = 0.0
 
 
+## Where the flight comes down (ballistic, checked a few times a second) and the snow's normal
+## there; the body's "up" turns from the takeoff surface toward it, faster as touchdown nears, so he
+## meets a steep landing or a pipe wall square instead of snapping onto it.
+func _tilt_for_landing(dt: float) -> void:
+	_land_probe -= 1
+	if _land_probe <= 0:
+		_land_probe = 4
+		var p := position
+		var v := vel
+		land_t = 9.0
+		for i in 100:
+			v += Vector3.DOWN * G * 0.04
+			p += v * 0.04
+			if p.y <= terrain.height(p.x, p.z):
+				land_t = (i + 1) * 0.04
+				land_n = terrain.normal(p.x, p.z, 0.25 if terrain.feature_offset(p.x, p.z) > 0.0 else 1.2)
+				break
+	else:
+		land_t = maxf(land_t - dt, 0.0)
+	if land_t > 8.0:
+		return
+	var k := lerpf(1.6, 7.0, clampf(1.0 - land_t / 0.8, 0.0, 1.0))
+	var a := air_up.angle_to(land_n)
+	if a > 0.001:
+		var ax := air_up.cross(land_n)
+		if ax.length() > 1e-5:
+			air_up = air_up.rotated(ax.normalized(), a * (1.0 - exp(-k * dt))).normalized()
+
+
 func _do_jump() -> void:
 	if not grind.is_empty():
 		_leave_rail("pop")
@@ -743,7 +781,11 @@ func _do_jump() -> void:
 	# crouch depth, loaded tails (lean back while crouching) and rebound off a compression
 	# a real ollie adds ~1.5-3 m/s of pop, not a launch: the kicker does the work
 	var strength := 1.6 + 1.9 * charge + 0.7 * tail_load + 0.5 * clampf(compression, 0.0, 1.0)
-	vel += (n * 0.75 + Vector3.UP * 0.25).normalized() * strength
+	var pop_dir := (n * 0.75 + Vector3.UP * 0.25).normalized()
+	if n.y < 0.6 and terrain.pipe_out(position.x, position.z) != Vector2.ZERO:
+		pop_dir = Vector3.UP            # on a pipe wall you pop up out of it, not off it into the middle
+		strength *= 0.45                # ... and the wall already sends you up: a coping pop adds a little
+	vel += pop_dir * strength
 	tail_load = 0.0
 	position.y += 0.05
 	charge = 0.0
@@ -758,10 +800,13 @@ func _take_off(from_jump := false) -> void:
 	if not from_jump and trick_set.x != 0:
 		wind = 0.0              # set but not popped: rolling off the lip doesn't unwind into a spin
 	airborne = true
+	air_up = ground_n                # he leaves square to the snow he took off from
+	_land_probe = 0
 	# superpipe: off the coping you go straight up (a real wall is vertical at the top), not out over
 	# the deck - drop the outward part of the velocity
 	var po := terrain.pipe_out(position.x, position.z)
-	if po != Vector2.ZERO and ground_n.y < 0.6:
+	var pipe_air := po != Vector2.ZERO and ground_n.y < 0.6
+	if pipe_air:
 		var out := Vector3(po.x, 0.0, po.y)
 		var vo := vel.dot(out)
 		if vo > 0.0:
@@ -787,7 +832,9 @@ func _take_off(from_jump := false) -> void:
 	wind = 0.0
 	flip_tuck = 0.0
 	# ... the lip pitches you backward, and leaning at the pop starts a front / back flip
-	flip_vel = clampf(_ground_pitch_rate * 0.35, -1.0, 1.0)
+	# (not in a pipe: rolling over the coping onto the deck would read as a lip and throw every air
+	# into a front flip - flips there come from the arrows only)
+	flip_vel = 0.0 if pipe_air else clampf(_ground_pitch_rate * 0.35, -1.0, 1.0)
 	if from_jump:
 		flip_vel += (_pop_flip if _arrow_trick else lean_fa) * FLIP_POP
 	air_pitch = 0.0
@@ -992,8 +1039,13 @@ func _pick_safe() -> Dictionary:
 # ------------------------------------------------------------------ transforms
 func _compose_xform() -> Transform3D:
 	var up := ground_n if (not airborne and mode == Mode.SKI) else Vector3.UP
+	if airborne and mode == Mode.SKI:
+		up = air_up
 	var f := forward_flat()
-	f = (f - up * f.dot(up)).normalized()
+	f = f - up * f.dot(up)
+	if f.length() < 0.25:
+		f = Vector3.UP - up * up.dot(Vector3.UP)        # heading into a wall: the skis point up it
+	f = f.normalized()
 	var x := f.cross(up).normalized()
 	var b := Basis(x, up, -f)
 	return Transform3D(b, position)
