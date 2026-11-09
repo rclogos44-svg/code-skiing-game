@@ -172,7 +172,7 @@ static func evaluate_jib(info: Dictionary) -> Dictionary:
 	if info["switch"]:
 		parts.append("Switch")
 		points *= 1.2
-	parts.append("50-50" if not slide else {"box": "Box Slide", "tube": "Tube Slide"}.get(info["kind"], "Rail Slide"))
+	parts.append("50-50" if not slide else {"box": "Box Slide", "widebox": "Box Slide", "tube": "Tube Slide"}.get(info["kind"], "Rail Slide"))
 	if slide:
 		points *= 1.3
 	var press := float(info["press"])

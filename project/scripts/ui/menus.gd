@@ -94,9 +94,14 @@ func _build_main() -> void:
 	spacer.custom_minimum_size = Vector2(0, 30)
 	v.add_child(spacer)
 	var parks: Array = terrain.layout.get("parks", [])
+	var pg := GridContainer.new()          # parks two to a row so the menu fits short windows
+	pg.columns = 2
+	pg.add_theme_constant_override("h_separation", 10)
+	pg.add_theme_constant_override("v_separation", 10)
+	v.add_child(pg)
 	for i in parks.size():
 		var idx := str(i)
-		_button(String(parks[i]["name"]), func(): request.emit("park", idx), v)
+		_button(String(parks[i]["name"]), func(): request.emit("park", idx), pg)
 	_button("Settings", func(): show_settings(), v)
 	if not Settings.is_web():
 		_button("Quit", func(): request.emit("quit", ""), v)

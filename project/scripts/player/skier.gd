@@ -1170,7 +1170,7 @@ func _try_mount() -> void:
 			continue
 		var dy := position.y - top.y
 		# boxes and tubes can be ridden onto from the snow, rails need a pop
-		if dy < {"box": -0.42, "tube": -0.62}.get(r["kind"], -0.1) or dy > 0.45:
+		if dy < {"box": -0.42, "widebox": -0.5, "tube": -0.62}.get(r["kind"], -0.1) or dy > 0.45:
 			continue
 		var vh := vel.dot(dir)
 		if absf(vh) < 2.0 or (airborne and vel.y > 1.0):

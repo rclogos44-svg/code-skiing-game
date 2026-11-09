@@ -330,11 +330,11 @@ func _park_kickers() -> void:
 				and land_at < (end - knuckle).dot(d) + 6.0,
 				"%.2f s air, landed %.1f m past the knuckle (landing %.1f m)%s%s" % [max_air, land_at, (end - knuckle).dot(d),
 				(" CRASH " + crash) if crash != "" else "", launch])
-	# the Big Air jump line flows: ridden from the top with no input (after a push-off), every jump
-	# is sized for the speed carried from the one before, so each lands on its landing
+	# the Big Air and Sierra Main Park jump lines flow: ridden from the top with no input (after a
+	# push-off), every jump is sized for the speed carried from the one before, so each lands
 	for pi2 in world.terrain.layout.get("parks", []).size():
 		var pk2: Dictionary = world.terrain.layout["parks"][pi2]
-		if pk2["name"] != "Big Air Park":
+		if not (pk2["name"] in ["Big Air Park", "Sierra Main Park"]):
 			continue
 		var rows := _ride_line(pi2, "jump", 6.0)
 		var ok := rows.size() == (pk2["kickers"] as Array).filter(func(k): return k["line"] == "jump").size()
@@ -342,7 +342,7 @@ func _park_kickers() -> void:
 		for r in rows:
 			ok = ok and r["crash"] == "" and float(r["air"]) > 0.5 and float(r["land"]) > -1.0 and float(r["land"]) < float(r["landing"]) + 1.0
 			desc.append("%s %.1f m/s %.1fs @%.1f/%.1f%s" % [r["size"], r["v_in"], r["air"], r["land"], r["landing"], (" " + r["crash"]) if r["crash"] != "" else ""])
-		check("Big Air jump line ridden top to bottom: all %d jumps land on their landings" % rows.size(), ok, ", ".join(desc))
+		check("%s jump line ridden top to bottom: all %d jumps land on their landings" % [pk2["name"], rows.size()], ok, ", ".join(desc))
 	# pole push: tips go into the snow and stay there while planted; speed comes in strokes
 	var stp: Dictionary = world.park.park_start(0)
 	s.teleport(stp["pos"], stp["yaw"])
@@ -793,6 +793,23 @@ func _jibs() -> void:
 		return {"steer_right": clampf(c, 0.0, 1.0), "steer_left": clampf(-c, 0.0, 1.0)}
 	var r5 := _jib_run(longest, 10.0, 6.0, balancer, 0.0, false, 0.25)
 	check("Realistic: balancing with A/D reaches the end", r5["info"].get("how", "") == "end", "%s %s, %.1f s" % [r5["info"].get("how", ""), r5["crash"], float(r5["info"].get("time", 0.0))])
+	# Sierra Main Park: the wide car box rides on from the snow; the long lift-tower rail takes a pop
+	s.difficulty = 0
+	var wides: Array = park.rails.filter(func(r): return r["kind"] == "widebox")
+	if not wides.is_empty():
+		var rw := _jib_run(wides[0], 10.0, 8.0, none)
+		check("wide car box: ride on from the snow and slide to the end", rw["mounted"] and rw["info"].get("how", "") == "end",
+			"%s, %.1f s" % [rw["info"].get("how", "no slide"), float(rw["info"].get("time", 0.0))])
+	var long_rail: Dictionary = rls[0]
+	for r in rls:
+		if float(r["length"]) > float(long_rail["length"]):
+			long_rail = r
+	var lpop := func(sk: Skier):
+		var dist: float = (long_rail["a"] as Vector3 - sk.position).dot((long_rail["b"] - long_rail["a"]).normalized())
+		return {"jump": 1.0} if dist > 4.0 else {}
+	var rl := _jib_run(long_rail, 11.0, 9.0, lpop)
+	check("long %.0f m lift-tower rail: pop on and slide it out" % float(long_rail["length"]), rl["mounted"] and rl["crash"] == "",
+		"%s, %.1f s %s" % [rl["info"].get("how", "no slide"), float(rl["info"].get("time", 0.0)), rl["crash"]])
 	s.difficulty = 1
 	var r6 := _jib_run(boxes[0], 0.0, 7.0, none, PI * 0.5, true)
 	check("landing across a box gives a slide", r6["mounted"] and r6["slide"], str(TrickSystem.evaluate_jib(r6["info"]).get("name", "")) if not r6["info"].is_empty() else r6["crash"])

@@ -577,3 +577,13 @@ no map, parks, keep the ragdoll crashes, black baggy gear, only flips, spins and
   reaching forward and down, left arm up and back. Elbow 149 deg, hand on the ski (gap 0).
   Solver: per-pose "pitch_max" (the Japan may bend the spine to 90, others stay at 70). The grab
   preview prints joint positions in the skier's root frame. Physics 106/106.
+- New 4th park, "Sierra Main Park", laid out after Mammoth Mountain's Main Park (Unbound): a jump
+  line of four XL tables down the middle (5 m, 10 m ramps, 17-30 m decks, 17.4 m landings on its
+  16 deg slope), 15-17 m from each landing to the next ramp, each sized for the speed carried from
+  the jump before (58 -> 71 km/h) so a straight run lands every jump ~7 m down the landing; two jib
+  lines top to bottom with 16 features - down rails, boxes, tubes, a 19 m "lift-tower" rail and
+  two wide "car boxes" (new feature: 1.2 m wide, blue). Sources were older/mixed, so it follows
+  the park's plan rather than exact sizes; superpipe, wallrides and hips left out. New site found
+  by the generator (regrade + trees/rocks there); the other parks are unchanged. Main menu shows
+  the parks two to a row so it still fits short windows. Physics 115/115 incl. the Sierra line
+  ridden top to bottom, each XL from its approach speed, the car box and the long rail.

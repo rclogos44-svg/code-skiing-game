@@ -65,6 +65,17 @@ DESIGNS = [
         ("jib", "box", 70, 9.0), ("jib", "rail", 140, 9.0), ("jib", "tube", 210, 10.0), ("jib", "rail", 280, 12.0),
         ("jib", "box", 350, 12.0), ("jib", "rail", 420, 14.0),
     ]),
+    # after Mammoth Mountain's Main Park (Unbound): a line of four XL tables down the middle (sized
+    # for the speed carried from the jump before), jibs top to bottom on both sides - down rails,
+    # boxes, tubes, a wide "car box" and a long "lift-tower" rail on the advanced side
+    ("Sierra Main Park", [
+        ("prog", "box", 60, 8.0), ("prog", "rail", 110, 8.0), ("prog", "widebox", 160, 6.0), ("prog", "tube", 210, 9.0),
+        ("prog", "box", 260, 12.0), ("prog", "rail", 320, 10.0), ("prog", "box", 380, 10.0), ("prog", "rail", 440, 12.0),
+        ("jump", "kicker", 90, ("XL", 16.1, 13.1, 1.13)), ("jump", "kicker", 150, ("XL", 18.1, 15.3, 2.53)),
+        ("jump", "kicker", 218, ("XL", 19.1, 16.4, 3.21)), ("jump", "kicker", 290, ("XL", 19.7, 17.0, 3.84)),
+        ("jib", "rail", 60, 10.0), ("jib", "rail", 110, 18.0), ("jib", "tube", 180, 12.0), ("jib", "rail", 240, 14.0),
+        ("jib", "widebox", 300, 8.0), ("jib", "rail", 350, 12.0), ("jib", "tube", 410, 10.0), ("jib", "rail", 460, 16.0),
+    ]),
 ]
 
 

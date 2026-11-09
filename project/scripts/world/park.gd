@@ -3,8 +3,8 @@ extends Node3D
 ## marks kicker lips and knuckles in orange, puts flags and the park name at the staging area and
 ## tip boards along the progression line.  The skier slides `rails` (see Skier._try_mount).
 
-const HEIGHT := {"box": 0.35, "rail": 0.55, "tube": 0.5}
-const WIDTH := {"box": 0.5, "rail": 0.07, "tube": 0.7}
+const HEIGHT := {"box": 0.35, "rail": 0.55, "tube": 0.5, "widebox": 0.45}
+const WIDTH := {"box": 0.5, "rail": 0.07, "tube": 0.7, "widebox": 1.2}   # widebox: a wide "car box"
 const ORANGE := Color(1.0, 0.42, 0.05)
 
 var terrain: TerrainData
@@ -85,12 +85,12 @@ func _add_feature(kind: String, a2: Vector2, b2: Vector2, obstacles: Obstacles, 
 	deck.generate_normals()
 	var body := MeshInstance3D.new()
 	body.mesh = st.commit()
-	body.material_override = _mat({"box": ORANGE, "tube": Color(0.2, 0.2, 0.22), "rail": Color(0.15, 0.15, 0.17)}[kind], 0.5)
+	body.material_override = _mat({"box": ORANGE, "widebox": Color(0.12, 0.35, 0.75), "tube": Color(0.2, 0.2, 0.22), "rail": Color(0.15, 0.15, 0.17)}[kind], 0.5)
 	add_child(body)
 	var top := MeshInstance3D.new()
 	top.mesh = deck.commit()
-	top.material_override = _mat({"box": Color(0.92, 0.93, 0.95), "tube": Color(0.75, 0.77, 0.8), "rail": Color(0.95, 0.85, 0.15)}[kind],
-		0.25, 0.6 if kind != "box" else 0.0)
+	top.material_override = _mat({"box": Color(0.92, 0.93, 0.95), "widebox": Color(0.92, 0.93, 0.95), "tube": Color(0.75, 0.77, 0.8), "rail": Color(0.95, 0.85, 0.15)}[kind],
+		0.25, 0.6 if not kind.ends_with("box") else 0.0)
 	add_child(top)
 
 
