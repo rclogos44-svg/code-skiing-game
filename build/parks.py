@@ -20,7 +20,7 @@ LANDING_DEG = 32.0       # landing slope, absolute
 SWEET = 0.4              # design touchdown point, as a fraction of the landing
 
 
-def kicker_geometry(size, theta_deg, speeds=None):
+def kicker_geometry(size, theta_deg, speeds=None, h2=None):
     """Ramp / deck / landing lengths for a tabletop on a slope of theta: the ramp curves up to the lip
     angle, the landing is LANDING_DEG steep, and the deck is just long enough that a skier leaving the
     lip at the measured lip speed touches down SWEET of the way down the landing.  `speeds` overrides
@@ -29,18 +29,39 @@ def kicker_geometry(size, theta_deg, speeds=None):
     h, alpha, v_app, v, hw = KICKERS[size]
     if speeds:
         v_app, v = speeds
+    h2 = h if h2 is None else h2                          # knuckle height: lower than the lip = step-down
     th = math.radians(theta_deg)
     s_end = math.tan(math.radians(alpha) + th)
     lr = 2.0 * h / s_end                                  # parabolic ramp: height h, end slope s_end
-    ll = h / math.tan(math.radians(LANDING_DEG - theta_deg))
+    ll = h2 / math.tan(math.radians(LANDING_DEG - theta_deg))
     al = math.atan(s_end - math.tan(th)) - math.radians(3.0)   # world launch angle (skier leaves ~3 deg flat)
     a = 9.81 / (2.0 * v * v * math.cos(al) ** 2)
     b = math.tan(al) + math.tan(th)
-    c = SWEET * h
+    c = (h - h2) + SWEET * h2
     xt = (b + math.sqrt(b * b + 4.0 * a * c)) / (2.0 * a)
     ld = max(xt - SWEET * ll, 2.0)
-    return dict(height=h, ramp=round(lr, 2), deck=round(ld, 2), landing=round(ll, 2), half_width=hw,
-                lip_deg=alpha, speed=v, approach_speed=v_app)
+    g = dict(height=h, ramp=round(lr, 2), deck=round(ld, 2), landing=round(ll, 2), half_width=hw,
+             lip_deg=alpha, speed=v, approach_speed=v_app)
+    if h2 != h:
+        g["knuckle_h"] = h2
+    return g
+# superpipes (s0, s1 down the park, centred on lane u): flat bottom, quarter-circle walls of radius
+# `radius` that steepen to `wall_deg` at the top (a heightfield can't hold a true vertical; the game
+# sends riders straight up off the coping), a flat deck behind the coping and an outer bank back down
+PIPE = dict(flat=18.0, radius=7.5, wall_deg=84.0, deck=3.0, outer=12.0, taper=25.0)
+PIPES = {"Sierra Main Park": [(378.0, 548.0, 0.0)]}
+
+
+def pipe_geometry(s0, s1, u, x0, z0, dx, dz):
+    g = dict(PIPE)
+    th = math.radians(g["wall_deg"])
+    g["wall_h"] = round(g["radius"] * (1.0 - math.cos(th)), 3)
+    g["wall_w"] = round(g["radius"] * math.sin(th), 3)
+    g.update(origin=[round(x0 + dx * s0 - dz * u, 2), round(z0 + dz * s0 + dx * u, 2)], dir=[dx, dz], length=s1 - s0,
+             start_s=s0)
+    return g
+
+
 # per park: (line, kind, start metres down the park, size or length)
 DESIGNS = [
     ("Main Park", [
@@ -65,17 +86,24 @@ DESIGNS = [
         ("jib", "box", 70, 9.0), ("jib", "rail", 140, 9.0), ("jib", "tube", 210, 10.0), ("jib", "rail", 280, 12.0),
         ("jib", "box", 350, 12.0), ("jib", "rail", 420, 14.0),
     ]),
-    # after Mammoth Mountain's Main Park (Unbound): a line of four XL tables down the middle (sized
-    # for the speed carried from the jump before), jibs top to bottom on both sides - down rails,
-    # boxes, tubes, a wide "car box" and a long "lift-tower" rail on the advanced side
+    # after Mammoth Mountain's Main Park (Unbound): five lanes side by side - jibs on both edges, a
+    # medium jump line ending in a step-down, the XL line down the middle (each jump sized for the
+    # speed carried from the one before), and a transfer lane of hips that kick you left and right
+    # across it; the mega pipe fills the bottom of the run (pipes, below)
     ("Sierra Main Park", [
-        ("prog", "box", 60, 8.0), ("prog", "rail", 110, 8.0), ("prog", "widebox", 160, 6.0), ("prog", "tube", 210, 9.0),
-        ("prog", "box", 260, 12.0), ("prog", "rail", 320, 10.0), ("prog", "box", 380, 10.0), ("prog", "rail", 440, 12.0),
+        ("jib_l", "box", 50, 8.0), ("jib_l", "rail", 95, 8.0), ("jib_l", "widebox", 140, 6.0), ("jib_l", "tube", 185, 9.0),
+        ("jib_l", "box", 235, 12.0), ("jib_l", "rail", 290, 10.0), ("jib_l", "box", 345, 10.0), ("jib_l", "rail", 400, 12.0),
+        ("jib_l", "rail", 455, 14.0), ("jib_l", "box", 505, 10.0),
+        ("med", "kicker", 55, "M"), ("med", "kicker", 105, "M"), ("med", "kicker", 165, "L"),
+        ("med", "kicker", 235, "L", {"h2": 1.6}),
         ("jump", "kicker", 90, ("XL", 16.1, 13.1, 1.13)), ("jump", "kicker", 150, ("XL", 18.1, 15.3, 2.53)),
         ("jump", "kicker", 218, ("XL", 19.1, 16.4, 3.21)), ("jump", "kicker", 290, ("XL", 19.7, 17.0, 3.84)),
-        ("jib", "rail", 60, 10.0), ("jib", "rail", 110, 18.0), ("jib", "tube", 180, 12.0), ("jib", "rail", 240, 14.0),
-        ("jib", "widebox", 300, 8.0), ("jib", "rail", 350, 12.0), ("jib", "tube", 410, 10.0), ("jib", "rail", 460, 16.0),
-    ]),
+        ("hip", "kicker", 60, "M", {"u": 21.0, "yaw": 22.0}), ("hip", "kicker", 140, "M", {"u": 37.0, "yaw": -22.0}),
+        ("hip", "kicker", 220, "L", {"u": 21.0, "yaw": 22.0}), ("hip", "kicker", 300, "M", {"u": 33.0, "h2": 1.0}),
+        ("jib", "rail", 55, 10.0), ("jib", "rail", 100, 18.0), ("jib", "tube", 165, 12.0), ("jib", "rail", 225, 14.0),
+        ("jib", "widebox", 285, 8.0), ("jib", "rail", 335, 12.0), ("jib", "tube", 390, 10.0), ("jib", "rail", 440, 16.0),
+        ("jib", "box", 500, 10.0),
+    ], {"jib_l": -50.0, "med": -27.0, "jump": 0.0, "hip": 27.0, "jib": 50.0}),
 ]
 
 
@@ -121,7 +149,9 @@ def find_sites(g, H, lay, placer, count):
 
 def apply_parks(g, H, lay, groomed, placer):
     parks = []
-    for (score, x0, z0, dx, dz, h0, slope), (name, design) in zip(find_sites(g, H, lay, placer, len(DESIGNS)), DESIGNS):
+    for (score, x0, z0, dx, dz, h0, slope), entry in zip(find_sites(g, H, lay, placer, len(DESIGNS)), DESIGNS):
+        name, design = entry[0], entry[1]
+        lines = entry[2] if len(entry) > 2 else LINES
         theta = math.radians(min(max(slope, 11.0), 16.0))
         pad = HALF_W + BLEND + 10.0
         r = LENGTH + STAGE + 80.0
@@ -144,27 +174,38 @@ def apply_parks(g, H, lay, groomed, placer):
         H[i0:i1 + 1, j0:j1 + 1] = sub * (1 - w) + target * w
         groomed[i0:i1 + 1, j0:j1 + 1] = np.maximum(groomed[i0:i1 + 1, j0:j1 + 1], g.smoothstep(HALF_W + 12.0, HALF_W, np.abs(Ug)) * (Sg > -STAGE - 10))
         kickers, rails, tips = [], [], []
-        for line, kind, s0, arg in design:
-            uc = LINES[line]
+        for item in design:
+            line, kind, s0, arg = item[:4]
+            opt = item[4] if len(item) > 4 else {}
+            uc = float(opt.get("u", lines[line]))
             if kind == "kicker":
-                # kickers are exact shapes the game adds on top of the regraded slope (sharper than the 2 m grid)
+                # kickers are exact shapes the game adds on top of the regraded slope (sharper than the 2 m grid);
+                # opt: "u" lateral position, "yaw" (deg, + toward the park's right) for a hip / transfer jump,
+                # "h2" knuckle height below the lip for a step-down
                 size, speeds = (arg[0], arg[1:3]) if isinstance(arg, tuple) else (arg, None)
-                kg = kicker_geometry(size, math.degrees(theta), speeds)
+                yaw = math.radians(float(opt.get("yaw", 0.0)))
+                kdx = dx * math.cos(yaw) - dz * math.sin(yaw)
+                kdz = dz * math.cos(yaw) + dx * math.sin(yaw)
+                th_k = math.degrees(math.atan(math.tan(theta) * math.cos(yaw)))    # fall along the kicker
+                kg = kicker_geometry(size, th_k, speeds, opt.get("h2"))
                 if isinstance(arg, tuple) and len(arg) > 3:
                     kg["deck"] = round(max(kg["deck"] - arg[3], 2.0), 2)
-                arg = size
-                pt = lambda s: [round(x0 + dx * s - dz * uc, 2), round(z0 + dz * s + dx * uc, 2)]
-                kg.update(line=line, size=arg, start_s=s0, dir=[dx, dz], origin=pt(s0), lip=pt(s0 + kg["ramp"]),
-                          knuckle=pt(s0 + kg["ramp"] + kg["deck"]), end=pt(s0 + kg["ramp"] + kg["deck"] + kg["landing"]))
+                ox, oz = x0 + dx * s0 - dz * uc, z0 + dz * s0 + dx * uc
+                pt = lambda t: [round(ox + kdx * t, 2), round(oz + kdz * t, 2)]
+                kg.update(line=line, size=size, start_s=s0, dir=[kdx, kdz], origin=pt(0.0), lip=pt(kg["ramp"]),
+                          knuckle=pt(kg["ramp"] + kg["deck"]), end=pt(kg["ramp"] + kg["deck"] + kg["landing"]))
+                if yaw != 0.0:
+                    kg["yaw"] = float(opt["yaw"])
                 kickers.append(kg)
             else:
                 a = (x0 + dx * s0 - dz * uc, z0 + dz * s0 + dx * uc)
                 b = (x0 + dx * (s0 + arg) - dz * uc, z0 + dz * (s0 + arg) + dx * uc)
                 rails.append([round(a[0], 2), round(a[1], 2), round(b[0], 2), round(b[1], 2), kind, line])
+        pipes = [pipe_geometry(a, b, u, x0, z0, dx, dz) for a, b, u in PIPES.get(name, [])]
         sx, sz = x0 - dx * 14.0, z0 - dz * 14.0           # spawn near the drop-in so you roll straight in
         parks.append(dict(name=name, start=[round(sx, 1), round(sz, 1), float(g.sample(H, sx, sz))], yaw=math.atan2(-dx, -dz),
                           origin=[round(x0, 1), round(z0, 1)], dir=[dx, dz], slope=round(math.degrees(theta), 1),
-                          length=LENGTH, half_width=HALF_W, lines=LINES, kickers=kickers, rails=rails))
+                          length=LENGTH, half_width=HALF_W, lines=lines, kickers=kickers, rails=rails, pipes=pipes))
         placer.take(x0 + dx * LENGTH * 0.5, z0 + dz * LENGTH * 0.5, LENGTH * 0.5 + 60.0)
         g.log("park %s at (%.0f, %.0f) slope %.1f deg, fit rms %.1f m" % (name, x0, z0, math.degrees(theta), score))
     lay["parks"] = parks

@@ -598,3 +598,20 @@ no map, parks, keep the ragdoll crashes, black baggy gear, only flips, spins and
   swings but barely stretches along the body; offsets are clamped (hem 12 cm, hood 12 cm, sleeves
   5 cm). Works on the web (GL compatibility) - plain per-material uniforms. New physics check: at
   40 km/h the hem (3 cm) and hood (12 cm) blow back. Physics 116/116.
+- Sierra Main Park rebuilt as five lanes (per-park lane positions in parks.py): a jib line on each
+  edge (19 features incl. the 19 m lift-tower rail and wide car boxes), a medium jump line (M, M,
+  L, then an L step-down whose deck drops to a 1.6 m knuckle), the four flowing XL tables in the
+  middle, and a transfer lane of hips that kick you right / left / right across it (tables turned
+  22 deg off the fall line; slope along the kicker accounted for) ending in an M step-down. The
+  medium line and hips use standard sizes - at this 16 deg pitch you arrive at 55-70 km/h, so you
+  scrub speed to the sign; the XL line flows at full speed. Signs read HIP RIGHT / HIP LEFT /
+  STEP-DOWN; lane signs at the drop-in (MEDIUM JUMPS, XL LINE, TRANSFERS, JIB LINE).
+- Mega pipe: a 170 m superpipe across the bottom of the run - 18 m flat bottom, 7.5 m-radius walls
+  steepening to 84 deg at a 6.7 m (22 ft) coping, 3 m decks, outer banks, tapering in at the top.
+  Analytic shape like the kickers (TerrainData.pipe_offset) with its own snow mesh and blue coping
+  lines. Physics: pipe walls aren't "rock" and don't trigger the cliff crash; climbing a wall
+  costs speed exactly (the heightfield's correction used to add free height); off the coping you
+  go straight up (the outward velocity is dropped, as a vertical top would) and the skis follow
+  your line along the wall; a landing with no horizontal speed can't count as sideways. New
+  checks: ride across the flat into the wall, air ~1.8 m above the coping and land back in; wall
+  to wall, 4 hits, none crash. --test=pipe prints a trace for tuning. Physics 126/126.

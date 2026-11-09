@@ -443,7 +443,7 @@ func step(dt: float) -> void:
 		ground_n = n
 		surface = terrain.surface_at(p.x, p.z)
 		slope = rad_to_deg(acos(clampf(n.y, -1.0, 1.0)))
-		rock = smoothstep(46.0, 56.0, slope)
+		rock = smoothstep(46.0, 56.0, slope) * (0.0 if terrain.feature_offset(p.x, p.z) > 0.05 else 1.0)  # pipe walls are snow
 
 	if airborne:
 		_air_step(dt, spin_in, lean_in)
@@ -455,6 +455,11 @@ func step(dt: float) -> void:
 	var h2 := terrain.height(p.x, p.z)
 	var n2 := _snow_normal(p)
 	if p.y <= h2:
+		if not airborne and terrain.pipe_offset(p.x, p.z) > 0.0:
+			# pipe wall: lifting the skier back onto the curve costs speed (otherwise each step's
+			# correction is free height and he'd climb higher than his speed allows)
+			var climb := h2 - p.y
+			vel *= sqrt(maxf(vel.length_squared() - 2.0 * G * climb, 0.0)) / maxf(vel.length(), 0.001)
 		p.y = h2
 		var vn := vel.dot(n2)
 		if airborne:
@@ -491,7 +496,7 @@ func step(dt: float) -> void:
 ## Ground normal: smoothed over 2.4 m on the mountain, but tight on park kickers so the lip's angle
 ## isn't averaged away with the flat deck behind it.
 func _snow_normal(p: Vector3) -> Vector3:
-	return terrain.normal(p.x, p.z, 0.25 if terrain.kicker_offset(p.x, p.z) > 0.0 else 1.2)
+	return terrain.normal(p.x, p.z, 0.25 if terrain.feature_offset(p.x, p.z) > 0.0 else 1.2)
 
 
 func _measure_turn(dt: float) -> void:
@@ -628,7 +633,7 @@ func _ground_step(dt: float, n: Vector3, cf: float) -> void:
 	if (vel - n * vel.dot(n)).length() < 0.35 and (absf(gt.dot(f)) < 0.06 * G or brake > 0.5) and pushing == 0.0:
 		vel = n * minf(vel.dot(n), 0.0)
 	# --- losing control on extreme faces
-	if slope > 60.0 and sp > 6.0:
+	if slope > 60.0 and sp > 6.0 and terrain.pipe_offset(position.x, position.z) <= 0.0:   # pipe walls are meant to be ridden
 		steep_time += dt
 		if steep_time > 0.6:
 			crash("Lost control on a cliff face")
@@ -753,6 +758,19 @@ func _take_off(from_jump := false) -> void:
 	if not from_jump and trick_set.x != 0:
 		wind = 0.0              # set but not popped: rolling off the lip doesn't unwind into a spin
 	airborne = true
+	# superpipe: off the coping you go straight up (a real wall is vertical at the top), not out over
+	# the deck - drop the outward part of the velocity
+	var po := terrain.pipe_out(position.x, position.z)
+	if po != Vector2.ZERO and ground_n.y < 0.6:
+		var out := Vector3(po.x, 0.0, po.y)
+		var vo := vel.dot(out)
+		if vo > 0.0:
+			vel -= out * vo
+		# the skis point the way he's actually going along the wall (heading is a yaw, and on a near-
+		# vertical wall it lags the travel); straight up, it stays as it was
+		var hz := Vector2(vel.x, vel.z)
+		if hz.length() > 1.0:
+			heading = yaw_of(vel)
 	air_time = 0.0
 	air_rotation = 0.0
 	grab_time_l = 0.0
@@ -790,7 +808,9 @@ func _land(n: Vector3, impact: float) -> void:
 		_brake_block = true          # S was a grab key on this jump: no hockey stop until it's re-pressed
 	var hv := vel - n * vel.dot(n)
 	var sp := hv.length()
-	var vel_yaw := yaw_of(hv) if sp > 0.5 else heading
+	# travel direction from the horizontal part only: coming straight down a pipe wall there is none
+	# to speak of, and the skis can't be "sideways" to it
+	var vel_yaw := yaw_of(hv) if Vector2(hv.x, hv.z).length() > 1.0 else heading
 	var diff := wrapf(heading - vel_yaw, -PI, PI)
 	var adiff := absf(diff)
 	var is_switch := adiff > PI * 0.5

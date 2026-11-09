@@ -69,13 +69,21 @@ func load_data(base := "res://world/") -> bool:
 	return true
 
 
+var _pipes: Array = []        # superpipes: {o, d, len, hf (half flat), r, ww, wh, deck, outer, taper}
+
+
 func _load_kickers() -> void:
+	for pk in layout.get("parks", []):
+		for pp in pk.get("pipes", []):
+			_pipes.append({"o": Vector2(pp["origin"][0], pp["origin"][1]), "d": Vector2(pp["dir"][0], pp["dir"][1]).normalized(),
+				"len": float(pp["length"]), "hf": float(pp["flat"]) * 0.5, "r": float(pp["radius"]), "ww": float(pp["wall_w"]),
+				"wh": float(pp["wall_h"]), "deck": float(pp["deck"]), "outer": float(pp["outer"]), "taper": float(pp["taper"])})
 	for pk in layout.get("parks", []):
 		for k in pk["kickers"]:
 			var o := Vector2(k["origin"][0], k["origin"][1])
 			var d := Vector2(k["dir"][0], k["dir"][1]).normalized()
 			var kk := {"o": o, "d": d, "h": float(k["height"]), "lr": float(k["ramp"]), "ld": float(k["deck"]),
-				"ll": float(k["landing"]), "hw": float(k["half_width"])}
+				"ll": float(k["landing"]), "hw": float(k["half_width"]), "h2": float(k.get("knuckle_h", k["height"]))}
 			var idx := _kickers.size()
 			_kickers.append(kk)
 			var total: float = kk["lr"] + kk["ld"] + kk["ll"]
@@ -112,13 +120,14 @@ func kicker_offset(x: float, z: float) -> float:
 		var lr: float = k["lr"]
 		var ld: float = k["ld"]
 		var ll: float = k["ll"]
+		var h2: float = k["h2"]        # knuckle height: below the lip on a step-down (the deck slopes down)
 		var y := 0.0
 		if t < lr:
 			y = h * (t / lr) * (t / lr)
 		elif t < lr + ld:
-			y = h
+			y = lerpf(h, h2, (t - lr) / ld)
 		elif t < lr + ld + ll:
-			y = h * (1.0 - (t - lr - ld) / ll)
+			y = h2 * (1.0 - (t - lr - ld) / ll)
 		y *= clampf((hw + 2.0 - u) * 0.5, 0.0, 1.0)
 		best = maxf(best, y)
 	return best
@@ -145,9 +154,62 @@ func in_core(x: float, z: float) -> bool:
 	return x >= 0.0 and z >= 0.0 and x <= world and z <= world
 
 
-## Ground height (m): heightmap plus park kickers.
+## Ground height (m): heightmap plus park kickers and pipes.
 func height(x: float, z: float) -> float:
-	return base_height(x, z) + (kicker_offset(x, z) if not _kick_cells.is_empty() else 0.0)
+	return base_height(x, z) + feature_offset(x, z)
+
+
+## Height of the park's shaped snow (kickers, pipe walls) above the regraded slope.
+func feature_offset(x: float, z: float) -> float:
+	var k := kicker_offset(x, z) if not _kick_cells.is_empty() else 0.0
+	return maxf(k, pipe_offset(x, z)) if not _pipes.is_empty() else k
+
+
+## Superpipe walls: flat bottom, quarter-circle transitions steepening to the coping, a deck, an
+## outer bank.  The walls grow in over `taper` m at the top and fade out at the bottom.
+func pipe_offset(x: float, z: float) -> float:
+	var best := 0.0
+	for pp in _pipes:
+		var rel := Vector2(x, z) - (pp["o"] as Vector2)
+		var d: Vector2 = pp["d"]
+		var t := rel.dot(d)
+		var ln: float = pp["len"]
+		if t < 0.0 or t > ln + 15.0:
+			continue
+		var a := absf(rel.x * -d.y + rel.y * d.x) - float(pp["hf"])
+		if a <= 0.0:
+			continue
+		var r: float = pp["r"]
+		var ww: float = pp["ww"]
+		var wh: float = pp["wh"]
+		var y := 0.0
+		if a < ww:
+			y = r - sqrt(maxf(r * r - a * a, 0.0))
+		elif a < ww + float(pp["deck"]):
+			y = wh
+		elif a < ww + float(pp["deck"]) + float(pp["outer"]):
+			y = wh * (1.0 - (a - ww - float(pp["deck"])) / float(pp["outer"]))
+		else:
+			continue
+		y *= smoothstep(0.0, float(pp["taper"]), t) * smoothstep(ln + 15.0, ln, t)
+		best = maxf(best, y)
+	return best
+
+
+## Unit vector across the pipe pointing out toward the nearer wall (x, z), or ZERO outside a pipe's
+## walls - used to send riders straight up off the coping.
+func pipe_out(x: float, z: float) -> Vector2:
+	for pp in _pipes:
+		var rel := Vector2(x, z) - (pp["o"] as Vector2)
+		var d: Vector2 = pp["d"]
+		var t := rel.dot(d)
+		if t < 0.0 or t > float(pp["len"]) + 15.0:
+			continue
+		var side := Vector2(-d.y, d.x)
+		var u := rel.dot(side)
+		if absf(u) > float(pp["hf"]) and absf(u) < float(pp["hf"]) + float(pp["ww"]) + float(pp["deck"]) + 1.0:
+			return side * signf(u)
+	return Vector2.ZERO
 
 
 ## Bilinear heightmap height (m). Outside the core the 32 m backdrop grid is used.

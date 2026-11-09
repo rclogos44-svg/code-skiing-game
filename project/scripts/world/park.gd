@@ -24,6 +24,8 @@ func setup(td: TerrainData, obstacles: Obstacles) -> void:
 		for k in pk["kickers"]:
 			_kicker_mesh(k)
 			_mark_kicker(k, pk)
+		for pp in pk.get("pipes", []):
+			_pipe_mesh(pp)
 		_staging(pk)
 
 
@@ -147,9 +149,77 @@ func _kicker_mesh(k: Dictionary) -> void:
 	add_child(mi)
 
 
+## Snow surface of a superpipe (TerrainData.pipe_offset gives its shape over the plain slope): a
+## grid fine across the transitions, with a blue line along each coping.
+func _pipe_mesh(pp: Dictionary) -> void:
+	var o := Vector3(pp["origin"][0], 0, pp["origin"][1])
+	var d := Vector3(pp["dir"][0], 0, pp["dir"][1]).normalized()
+	var side := d.cross(Vector3.UP)
+	var hf := float(pp["flat"]) * 0.5
+	var ww := float(pp["wall_w"])
+	var outer := hf + ww + float(pp["deck"]) + float(pp["outer"]) + 1.0
+	var ts: Array[float] = []
+	var t := -2.0
+	while t < float(pp["length"]) + 17.0:
+		ts.append(t)
+		t += 1.5
+	var us: Array[float] = []
+	var u := hf - 1.0
+	while u < outer:
+		us.append(u)
+		u += 0.35 if u < hf + ww + 0.5 else 1.0
+	var all_u: Array[float] = []
+	for i in range(us.size() - 1, -1, -1):
+		all_u.append(-us[i])
+	all_u.append_array(us)
+	var verts := PackedVector3Array()
+	var norms := PackedVector3Array()
+	for tt in ts:
+		for uu in all_u:
+			var q := o + d * tt + side * uu
+			verts.append(Vector3(q.x, terrain.height(q.x, q.z) + 0.03, q.z))
+			norms.append(terrain.normal(q.x, q.z, 0.15))
+	var idx := PackedInt32Array()
+	var nu := all_u.size()
+	for i in ts.size() - 1:
+		for j in nu - 1:
+			var a := i * nu + j
+			idx.append_array([a, a + nu, a + 1, a + 1, a + nu, a + nu + 1])
+	var arr := []
+	arr.resize(Mesh.ARRAY_MAX)
+	arr[Mesh.ARRAY_VERTEX] = verts
+	arr[Mesh.ARRAY_NORMAL] = norms
+	arr[Mesh.ARRAY_INDEX] = idx
+	var am := ArrayMesh.new()
+	am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+	var mi := MeshInstance3D.new()
+	mi.mesh = am
+	mi.material_override = _snow
+	add_child(mi)
+	# blue coping lines so the top of each wall reads from below
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for sg: float in [-1.0, 1.0]:
+		var prev := Vector3.ZERO
+		var tt2 := 0.0
+		while tt2 <= float(pp["length"]):
+			var q := o + d * tt2 + side * (sg * (hf + ww + 0.1))
+			q.y = terrain.height(q.x, q.z) + 0.05
+			if tt2 > 0.0:
+				_quad(st, prev - side * 0.12, q - side * 0.12, q + side * 0.12, prev + side * 0.12)
+			prev = q
+			tt2 += 2.0
+	st.generate_normals()
+	var cl := MeshInstance3D.new()
+	cl.mesh = st.commit()
+	cl.material_override = _mat(Color(0.1, 0.35, 0.85), 0.6)
+	add_child(cl)
+	_sign(o - d * 6.0 + side * (hf + ww + 6.0) + Vector3.UP * 2.0, "MEGA PIPE · 22 FT", 60, Color(1, 1, 1))
+
+
 ## Orange lines across the lip and the knuckle so the take-off and landing read from a distance.
 func _mark_kicker(k: Dictionary, pk: Dictionary) -> void:
-	var d := Vector3(pk["dir"][0], 0, pk["dir"][1])
+	var d := Vector3(k["dir"][0], 0, k["dir"][1]).normalized()     # a hip points off the fall line
 	var side := d.cross(Vector3.UP)
 	var hw := float(k["half_width"])
 	var st := SurfaceTool.new()
@@ -171,7 +241,7 @@ func _mark_kicker(k: Dictionary, pk: Dictionary) -> void:
 	mi.mesh = st.commit()
 	mi.material_override = _mat(ORANGE, 0.6)
 	add_child(mi)
-	if k["line"] == "prog" or k["line"] == "jump":
+	if k["line"] in ["prog", "jump", "med", "hip"]:
 		var tip := c_label(k)
 		if tip != "":
 			_sign(Vector3(k["lip"][0], 0, k["lip"][1]) - d * 14.0 + side * (hw + 4.0), tip, 34, Color(1, 1, 1))
@@ -179,7 +249,12 @@ func _mark_kicker(k: Dictionary, pk: Dictionary) -> void:
 
 func c_label(k: Dictionary) -> String:
 	if k["line"] != "prog":
-		return "%s JUMP · %d KM/H" % [{"S": "SMALL", "M": "MEDIUM", "L": "LARGE", "XL": "XL"}[k["size"]], roundi(float(k["approach_speed"]) * 3.6)]
+		var what := "JUMP"
+		if absf(float(k.get("yaw", 0.0))) > 1.0:
+			what = "HIP " + ("RIGHT" if float(k["yaw"]) > 0.0 else "LEFT")
+		elif k.has("knuckle_h"):
+			what = "STEP-DOWN"
+		return "%s %s · %d KM/H" % [{"S": "SMALL", "M": "MEDIUM", "L": "LARGE", "XL": "XL"}[k["size"]], what, roundi(float(k["approach_speed"]) * 3.6)]
 	return "HOLD ↑ · LET GO AT THE LIP TO POP" if float(k["start_s"]) < 100.0 else "HOLD ↑ · PRESS ↓ AT THE LIP: BACKFLIP"
 
 
@@ -189,7 +264,10 @@ func _staging(pk: Dictionary) -> void:
 	var s := Vector3(pk["start"][0], 0, pk["start"][1])
 	_sign(s + d * 10.0 + Vector3.UP * 2.0, String(pk["name"]).to_upper(), 110, Color(1.0, 0.75, 0.25))
 	var lines: Dictionary = pk["lines"]
-	var names := {"prog": "PROGRESSION", "jump": "JUMP LINE", "jib": "JIB LINE"}
+	var names := {"prog": "PROGRESSION", "jump": "JUMP LINE", "jib": "JIB LINE", "jib_l": "JIB LINE", "med": "MEDIUM JUMPS",
+		"hip": "TRANSFERS"}
+	if lines.has("med"):
+		names["jump"] = "XL LINE"
 	for key in lines:
 		_sign(s + d * 28.0 + side * float(lines[key]), names[key], 48, Color(1, 1, 1))
 	var fm := _mat(ORANGE, 0.5)
