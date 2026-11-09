@@ -1647,6 +1647,12 @@ func _grab_shots() -> void:
 		print("[TEST] grab %-12s elbows: L %s | R %s" % [gname, elb["l"], elb["r"]])
 		print("[TEST] grab %-12s grip along the ski: %s" % [gname, str(body._solved.get(gname, {}).get("along", {}))])
 		print("[TEST] grab %-12s solved: %s" % [gname, str(body._solved.get(gname, {}))])
+		# joints in the skier's root frame (x his right, y up, z back), m
+		var hb2: Basis = s.visual_xform().basis.orthonormalized()     # the skier's root (hips before the twist)
+		var loc := {}
+		for jn in ["shoulder_r", "elbow_r", "hand_r", "shoulder_l", "elbow_l", "hand_l", "knee_r", "knee_l", "ankle_r", "ankle_l"]:
+			loc[jn] = (hb2.inverse() * (body.joints[jn] - body.joints["pelvis"])).snapped(Vector3(0.01, 0.01, 0.01))
+		print("[TEST] grab %-12s joints: %s" % [gname, str(loc)])
 		var ups := []
 		for sx: Transform3D in [body.ski_l, body.ski_r]:
 			ups.append("%.0f" % rad_to_deg(asin(clampf(-sx.basis.z.normalized().y, -1.0, 1.0))))

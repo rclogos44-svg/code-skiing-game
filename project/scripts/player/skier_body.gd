@@ -75,16 +75,17 @@ const GRAB_POSES := {
 		"time_in": 0.75},
 	"Safety": {"r": ["r", -0.02, 1.0], "free": {"l": Vector3(-0.45, 0.05, -0.1)},
 		"legs": {"l": [70.0, 6.0, 5.0, 100.0], "r": [88.0, 12.0, -5.0, 108.0]}, "pitch": 28.0, "twist": 0.12, "side": 0.12},
-	# the ski Japan (ski coaching / glossaries, and the player's "how to Japan grab" photo): the RIGHT
-	# hand reaches down behind the right leg and takes the LEFT ski's inside edge behind the boot;
-	# the left knee folds so that ski is pulled tail-up behind him (~35 deg, tip down in front) and
-	# crosses the flat right ski in an X at the boots (seen from the side); the right shoulder drops
-	# to reach. Upper body upright, chest a little forward, left arm reaching out in front
-	"Japan": {"r": ["l", 0.35, -1.0], "free": {"l": Vector3(-0.02, 0.1, -0.5)},
-		"legs": {"l": [90.0, -8.0, 5.0, 140.0, 0.0], "r": [70.0, 5.0, 0.0, 95.0, 0.0]}, "pitch": 15.0, "pitch_w": 8.0,
-		"legs_w": 0.3, "lock": ["abd", "rot"], "twist": -0.3, "twist_w": 5.0, "side": 0.0, "side_w": 3.0,
-		"shoulders": {"r": Vector3(0.0, -0.05, 0.05)}, "along_range": [0.2, 0.62], "reach": 0.95,
-		"ski_up": {"l": -35.0}, "time_in": 0.65},
+	# the ski Japan (ski glossaries / coaching: "right hand under the right knee, grabbing the left
+	# ski on the inside edge under the boot"; "the opposite ski, at the back of the binding, the hand
+	# passing behind the leg, often folding the grabbed leg"): the RIGHT hand goes down between the
+	# legs, behind the right knee, and holds the LEFT ski's inside edge at the back of the binding;
+	# the left knee folds right up so that ski is pulled up with its tail high behind him and tip
+	# down in front; he crunches over the grab, chest turned to it, left arm up and back
+	"Japan": {"r": ["l", 0.15, -1.0], "free": {"l": Vector3(-0.35, 0.3, 0.1)},
+		"legs": {"l": [100.0, -22.0, 10.0, 140.0, 0.0], "r": [100.0, 16.0, 0.0, 100.0, 0.0]}, "pitch": 60.0, "pitch_w": 0.3, "pitch_max": 90.0,
+		"legs_w": 0.4, "lock": ["abd", "rot"], "twist": 0.25, "twist_w": 6.0, "side": 0.0, "side_w": 6.0,
+		"shoulders": {"r": Vector3(-0.03, -0.07, -0.06)},
+		"along_range": [0.08, 0.22], "reach": 0.95, "ski_up": {"l": -30.0}, "time_in": 0.65},
 	# tail grab from the reference photos: body upright (no off-axis tilt); knees bent right up so
 	# the skis stand upright, tips down, out to his RIGHT side and a little behind (hips rotated in,
 	# feet out); the upper back turns and leans toward them, the right shoulder drops back, he looks
@@ -273,6 +274,8 @@ func _solve_grab(name: String, ph: float, pz: float) -> Dictionary:
 			for i in 3:
 				for dirn in [-1.0, 1.0]:
 					var lim2: Array = SPINE_LIMITS[sp_keys[i]]
+					if i == 0 and g.has("pitch_max"):
+						lim2 = [lim2[0], float(g["pitch_max"])]     # a crunched grab (Japan) bends further
 					var old2: float = sp[i]
 					sp[i] = clampf(sp[i] + dirn * sp_steps[i], lim2[0], lim2[1])
 					var c2: float = cost.call(legs, sp)

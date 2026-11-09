@@ -567,3 +567,13 @@ no map, parks, keep the ragdoll crashes, black baggy gear, only flips, spins and
   parks.py takes per-kicker (size, approach speed, lip speed, deck trim). Terrain unchanged (only
   layout.json). New physics check: the Big Air jump line ridden top to bottom with no input lands
   all 7 jumps (3-6 m into 8-13.5 m landings). Physics 106/106.
+- Japan corrected (player: "it technically isn't a Japan"): the right hand was holding the left
+  ski 62 cm behind the boot - near the tail. Now, per the ski definitions ("right hand under the
+  right knee, grabbing the left ski on the inside edge under the boot"; "opposite ski, back of the
+  binding, hand passing behind the leg, grabbed leg folded"): the right hand goes down between the
+  knees, behind them, and holds the left ski's inside edge at the back of the binding (8 cm behind
+  the boot centre); the left knee folds fully with that foot pulled in under him (ski tail-up 30
+  deg); he crunches over the grab (chest 56 deg forward, chest turned toward it), right shoulder
+  reaching forward and down, left arm up and back. Elbow 149 deg, hand on the ski (gap 0).
+  Solver: per-pose "pitch_max" (the Japan may bend the spine to 90, others stay at 70). The grab
+  preview prints joint positions in the skier's root frame. Physics 106/106.
