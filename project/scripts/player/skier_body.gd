@@ -330,6 +330,21 @@ func _leg_fk(hip: Vector3, sgn: float, a: Array) -> Array:
 	var ski_c := ankle - B.y * ANKLE_H - B.z * 0.03
 	return [knee, B, ski_c]
 var preview_grab := ""
+## Cloth pieces that move: [weight axis (mesh-local), weight 0 at, weight 1 at] - the hem of the
+## body, the back of the hood, the cuff end of each sleeve; and which spring drives each.
+const CLOTH_PARTS := {
+	"torso": [Vector3(0, -1, 0), -0.25, 0.22], "jacket_details": [Vector3(0, -1, 0), -0.25, 0.22],
+	"hood": [Vector3(0, -0.6, 0.8), -0.02, 0.2],
+	"uarm_l": [Vector3(0, 1, 0), 0.05, 0.6], "uarm_r": [Vector3(0, 1, 0), 0.05, 0.6],
+	"farm_l": [Vector3(0, 1, 0), -0.05, 0.3], "farm_r": [Vector3(0, 1, 0), -0.05, 0.3],
+}
+const CLOTH_SPRING := {"hem": [140.0, 0.3, 0.02, 0.12], "hood": [60.0, 0.22, 0.02, 0.12], "sleeve": [220.0, 0.35, 0.012, 0.05]}
+var _cloth := {}                # spring -> [offset, velocity] (world, m and m/s)
+var _cloth_prev := Vector3.ZERO
+var _cloth_pv := Vector3.ZERO
+var _cloth_acc := Vector3.ZERO
+var _cloth_phase := 0.0
+var _cloth_flutter := 0.0
 const HIDDEN_PARTS := ["stripe", "backpack", "helmet", "helmet_trim", "helmet_dark", "stack_l", "stack_r", "pocket_l", "pocket_r"]   # built but not worn (beanie, no pack)
 var skeleton_view := false        # V: hide the clothes and show bones + joints
 const BONES := [["pelvis", "hip_l"], ["pelvis", "hip_r"], ["hip_l", "knee_l"], ["knee_l", "ankle_l"], ["hip_r", "knee_r"],
@@ -370,8 +385,10 @@ func setup(s: Skier) -> void:
 func _build() -> void:
 	# outfit after the player's reference (a park skier): loose cream jacket, baggy light-grey pants
 	# with dark grey patches, dark navy headwear, black gloves, dark boots and poles
-	var jacket := SkierModel.jacket_fabric(Color(0.88, 0.86, 0.8), 0.85)
-	var jacket_dark := SkierModel.mat(Color(0.78, 0.76, 0.7), 0.9)
+	# jacket after the player's jacket photo: washed-black brushed cotton, boxy, high collar, two
+	# flapped chest pockets, a hood; every piece is on the moving cloth shader (see _cloth_step)
+	var jacket := SkierModel.cloth_material(Color(0.2, 0.2, 0.21))
+	var jacket_dark := jacket
 	# pants after the player's pants reference: plain warm taupe nylon, very wide, pooling on the boots
 	var pants := SkierModel.fabric(Color(0.47, 0.42, 0.38), 0.85, 90.0, 0.55, 0.12)
 	var pocket_m := SkierModel.fabric(Color(0.42, 0.375, 0.34), 0.85, 90.0, 0.55, 0.1)
@@ -392,12 +409,12 @@ func _build() -> void:
 	_add("torso", SkierModel.torso(), jacket)
 	var hd := SkierModel.hood()
 	_add("hood", hd[0], jacket)
-	_add("hood_rim", hd[1], SkierModel.mat(Color(0.7, 0.68, 0.62), 0.9))
+	_add("hood_rim", hd[1], SkierModel.mat(Color(0.05, 0.05, 0.055), 0.95))
 	_add("backpack", SkierModel.backpack(), SkierModel.mat(Color(0.14, 0.145, 0.16), 0.75))
 	_add("collar", SkierModel.lathe([Vector2(0.0, -0.01), Vector2(0.085, -0.01), Vector2(0.08, 0.06), Vector2(0.0, 0.06)], 1.0, 1.0, 12), jacket_dark)
 	_add("neck", SkierModel.limb(0.05, 0.048, 0.08), skin)
 	_add("gaiter", SkierModel.gaiter(), gaiter, true)
-	_add("jacket_details", SkierModel.jacket_details(), SkierModel.mat(Color(0.62, 0.6, 0.55), 0.7))
+	_add("jacket_details", SkierModel.jacket_details(), SkierModel.cloth_material(Color(0.16, 0.16, 0.17), Vector2(3.0, 3.0)))
 	_add("head", SkierModel.sphere(0.105, 0.95, 1.12, 1.05), skin, true)
 	_add("helmet", SkierModel.helmet(), helmet, true)
 	var hdet := SkierModel.helmet_details()
@@ -444,6 +461,13 @@ func _build() -> void:
 	_add("stripe", SkierModel.lathe([Vector2(0.0, 0.0), Vector2(0.18, 0.0), Vector2(0.183, 0.035), Vector2(0.0, 0.035)], 1.19, 0.73, 18), accent)
 	for k in HIDDEN_PARTS:
 		parts[k].visible = false
+	for k in CLOTH_PARTS:
+		parts[k].material_override = (parts[k].material_override as ShaderMaterial).duplicate()
+		var cm := parts[k].material_override as ShaderMaterial
+		var cfg: Array = CLOTH_PARTS[k]
+		cm.set_shader_parameter("w_axis", cfg[0])
+		cm.set_shader_parameter("w0", cfg[1])
+		cm.set_shader_parameter("w1", cfg[2])
 	var bone_m := SkierModel.mat(Color(0.95, 0.95, 0.92), 0.6)
 	var joint_m := SkierModel.mat(Color(1.0, 0.45, 0.1), 0.5)
 	var cyl := CylinderMesh.new()
@@ -496,7 +520,60 @@ func _process(delta: float) -> void:
 				_compute_seated(dt)
 			_:
 				_compute_pose(dt)
+	_cloth_step(dt)
 	_apply_parts()
+	_cloth_apply()
+
+
+## Jacket cloth: each spring (hem, hood, sleeves) is a damped mass on the body.  It is pushed by the
+## body's acceleration (inertia), by the air (blown back with speed squared), and by gravity whenever
+## the jacket isn't hanging straight down (upside down in a flip it falls toward his head); it can
+## swing but not stretch much along the body.  Above ~15 km/h the fabric also ripples.
+func _cloth_step(dt: float) -> void:
+	if dt <= 0.0 or not joints.has("chest"):
+		return
+	var c: Vector3 = joints["chest"]
+	if _cloth_prev == Vector3.ZERO or c.distance_to(_cloth_prev) > 3.0:      # first frame / teleport
+		_cloth_prev = c
+		_cloth_pv = Vector3.ZERO
+		_cloth_acc = Vector3.ZERO
+		_cloth.clear()
+	var v := (c - _cloth_prev) / dt
+	_cloth_acc = _cloth_acc.lerp((v - _cloth_pv) / dt, 1.0 - exp(-18.0 * dt))
+	_cloth_prev = c
+	_cloth_pv = v
+	var up := torso_basis.y.normalized()
+	var sp := v.length()
+	# gravity minus the hang the mesh was made with: only once he's tipped well past his skiing lean
+	# (layouts, corks, flips - upside down the hem falls toward his head)
+	var g_dev := (Vector3.DOWN + up) * 9.81
+	g_dev *= smoothstep(0.55, 1.3, g_dev.length() / 9.81)
+	for key in CLOTH_SPRING:
+		var cfg: Array = CLOTH_SPRING[key]
+		var st: Array = _cloth.get(key, [Vector3.ZERO, Vector3.ZERO])
+		var x: Vector3 = st[0]
+		var u: Vector3 = st[1]
+		var k: float = cfg[0]
+		var f := -k * x - 2.0 * float(cfg[1]) * sqrt(k) * u - _cloth_acc.limit_length(60.0) \
+			- v * sp * float(cfg[2]) + g_dev
+		u += f * dt
+		x += u * dt
+		x -= up * x.dot(up) * 0.6                          # fabric swings; it barely stretches
+		x = x.limit_length(float(cfg[3]))
+		_cloth[key] = [x, u]
+	_cloth_flutter = clampf((sp - 4.0) * 0.0009, 0.0, 0.012)
+	_cloth_phase = fmod(_cloth_phase + dt * (8.0 + sp * 1.3), TAU * 100.0)
+
+
+## Hand the springs to the cloth shader, in each piece's own mesh frame.
+func _cloth_apply() -> void:
+	for k in CLOTH_PARTS:
+		var key := "hem" if k in ["torso", "jacket_details"] else ("hood" if k == "hood" else "sleeve")
+		var off: Vector3 = _cloth.get(key, [Vector3.ZERO])[0]
+		var cm := parts[k].material_override as ShaderMaterial
+		cm.set_shader_parameter("sway", parts[k].global_transform.basis.orthonormalized().inverse() * off)
+		cm.set_shader_parameter("flutter", _cloth_flutter * (0.5 if key == "sleeve" else 1.0))
+		cm.set_shader_parameter("phase", _cloth_phase)
 
 
 func _physics_process(dt: float) -> void:
@@ -1221,8 +1298,8 @@ func _apply_parts() -> void:
 	parts["torso"].global_transform = Transform3D(torso_b, joints.get("waist", joints["pelvis"]))
 	parts["stripe"].global_transform = Transform3D(tb, joints["waist"] + tb.y * 0.27)
 	parts["collar"].global_transform = Transform3D(tb, joints["chest"] - tb.y * 0.02)
-	parts["hood"].global_transform = Transform3D(tb, joints["chest"] - tb.y * 0.07 + tb.z * 0.05)
-	parts["hood_rim"].global_transform = Transform3D(tb * Basis(Vector3(1, 0, 0), -0.35), joints["chest"] + tb.y * 0.075 + tb.z * 0.1)
+	parts["hood"].global_transform = Transform3D(tb, joints["chest"] - tb.y * 0.1 + tb.z * 0.03)
+	parts["hood_rim"].global_transform = Transform3D(tb * Basis(Vector3(1, 0, 0), -0.45), joints["chest"] + tb.y * 0.06 + tb.z * 0.12)
 	parts["backpack"].global_transform = Transform3D(tb, joints["waist"] + tb.y * 0.16 + tb.z * 0.11)
 	parts["neck"].global_transform = Transform3D(head_basis, joints["chest"])
 	var hb := head_basis

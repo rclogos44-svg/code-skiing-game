@@ -587,3 +587,14 @@ no map, parks, keep the ragdoll crashes, black baggy gear, only flips, spins and
   by the generator (regrade + trees/rocks there); the other parks are unchanged. Main menu shows
   the parks two to a row so it still fits short windows. Physics 115/115 incl. the Sierra line
   ridden top to bottom, each XL from its approach speed, the car box and the long rail.
+- Jacket after the player's jacket photo: washed-black brushed cotton (faded/mottled, fine
+  vertical wales, soft wrinkles - generated textures), boxy with a high collar, two buttoned flap
+  chest pockets and a hem band, and a full hood lying down on the upper back with a dark opening.
+- Jacket physics: every jacket piece is on a new cloth shader (shaders/cloth.gdshader) that
+  displaces vertices by a sway offset weighted toward the hem / back of the hood / cuffs, plus a
+  speed ripple. SkierBody._cloth_step runs three damped springs (hem, hood, sleeves) pushed by the
+  body's acceleration (inertia), air drag (blown back with speed squared) and gravity once he's
+  tipped well past his skiing lean (upside down the hem and hood fall toward his head); fabric
+  swings but barely stretches along the body; offsets are clamped (hem 12 cm, hood 12 cm, sleeves
+  5 cm). Works on the web (GL compatibility) - plain per-material uniforms. New physics check: at
+  40 km/h the hem (3 cm) and hood (12 cm) blow back. Physics 116/116.

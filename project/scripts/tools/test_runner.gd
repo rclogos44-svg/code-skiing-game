@@ -960,6 +960,19 @@ func _physics() -> void:
 	_run(s, 3.0, {})
 	var v3 := s.vel.length()
 	check("accelerates downhill", v3 > 8.0 and v3 < 30.0, "speed after 3 s on %.0f deg: %.1f m/s" % [spot["slope"], v3])
+	# jacket cloth: skiing fast, the hem and hood are blown back (against the direction of travel)
+	var body = world.body
+	for i in 90:
+		s.step(1.0 / 120.0)
+		s.time += 1.0 / 120.0
+		s._prev_xform = s._cur_xform
+		s._cur_xform = s._compose_xform()
+		body._process(1.0 / 120.0)
+	var tdir := s.vel.normalized()
+	var hem: Vector3 = body._cloth.get("hem", [Vector3.ZERO])[0]
+	var hood: Vector3 = body._cloth.get("hood", [Vector3.ZERO])[0]
+	check("jacket cloth: at speed the hem and hood blow back", hem.dot(tdir) < -0.015 and hood.dot(tdir) < -0.015 and hem.length() <= 0.121,
+		"%.1f m/s: hem %.3f m, hood %.3f m along travel, flutter %.3f m" % [s.vel.length(), hem.dot(tdir), hood.dot(tdir), body._cloth_flutter])
 	check("stays grounded on smooth slope", not s.airborne and not s.is_crashed)
 	# 2. no tuck: once you're moving, W (pole push) adds nothing
 	s = _settle_on(spot["pos"], spot["yaw"])
@@ -1615,8 +1628,10 @@ func _grab_anim() -> void:
 		s._cur_xform = s._compose_xform()
 		s._prev_xform = s._cur_xform
 		body._compute_pose(1.0 / 120.0)
+		body._cloth_step(1.0 / 120.0)
 		if i % 12 == 0:
 			body._apply_parts()
+			body._cloth_apply()
 			var c: Vector3 = body.joints["pelvis"] + Vector3.UP * 0.15
 			_free_cam(c + cdir + Vector3.UP * 0.3, c)
 			await _frames(2)

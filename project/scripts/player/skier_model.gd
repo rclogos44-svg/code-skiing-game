@@ -114,15 +114,15 @@ static func torso() -> ArrayMesh:
 	], 24)
 
 
-## Hood down: a rolled cowl of fabric lying on the shoulders behind the neck, with an opening.
+## Hood down: a full hood lying on the upper back behind the neck (the pouch hangs a little down the
+## back), with a dark opening facing up.  Returns [hood, opening].
 static func hood() -> Array:
 	var cowl := shell([
-		[-0.06, 0.0, 0.0, 0.0, 0.07], [-0.055, 0.1, 0.03, 0.07, 0.07], [-0.02, 0.15, 0.05, 0.11, 0.06],
-		[0.04, 0.155, 0.05, 0.12, 0.05], [0.1, 0.13, 0.04, 0.1, 0.05], [0.14, 0.08, 0.02, 0.06, 0.05],
-		[0.155, 0.0, 0.0, 0.0, 0.05],
-	], 18)
-	# the opening: a dark lining crescent facing up and forward
-	var rim := shell([[0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.1, 0.035, 0.075], [0.012, 0.1, 0.035, 0.075], [0.012, 0.0, 0.0, 0.0]], 18)
+		[-0.17, 0.0, 0.0, 0.0, 0.11], [-0.16, 0.09, 0.03, 0.06, 0.11], [-0.1, 0.15, 0.05, 0.1, 0.1],
+		[-0.02, 0.175, 0.06, 0.13, 0.08], [0.06, 0.18, 0.06, 0.14, 0.07], [0.12, 0.16, 0.05, 0.12, 0.06],
+		[0.16, 0.11, 0.03, 0.08, 0.05], [0.175, 0.0, 0.0, 0.0, 0.05],
+	], 20)
+	var rim := shell([[0.0, 0.0, 0.0, 0.0, 0.0], [0.0, 0.135, 0.045, 0.1], [0.014, 0.135, 0.045, 0.1], [0.014, 0.0, 0.0, 0.0]], 20)
 	return [cowl, rim]
 
 
@@ -402,8 +402,13 @@ static func jacket_details() -> ArrayMesh:
 		var y1: float = prof[i + 1][0]
 		var dz: float = maxf(prof[i][1], prof[i + 1][1]) + 0.004
 		_box(st, Vector3(-0.007, y0, -dz - 0.006), Vector3(0.007, y1, -dz + 0.004))
+	# two chest pockets with buttoned flaps (workwear style): a raised patch and a thicker flap on top
 	for x in [-1.0, 1.0]:
-		_box(st, Vector3(x * 0.065 - 0.045, 0.27, -0.176), Vector3(x * 0.065 + 0.045, 0.282, -0.164))
+		_box(st, Vector3(x * 0.085 - 0.055, 0.2, -0.174), Vector3(x * 0.085 + 0.055, 0.3, -0.166))
+		_box(st, Vector3(x * 0.085 - 0.058, 0.29, -0.178), Vector3(x * 0.085 + 0.058, 0.33, -0.166))
+		_box(st, Vector3(x * 0.085 - 0.008, 0.293, -0.183), Vector3(x * 0.085 + 0.008, 0.305, -0.176))
+	# hem band
+	_box(st, Vector3(-0.236, -0.175, -0.186), Vector3(0.236, -0.145, -0.17))
 	st.generate_normals()
 	return st.commit()
 
@@ -521,4 +526,49 @@ static func jacket_fabric(color: Color, rough: float) -> StandardMaterial3D:
 	m.normal_texture = wt
 	m.normal_scale = 0.35
 	m.uv1_scale = Vector3(6.0, 4.0, 1.0)
+	return m
+
+
+static var _cloth_tex := []
+
+
+## Washed-black brushed cotton (the player's jacket photo): faded, mottled, fine vertical wales, soft
+## wrinkles; on the moving cloth shader (cloth.gdshader).  Textures are made once and shared.
+static func cloth_material(tint: Color, uv_scale := Vector2(5.5, 3.0)) -> ShaderMaterial:
+	if _cloth_tex.is_empty():
+		var n := 128
+		var alb := Image.create(n, n, true, Image.FORMAT_RGB8)
+		var hgt := PackedFloat32Array()
+		hgt.resize(n * n)
+		var fade := FastNoiseLite.new()
+		fade.frequency = 0.035
+		fade.fractal_octaves = 3
+		var wr := FastNoiseLite.new()
+		wr.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+		wr.frequency = 0.045
+		wr.seed = 3
+		for y in n:
+			for x in n:
+				var wale := sin(TAU * float(x) / 4.0)
+				var f := 1.0 + 0.22 * fade.get_noise_2d(x, y) + 0.05 * wale + 0.025 * randf_range(-1.0, 1.0)
+				alb.set_pixel(x, y, Color(f, f, f))
+				hgt[y * n + x] = 0.35 * wale + 2.2 * wr.get_noise_2d(x, y)
+		alb.generate_mipmaps()
+		var nrm := Image.create(n, n, true, Image.FORMAT_RGB8)
+		for y in n:
+			for x in n:
+				var dx := hgt[y * n + (x + 1) % n] - hgt[y * n + (x + n - 1) % n]
+				var dy := hgt[((y + 1) % n) * n + x] - hgt[((y + n - 1) % n) * n + x]
+				var v := Vector3(-dx, -dy, 2.0).normalized()
+				nrm.set_pixel(x, y, Color(v.x * 0.5 + 0.5, v.y * 0.5 + 0.5, v.z * 0.5 + 0.5))
+		nrm.generate_mipmaps()
+		_cloth_tex = [ImageTexture.create_from_image(alb), ImageTexture.create_from_image(nrm)]
+	var m := ShaderMaterial.new()
+	m.shader = load("res://shaders/cloth.gdshader")
+	m.set_shader_parameter("albedo_tex", _cloth_tex[0])
+	m.set_shader_parameter("normal_tex", _cloth_tex[1])
+	m.set_shader_parameter("tint", tint)
+	m.set_shader_parameter("uv_scale", uv_scale)
+	m.set_shader_parameter("w0", 10.0)       # no sway until SkierBody sets a range
+	m.set_shader_parameter("w1", 11.0)
 	return m
