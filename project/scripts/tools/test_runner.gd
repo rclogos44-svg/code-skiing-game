@@ -1700,6 +1700,17 @@ func _park_shots() -> void:
 	_free_cam(p0 - d * 14.0 + Vector3.UP * 9.0, p0 + d * 90.0)
 	await _frames(20)
 	await _snap("park_top")
+	# the jump line: from above the first jump looking down the line, and from the side
+	var o0 := Vector3(pk["origin"][0], 0, pk["origin"][1])
+	var at := func(sd: float, up_m: float) -> Vector3:
+		var q := o0 + d * sd
+		return Vector3(q.x, world.terrain.height(q.x, q.z) + up_m, q.z)
+	_free_cam(at.call(20.0, 14.0) - side * 6.0, at.call(170.0, 0.0))
+	await _frames(20)
+	await _snap("park_line")
+	_free_cam(at.call(230.0, 30.0) + side * 85.0, at.call(230.0, 0.0))
+	await _frames(20)
+	await _snap("park_line_side")
 	_free_cam(p0 + d * 2.6 + side * 1.2 + Vector3.UP * 1.2, p0 + Vector3.UP * 0.95)
 	await _frames(10)
 	await _snap("park_outfit")
@@ -1779,6 +1790,10 @@ func _park_shots() -> void:
 		for k2 in pk["kickers"]:
 			if k2["line"] == "jump" and k2["size"] == ("L" if trick == "double" else "M"):
 				kk = k2
+		if kk.is_empty():           # a park without that size (Big Air: L + XL): first jump-line kicker
+			for k2 in pk["kickers"]:
+				if k2["line"] == "jump" and kk.is_empty():
+					kk = k2
 		var ko := Vector3(kk["origin"][0], 0, kk["origin"][1])
 		var lip := Vector3(kk["lip"][0], 0, kk["lip"][1])
 		s.teleport(ko - d * 12.0, Skier.yaw_of(d), float(kk["approach_speed"]) - 1.0)

@@ -15,7 +15,7 @@ LINES = {"prog": -34.0, "jump": 0.0, "jib": 34.0}
 # tabletop kickers: height (m), lip angle above horizontal (deg), approach speed shown on the sign (m/s),
 # lip speed a skier arriving at that speed actually has (measured in --test=physics), half width
 KICKERS = {"S": (1.2, 22.0, 10.0, 9.3, 3.5), "M": (2.0, 26.0, 13.0, 11.2, 4.0), "L": (3.0, 30.0, 16.0, 13.2, 4.5),
-           "XL": (4.0, 30.0, 19.0, 15.5, 5.5)}
+           "XL": (5.0, 28.0, 19.0, 15.5, 6.0)}
 LANDING_DEG = 32.0       # landing slope, absolute
 SWEET = 0.4              # design touchdown point, as a fraction of the landing
 
@@ -50,7 +50,13 @@ DESIGNS = [
     ]),
     ("Big Air Park", [
         ("prog", "kicker", 70, "S"), ("prog", "kicker", 170, "S"), ("prog", "box", 270, 9.0),
-        ("jump", "kicker", 90, "M"), ("jump", "kicker", 230, "L"), ("jump", "kicker", 380, "L"),
+        # a flowing big-air line: one large, then six XL tables ~12 m apart (landing to next ramp), each
+        # sized for the (approach, lip) speed a rider carries from the jump before when riding it
+        # straight (measured with --test=line), last value = deck trim (m) that centres the touchdown
+        ("jump", "kicker", 50, ("L", 12.5, 10.2)), ("jump", "kicker", 96, ("XL", 14.9, 11.7, 0.54)),
+        ("jump", "kicker", 156, ("XL", 16.7, 13.7, 1.08)), ("jump", "kicker", 216, ("XL", 17.6, 14.7, 1.08)),
+        ("jump", "kicker", 276, ("XL", 18.0, 15.0, 0.72)), ("jump", "kicker", 336, ("XL", 18.4, 15.5, 1.35)),
+        ("jump", "kicker", 398, ("XL", 18.6, 15.7, 2.16)),
         ("jib", "rail", 90, 10.0), ("jib", "box", 190, 10.0), ("jib", "tube", 290, 10.0),
     ]),
     ("Jib Garden", [
@@ -131,8 +137,10 @@ def apply_parks(g, H, lay, groomed, placer):
             uc = LINES[line]
             if kind == "kicker":
                 # kickers are exact shapes the game adds on top of the regraded slope (sharper than the 2 m grid)
-                size, speeds = (arg[0], arg[1:]) if isinstance(arg, tuple) else (arg, None)
+                size, speeds = (arg[0], arg[1:3]) if isinstance(arg, tuple) else (arg, None)
                 kg = kicker_geometry(size, math.degrees(theta), speeds)
+                if isinstance(arg, tuple) and len(arg) > 3:
+                    kg["deck"] = round(max(kg["deck"] - arg[3], 2.0), 2)
                 arg = size
                 pt = lambda s: [round(x0 + dx * s - dz * uc, 2), round(z0 + dz * s + dx * uc, 2)]
                 kg.update(line=line, size=arg, start_s=s0, dir=[dx, dz], origin=pt(s0), lip=pt(s0 + kg["ramp"]),

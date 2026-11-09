@@ -557,3 +557,13 @@ no map, parks, keep the ragdoll crashes, black baggy gear, only flips, spins and
 - Pose solver: "lock" (keep chosen leg angles, e.g. parallel skis) and "ski_up_w". Key labels no
   longer claim a hand (Japan is a right-hand grab on Q + S).
 - Physics 101/101.
+- Big Air Park jump line rebuilt after the player's reference photo (a row of big tables with short
+  run-outs between them): 7 jumps instead of 3 - one Large, then six new XL tables (5 m high, 28 deg
+  lip, 12 m ramp, 13.5 m landing, 13-24 m decks), 11-22 m from one landing to the next ramp (was
+  ~115 m of flat). Riding the old line straight overshot every landing (riders carried 15-17 m/s
+  into jumps sized for 13-16): each new jump is sized for the speed a rider actually carries in
+  from the one before (45 -> 67 km/h down the line; the sign shows it), found by riding the line
+  in the game (--test=line) and resizing until every touchdown sits ~40 % down its landing.
+  parks.py takes per-kicker (size, approach speed, lip speed, deck trim). Terrain unchanged (only
+  layout.json). New physics check: the Big Air jump line ridden top to bottom with no input lands
+  all 7 jumps (3-6 m into 8-13.5 m landings). Physics 106/106.
