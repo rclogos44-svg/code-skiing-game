@@ -531,3 +531,29 @@ no map, parks, keep the ragdoll crashes, black baggy gear, only flips, spins and
 - Tip grab: the grabbed ski now stands ~60 deg tip-up (was ~85-90) and he leans in and reaches
   forward to its tip instead of pulling the ski up to his hand; the leg sits more in front (17 cm
   out, was 34). The pose solver gained a "ski_up" target (tip-up angle per ski).
+- Grabs researched from real skiing sources and photos (Nov 9). Definitions from ski glossaries and
+  coaching pages (ski.com, NBC Olympics glossary, The Snow Centre, Backcountry Access, US Sports
+  Camps, skipass.com, skitalk, fall-line, FIS trick list). Reference photos: freely licensed
+  Wikimedia Commons files, kept in the session scratchpad only (nothing added to the game or repo):
+  2020 Youth Olympics slopestyle / halfpipe series by Martin Rulsch (CC BY-SA 4.0), "Freeskiing
+  mute grab.jpg" (Richyw, CC BY-SA 3.0), "673rd FSS ... Spring Meltdown" tail grab (USAF, public
+  domain), "Vince Maharavo Stubai.jpg" tail grab (CC BY-SA 4.0). Skeletons were placed by eye on
+  the photos and the game poses compared from matching camera angles.
+- Grip: a grab now puts the PALM on the ski (wrist 6 cm short of it, along the arm) - the wrist
+  used to sit on the ski with the 19 cm glove poking through it, which also made every grab 6 cm
+  short of reach. Mute is a touch more upright and actually reaches (was 1 cm short); Safety and
+  Tail keep their approved bodies (Tail grip kept at the tail, 0.42+ m behind the boot).
+- Japan is an opposite-hand grab again, as every source and the player's photo show: the RIGHT
+  hand goes down behind the right leg to the LEFT ski's inside edge behind the boot; the left ski
+  is pulled tail-up ~37 deg and crosses the flat right ski in an X; chest upright (2 deg forward),
+  right shoulder dropped to reach, left arm out in front. Still Q + S.
+- Truck Driver = double nose grab: legs long in front, skis parallel and held upright (~75 deg
+  tip-up) with both hands just ahead of the toe pieces, like the halfpipe photo of a front grab
+  (was knees-to-chest with the skis flat).
+- Blunt = true tail: right hand on the last 6 cm of the right ski, that ski pulled up nearly
+  vertical beside the hip (was 0.72 m back, mid-tail).
+- Safety checked against a real Safety (YOG frame): thigh-to-torso ~80 deg, knees ~110, straight
+  arm, hand at the boot - matches the existing pose, unchanged.
+- Pose solver: "lock" (keep chosen leg angles, e.g. parallel skis) and "ski_up_w". Key labels no
+  longer claim a hand (Japan is a right-hand grab on Q + S).
+- Physics 101/101.

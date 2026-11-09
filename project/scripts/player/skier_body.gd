@@ -10,6 +10,7 @@ const THIGH := 0.44
 const SHIN := 0.43
 const UPPER_ARM := 0.29
 const FOREARM := 0.27
+const PALM := 0.06         # wrist joint to the middle of the glove's palm: a grab holds the ski there
 const HIP_HALF := 0.095
 const SHOULDER_HALF := 0.185
 const TORSO_LEN := 0.47
@@ -74,15 +75,16 @@ const GRAB_POSES := {
 		"time_in": 0.75},
 	"Safety": {"r": ["r", -0.02, 1.0], "free": {"l": Vector3(-0.45, 0.05, -0.1)},
 		"legs": {"l": [70.0, 6.0, 5.0, 100.0], "r": [88.0, 12.0, -5.0, 108.0]}, "pitch": 28.0, "twist": 0.12, "side": 0.12},
-	# after the player's Japan reference: torso nearly upright (~15 deg); the left knee comes up and
-	# the left ski is pulled tail-up behind at ~35 deg with the tip down in front, while the right
-	# ski stays flat under him (the two cross in an X from the side); the left hand holds the left
-	# ski behind the boot (an opposite-hand grab can't reach a ski there with the body upright),
-	# chest turned toward it, right arm punching forward, eyes ahead
-	"Japan": {"l": ["l", 0.5, 1.0], "free": {"r": Vector3(0.22, -0.02, -0.42)},
-		"legs": {"l": [80.0, -5.0, 40.0, 140.0, 0.0], "r": [85.0, 6.0, 0.0, 100.0, 0.0]}, "pitch": 15.0, "pitch_w": 20.0,
-		"twist": 0.6, "twist_w": 6.0, "side": 0.0, "side_w": 10.0, "fixed_legs": true, "along_range": [0.3, 0.6],
-		"reach": 0.96, "auto_grip": true, "time_in": 0.6},
+	# the ski Japan (ski coaching / glossaries, and the player's "how to Japan grab" photo): the RIGHT
+	# hand reaches down behind the right leg and takes the LEFT ski's inside edge behind the boot;
+	# the left knee folds so that ski is pulled tail-up behind him (~35 deg, tip down in front) and
+	# crosses the flat right ski in an X at the boots (seen from the side); the right shoulder drops
+	# to reach. Upper body upright, chest a little forward, left arm reaching out in front
+	"Japan": {"r": ["l", 0.35, -1.0], "free": {"l": Vector3(-0.02, 0.1, -0.5)},
+		"legs": {"l": [90.0, -8.0, 5.0, 140.0, 0.0], "r": [70.0, 5.0, 0.0, 95.0, 0.0]}, "pitch": 15.0, "pitch_w": 8.0,
+		"legs_w": 0.3, "lock": ["abd", "rot"], "twist": -0.3, "twist_w": 5.0, "side": 0.0, "side_w": 3.0,
+		"shoulders": {"r": Vector3(0.0, -0.05, 0.05)}, "along_range": [0.2, 0.62], "reach": 0.95,
+		"ski_up": {"l": -35.0}, "time_in": 0.65},
 	# tail grab from the reference photos: body upright (no off-axis tilt); knees bent right up so
 	# the skis stand upright, tips down, out to his RIGHT side and a little behind (hips rotated in,
 	# feet out); the upper back turns and leans toward them, the right shoulder drops back, he looks
@@ -91,7 +93,7 @@ const GRAB_POSES := {
 		"legs": {"l": [30.0, 10.0, -32.0, 122.0, 5.0], "r": [30.0, -5.0, 30.0, 120.0, 5.0]}, "pitch": 12.0, "pitch_w": 6.0,
 		"legs_w": 3.0, "twist": -0.55, "twist_dist": [0.1, 0.5, 1.0], "side": -0.05, "curve": -0.32, "time_in": 0.65,
 		"look": 1.0, "shoulders": {"r": Vector3(0.02, -0.045, 0.08), "l": Vector3(0.0, 0.02, -0.04)}, "auto_grip": true,
-		"reach": 0.97, "along_range": [0.35, 0.55], "fixed_legs": true, "side_w": 40.0, "twist_w": 6.0},
+		"reach": 0.95, "along_range": [0.42, 0.6], "fixed_legs": true, "side_w": 40.0, "twist_w": 6.0},
 	# the hand really holds the TIP (the last ~15 cm, where it turns up): the left leg kicks out
 	# forward and a little to the side, nearly straight, so the ski stands tip-up ~70 deg in front
 	# and the tip comes to the hand; chest leans in a little, right arm back for balance
@@ -99,10 +101,20 @@ const GRAB_POSES := {
 		"legs": {"l": [75.0, 18.0, 0.0, 10.0, 15.0], "r": [80.0, 5.0, 5.0, 105.0, 0.0]}, "pitch": 42.0, "pitch_w": 0.3,
 		"legs_w": 4.0, "twist": -0.2, "side": 0.1, "along_range": [-0.86, -0.76], "reach": 0.97, "auto_grip": true, "time_in": 0.6,
 		"ski_up": {"l": 60.0}},
+	# truck driver = a double nose grab: each hand on the front of its own ski just ahead of the toe
+	# piece, legs pushed out long in front and the skis tipped up steeply, parallel, like a steering
+	# wheel in his hands (as in the halfpipe photo of a front grab with the skis held upright)
 	"Truck Driver": {"l": ["l", -0.3, 1.0], "r": ["r", -0.3, 1.0],
-		"legs": {"l": [95.0, 8.0, 0.0, 95.0], "r": [95.0, 8.0, 0.0, 95.0]}, "pitch": 38.0, "twist": 0.0, "side": 0.0},
-	"Blunt": {"r": ["r", 0.72, 1.0], "free": {"l": Vector3(-0.4, 0.22, -0.05)},
-		"legs": {"l": [55.0, 5.0, 5.0, 115.0], "r": [55.0, 10.0, -8.0, 128.0]}, "pitch": 18.0, "twist": 0.25, "side": 0.12},
+		"legs": {"l": [80.0, 3.0, 0.0, 30.0, 5.0], "r": [80.0, 3.0, 0.0, 30.0, 5.0]}, "pitch": 40.0, "pitch_w": 0.3,
+		"legs_w": 0.5, "lock": ["abd", "rot"], "twist": 0.0, "twist_w": 60.0, "side": 0.0, "side_w": 60.0,
+		"along_range": [-0.45, -0.2], "reach": 0.95, "auto_grip": true, "ski_up": {"l": 65.0, "r": 65.0}, "ski_up_w": 6.0,
+		"time_in": 0.6},
+	# blunt = the TRUE tail: the right hand holds the very end of the right ski; that knee folds so the
+	# tail comes up beside his hip, the chest turns and drops a little toward it, left arm forward
+	"Blunt": {"r": ["r", 0.76, 1.0], "free": {"l": Vector3(-0.15, 0.1, -0.5)},
+		"legs": {"l": [60.0, 5.0, 5.0, 100.0], "r": [45.0, 12.0, -10.0, 135.0, 5.0]}, "pitch": 20.0, "pitch_w": 0.5,
+		"legs_w": 1.0, "twist": -0.35, "side": -0.1, "along_range": [0.73, 0.78], "reach": 0.95, "auto_grip": true,
+		"time_in": 0.65},
 }
 var _grab_bend := 0.0            # extra spine bend (rad) so an out-of-reach hand gets to the ski
 var grab_gap := {}
@@ -177,7 +189,7 @@ func _grab_dists(g: Dictionary, legs: Dictionary, sp: Array, ph: float, pz: floa
 		var hs := -1.0 if sd == "l" else 1.0
 		var sh := chest - tb.y * 0.07 + tb.x * (hs * SHOULDER_HALF) + tb * (g.get("shoulders", {}).get(sd, Vector3.ZERO) as Vector3)
 		var pt := grip_point(fk[2], B, ss, spec, sh, bool(g.get("auto_grip", false)))
-		out.append((pt - sh).length())
+		out.append((pt - sh).length() - PALM)      # the wrist stops a palm short of the ski
 	return out
 
 
@@ -218,7 +230,7 @@ func _solve_grab(name: String, ph: float, pz: float) -> Dictionary:
 				var ss2 := -1.0 if sd2 == "l" else 1.0
 				var fk2 := _leg_fk(Vector3(ss2 * HIP_HALF, ph - 0.04, pz), ss2, lg[sd2])
 				var up_deg := rad_to_deg(asin(clampf(-(fk2[1] as Basis).z.y, -1.0, 1.0)))
-				c += pow((up_deg - float(g["ski_up"][sd2])) / 5.0, 2.0) * 3.0
+				c += pow((up_deg - float(g["ski_up"][sd2])) / 5.0, 2.0) * float(g.get("ski_up_w", 3.0))
 		for side in ["l", "r"]:
 			for i in (lg[side] as Array).size():
 				c += pow((float(lg[side][i]) - float(legs0[side][i])) / 40.0, 2.0) * float(g.get("legs_w", 1.0))
@@ -231,6 +243,8 @@ func _solve_grab(name: String, ph: float, pz: float) -> Dictionary:
 			var improved := false
 			for side in grabbed:
 				for i in (legs[side] as Array).size():
+					if (g.get("lock", []) as Array).has(keys[i]):
+						continue          # e.g. keep the skis parallel: hip swing / rotation stay as set
 					for dirn in [-1.0, 1.0]:
 						var v: float = float(legs[side][i]) + dirn * step
 						var lim: Array = LEG_LIMITS[keys[i]]
@@ -810,7 +824,8 @@ func _compute_pose(dt: float) -> void:
 			var sal: Dictionary = _solved.get(_ag, {}).get("along", {})
 			if sal.has(sd):
 				spec_live[1] = sal[sd]
-			hand = hand.lerp(grip_point(sx2.origin, sx2.basis, gs, spec_live, sh, bool(gpose.get("auto_grip", false))), g)
+			var grip_pt := grip_point(sx2.origin, sx2.basis, gs, spec_live, sh, bool(gpose.get("auto_grip", false)))
+			hand = hand.lerp(grip_pt - (grip_pt - sh).normalized() * PALM, g)     # palm on the ski, wrist just short of it
 			grab_gap[sd] = maxf((hand - sh).length() - (UPPER_ARM + FOREARM), 0.0)
 		elif g > 0.01:
 			var sxf := ski_l if sd == "l" else ski_r

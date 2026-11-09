@@ -1,0 +1,6 @@
+{"note": "SAFETY (real, YOG 2020, M. Rulsch CC BY-SA 4.0): left hand on the left ski at the boot, hips folded ~120, knees tucked",
+ "pts": {"head": [205, 275], "chest": [282, 245], "thoracic": [335, 200], "lumbar": [392, 165], "waist": [440, 145], "pelvis": [482, 135],
+  "hip_l": [492, 160], "knee_l": [566, 378], "ankle_l": [630, 330], "heel_l": [598, 400], "toe_l": [680, 318],
+  "hip_r": [470, 120], "knee_r": [545, 300], "ankle_r": [605, 255], "heel_r": [585, 300], "toe_r": [650, 225],
+  "shoulder_l": [312, 252], "elbow_l": [445, 305], "hand_l": [590, 372], "shoulder_r": [300, 160], "elbow_r": [400, 170], "hand_r": [470, 250]},
+ "skis": [[[480, 645], [815, 98]], [[410, 630], [770, 5]]]}

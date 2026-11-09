@@ -1,0 +1,6 @@
+{"note": "FRONT GRAB (real, YOG 2020 halfpipe, M. Rulsch CC BY-SA 4.0): legs long in front, skis held upright, straight arm to the ski ahead of the toe",
+ "pts": {"head": [514, 286], "chest": [505, 345], "thoracic": [508, 375], "lumbar": [512, 405], "waist": [516, 435], "pelvis": [520, 458],
+  "shoulder_r": [456, 341], "elbow_r": [367, 358], "hand_r": [267, 361], "shoulder_l": [568, 326], "elbow_l": [592, 292], "hand_l": [584, 248],
+  "hip_r": [492, 448], "knee_r": [411, 413], "ankle_r": [292, 424], "heel_r": [300, 460], "toe_r": [288, 385],
+  "hip_l": [545, 478], "knee_l": [433, 482], "ankle_l": [292, 506], "heel_l": [300, 545], "toe_l": [290, 470]},
+ "skis": [[[255, 205], [288, 749]], [[268, 300], [300, 770]]]}

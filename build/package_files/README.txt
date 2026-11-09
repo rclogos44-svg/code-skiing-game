@@ -47,8 +47,8 @@ Arrows       Tricks, no jump key: hold an arrow to SET (crouch / coil), then pre
              e.g. onto a rail. Press at the lip; a moment after it still counts.
              In the air the pop arrow keeps rotating (keep holding Down for more
              backflips - the body tucks after the first one).
-Q / E        Grabs (in the air). Q = left hand: Mute; Q + W = Tip; Q + S = Japan.
-             E = right hand: Safety; E + W = Blunt; E + S = Tail. Q + E = Truck
+Q / E        Grabs (in the air). Q = Mute; Q + W = Tip; Q + S = Japan.
+             E = Safety; E + W = Blunt; E + S = Tail. Q + E = Truck
              Driver. W / S can be pressed any time during the grab and stick. The
              arrows only flip and spin, so e.g. hold Up, press Down at the lip and
              Q + W in the air for a Backflip Tip. Hold longer for more points; let go

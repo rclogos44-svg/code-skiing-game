@@ -1,0 +1,6 @@
+{"note": "TAIL (real, public domain, USAF / S. deVera): skis hang tips-down under him, grabbing hand hidden behind his back",
+ "pts": {"head": [690, 70], "chest": [718, 122], "thoracic": [723, 150], "lumbar": [727, 175], "waist": [729, 196], "pelvis": [730, 214],
+  "shoulder_l": [772, 102], "elbow_l": [815, 92], "hand_l": [812, 52], "shoulder_r": [700, 128], "elbow_r": [688, 185],
+  "hip_r": [706, 222], "hip_l": [752, 224], "knee_r": [684, 256], "knee_l": [790, 248], "ankle_r": [728, 308], "ankle_l": [758, 330],
+  "heel_r": [740, 300], "toe_r": [718, 335], "heel_l": [768, 322], "toe_l": [748, 352]},
+ "skis": [[[748, 296], [705, 440]], [[776, 328], [722, 438]]]}
