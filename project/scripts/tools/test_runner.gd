@@ -330,6 +330,19 @@ func _park_kickers() -> void:
 				and land_at < (end - knuckle).dot(d) + 6.0,
 				"%.2f s air, landed %.1f m past the knuckle (landing %.1f m)%s%s" % [max_air, land_at, (end - knuckle).dot(d),
 				(" CRASH " + crash) if crash != "" else "", launch])
+	# the Big Air jump line flows: ridden from the top with no input (after a push-off), every jump
+	# is sized for the speed carried from the one before, so each lands on its landing
+	for pi2 in world.terrain.layout.get("parks", []).size():
+		var pk2: Dictionary = world.terrain.layout["parks"][pi2]
+		if pk2["name"] != "Big Air Park":
+			continue
+		var rows := _ride_line(pi2, "jump", 6.0)
+		var ok := rows.size() == (pk2["kickers"] as Array).filter(func(k): return k["line"] == "jump").size()
+		var desc := []
+		for r in rows:
+			ok = ok and r["crash"] == "" and float(r["air"]) > 0.5 and float(r["land"]) > -1.0 and float(r["land"]) < float(r["landing"]) + 1.0
+			desc.append("%s %.1f m/s %.1fs @%.1f/%.1f%s" % [r["size"], r["v_in"], r["air"], r["land"], r["landing"], (" " + r["crash"]) if r["crash"] != "" else ""])
+		check("Big Air jump line ridden top to bottom: all %d jumps land on their landings" % rows.size(), ok, ", ".join(desc))
 	# pole push: tips go into the snow and stay there while planted; speed comes in strokes
 	var stp: Dictionary = world.park.park_start(0)
 	s.teleport(stp["pos"], stp["yaw"])
