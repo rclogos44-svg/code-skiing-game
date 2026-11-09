@@ -14,16 +14,21 @@ BLEND = 30.0             # regrade blends into the natural slope over this dista
 LINES = {"prog": -34.0, "jump": 0.0, "jib": 34.0}
 # tabletop kickers: height (m), lip angle above horizontal (deg), approach speed shown on the sign (m/s),
 # lip speed a skier arriving at that speed actually has (measured in --test=physics), half width
-KICKERS = {"S": (1.2, 22.0, 10.0, 9.3, 3.5), "M": (2.0, 26.0, 13.0, 11.2, 4.0), "L": (3.0, 30.0, 16.0, 13.2, 4.5)}
+KICKERS = {"S": (1.2, 22.0, 10.0, 9.3, 3.5), "M": (2.0, 26.0, 13.0, 11.2, 4.0), "L": (3.0, 30.0, 16.0, 13.2, 4.5),
+           "XL": (4.0, 30.0, 19.0, 15.5, 5.5)}
 LANDING_DEG = 32.0       # landing slope, absolute
 SWEET = 0.4              # design touchdown point, as a fraction of the landing
 
 
-def kicker_geometry(size, theta_deg):
+def kicker_geometry(size, theta_deg, speeds=None):
     """Ramp / deck / landing lengths for a tabletop on a slope of theta: the ramp curves up to the lip
     angle, the landing is LANDING_DEG steep, and the deck is just long enough that a skier leaving the
-    lip at the measured lip speed touches down SWEET of the way down the landing."""
+    lip at the measured lip speed touches down SWEET of the way down the landing.  `speeds` overrides
+    (approach, lip) speed for a kicker in a flowing line, where the speed a rider naturally carries
+    from the jump before (measured with --test=line) sets the size of the gap."""
     h, alpha, v_app, v, hw = KICKERS[size]
+    if speeds:
+        v_app, v = speeds
     th = math.radians(theta_deg)
     s_end = math.tan(math.radians(alpha) + th)
     lr = 2.0 * h / s_end                                  # parabolic ramp: height h, end slope s_end
@@ -126,7 +131,9 @@ def apply_parks(g, H, lay, groomed, placer):
             uc = LINES[line]
             if kind == "kicker":
                 # kickers are exact shapes the game adds on top of the regraded slope (sharper than the 2 m grid)
-                kg = kicker_geometry(arg, math.degrees(theta))
+                size, speeds = (arg[0], arg[1:]) if isinstance(arg, tuple) else (arg, None)
+                kg = kicker_geometry(size, math.degrees(theta), speeds)
+                arg = size
                 pt = lambda s: [round(x0 + dx * s - dz * uc, 2), round(z0 + dz * s + dx * uc, 2)]
                 kg.update(line=line, size=arg, start_s=s0, dir=[dx, dz], origin=pt(s0), lip=pt(s0 + kg["ramp"]),
                           knuckle=pt(s0 + kg["ramp"] + kg["deck"]), end=pt(s0 + kg["ramp"] + kg["deck"] + kg["landing"]))

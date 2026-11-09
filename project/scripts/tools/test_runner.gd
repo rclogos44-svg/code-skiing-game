@@ -44,6 +44,8 @@ func run(w: World) -> void:
 			await _grab_shots()
 		"grab_anim":
 			await _grab_anim()
+		"line":
+			_line_report()
 		_:
 			print("[TEST] unknown test mode ", Game.test_mode)
 			failures += 1
@@ -191,6 +193,85 @@ func _pop(spot: Dictionary, hold: Dictionary, charge_s: float, before: Dictionar
 			res["rot"] = s.air_rotation
 			res["pitch"] = s.air_pitch
 	return res
+
+
+## Ride one park line top to bottom with no input after a push-off at `v0` (m/s). Per kicker on
+## that line: speed arriving at the ramp, speed at takeoff, airtime, where he touched down
+## (metres past the knuckle) and how far the landing runs, sideways drift, crash reason.
+func _ride_line(pi: int, line: String, v0: float) -> Array:
+	var s := world.skier
+	var pk: Dictionary = world.terrain.layout["parks"][pi]
+	var d := Vector3(pk["dir"][0], 0, pk["dir"][1])
+	var side := Vector3(-d.z, 0, d.x)
+	var o := Vector3(pk["origin"][0], 0, pk["origin"][1])
+	var uc := float(pk["lines"][line])
+	var ks := []
+	for k in pk["kickers"]:
+		if k["line"] == line:
+			ks.append(k)
+	ks.sort_custom(func(a, b): return float(a["start_s"]) < float(b["start_s"]))
+	var out := []
+	if ks.is_empty():
+		return out
+	var saved := s.difficulty
+	s.difficulty = 0
+	s.teleport(o + side * uc - d * 10.0, Skier.yaw_of(d), v0)
+	s.scripted_input = {}
+	var box := {}
+	var cb := func(info): box["info"] = info
+	s.landed.connect(cb)
+	var ki := 0
+	var cur := {}
+	for f in 120 * 90:
+		s.step(1.0 / 120.0)
+		s.time += 1.0 / 120.0
+		if ki >= ks.size():
+			break
+		var k: Dictionary = ks[ki]
+		var ko := Vector3(k["origin"][0], 0, k["origin"][1])
+		var kn := Vector3(k["knuckle"][0], 0, k["knuckle"][1])
+		var ke := Vector3(k["end"][0], 0, k["end"][1])
+		var along := (s.position - ko).dot(d)
+		if cur.is_empty() and along >= 0.0:
+			cur = {"size": k["size"], "v_in": s.speed, "v_lip": 0.0, "air": 0.0, "land": 0.0, "landing": (ke - kn).dot(d),
+				"drift": (s.position - ko).dot(side), "crash": ""}
+		if not cur.is_empty() and s.airborne and cur["v_lip"] == 0.0:
+			cur["v_lip"] = s.vel.length()
+		if box.has("info"):
+			var info: Dictionary = box["info"]
+			box.erase("info")
+			if not cur.is_empty() and float(info["air_time"]) > float(cur["air"]):
+				cur["air"] = info["air_time"]
+				cur["land"] = (s.position - kn).dot(d)
+				cur["crash"] = info["crash"]
+		if s.is_crashed and not cur.is_empty():
+			cur["crash"] = "crashed"
+		var done := s.is_crashed or (not cur.is_empty() and not s.airborne and float(cur["air"]) > 0.3
+			and (s.position - kn).dot(d) > float(cur["landing"]) + 2.0)
+		if done or (not cur.is_empty() and (s.position - ke).dot(d) > 25.0):
+			out.append(cur)
+			cur = {}
+			ki += 1
+			if s.is_crashed or s.speed < 1.0:
+				break
+	if not cur.is_empty():
+		out.append(cur)
+	s.landed.disconnect(cb)
+	s.difficulty = saved
+	return out
+
+
+## --test=line [--park=N] [--line=jump] [--v0=6]: ride the line and print each jump.
+func _line_report() -> void:
+	var line: String = Game.test_args.get("line", "jump")
+	var v0 := float(Game.test_args.get("v0", "6"))
+	for i in world.terrain.layout["parks"].size():
+		if Game.test_args.has("park") and int(Game.test_args["park"]) != i:
+			continue
+		var pk: Dictionary = world.terrain.layout["parks"][i]
+		for r in _ride_line(i, line, v0):
+			print("[TEST] LINE %s %s %-2s in %.1f lip %.1f air %.2f land %.1f of %.1f drift %.2f %s" % [pk["name"], line, r["size"],
+				r["v_in"], r["v_lip"], r["air"], r["land"], r["landing"], r["drift"], r["crash"]])
 
 
 ## Every park kicker from a normal run-in (Easy, no input): air, and a landing past the knuckle.
