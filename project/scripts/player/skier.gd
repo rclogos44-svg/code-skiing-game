@@ -38,7 +38,7 @@ const WALK_SPEED := 1.8
 const JOG_SPEED := 3.4
 const MAX_HIKE_SLOPE := 40.0
 const GRABS := true
-const GRAB_IN := 0.55               # seconds to reach a grab (it takes time to get the hand to the ski)
+const GRAB_IN := 0.85               # longest it takes to reach a grab (s): a big jump; quicker on small ones (>= 0.55 s)
 const GRAB_OUT := 0.35              # seconds to let go and open back up
 const GRAB_AUTO_RELEASE := 0.3      # assisted difficulties let go this long before touchdown (s)
 const WIND_SPIN := 5.4             # spin rate (rad/s) the unwinding body reaches after a full wind-up
@@ -1135,8 +1135,9 @@ func _air_step(dt: float, spin_in: float, flip_in: float) -> void:
 		grab_kind_r = kind
 	# the hand gets to the ski over GRAB_IN and lets go over GRAB_OUT; a grab only scores once
 	# the hand is actually on the ski (> 0.8)
-	grab_l = move_toward(grab_l, 1.0 if gl else 0.0, (1.0 / GRAB_IN if gl else 1.0 / GRAB_OUT) * dt)
-	grab_r = move_toward(grab_r, 1.0 if gr else 0.0, (1.0 / GRAB_IN if gr else 1.0 / GRAB_OUT) * dt)
+	var gin := clampf(land_t * 0.55, 0.55, GRAB_IN)     # as the body: unhurried on a big jump, a little quicker on a small one
+	grab_l = move_toward(grab_l, 1.0 if gl else 0.0, (1.0 / gin if gl else 1.0 / GRAB_OUT) * dt)
+	grab_r = move_toward(grab_r, 1.0 if gr else 0.0, (1.0 / gin if gr else 1.0 / GRAB_OUT) * dt)
 	if grab_l > 0.8:
 		grab_time_l += dt
 	if grab_r > 0.8:

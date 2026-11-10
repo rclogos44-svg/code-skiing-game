@@ -646,14 +646,17 @@ func _grab_ride_shots() -> void:
 	var keys_for := {"Truck Driver": {"grab_left": 1.0, "grab_right": 1.0}, "Mute": {"grab_left": 1.0},
 		"Japan": {"grab_left": 1.0, "brake": 1.0}, "Blunt": {"grab_right": 1.0, "tuck": 1.0}}
 	var mk: Dictionary = {}
+	var size := String(Game.test_args.get("size", "M"))
 	for k in world.terrain.layout["parks"][0]["kickers"]:
-		if k["size"] == "M":
+		if k["size"] == size:
 			mk = k
 	var md := Vector3(mk["dir"][0], 0, mk["dir"][1])
 	s.teleport(Vector3(mk["origin"][0], 0, mk["origin"][1]) - md * 12.0, Skier.yaw_of(md), float(mk["approach_speed"]) - 1.0)
 	var dd := float(Game.test_args.get("dist", 1.8))
+	var every := float(Game.test_args.get("every", 0.15))
+	var front: bool = String(Game.test_args.get("view", "side")) == "front"
 	var shot := 0
-	var next_t := 0.15
+	var next_t := every
 	for i in 900:
 		var keys := {}
 		if s.airborne and s.air_time > 0.15:
@@ -665,10 +668,13 @@ func _grab_ride_shots() -> void:
 		s._cur_xform = s._compose_xform()
 		body._process(1.0 / 120.0)
 		if s.airborne and s.air_time >= next_t:
-			next_t += 0.15
+			next_t += every
 			var fw := Vector3(-sin(s.heading), 0, -cos(s.heading))
 			var c: Vector3 = body.joints["pelvis"]
-			_free_cam(c + fw.cross(Vector3.UP) * dd + fw * 0.4 * dd + Vector3.UP * 0.3, c)
+			if front:
+				_free_cam(c + fw * dd + fw.cross(Vector3.UP) * 0.25 * dd + Vector3.UP * 0.25 * dd, c)
+			else:
+				_free_cam(c + fw.cross(Vector3.UP) * dd + fw * 0.4 * dd + Vector3.UP * 0.3, c)
 			await _frames(2)
 			await _snap("ride_%s_%02d" % [grab.replace(" ", "_"), shot])
 			shot += 1
@@ -1099,6 +1105,18 @@ func _park_kickers() -> void:
 	check("grabs ease in (mute ~0.75 s) and let go smoothly (~0.35 s)",
 		w_at[12] < 0.08 and w_at[30] > 0.1 and w_at[30] < 0.5 and w_at[94] > 0.97 and w_at[140] < 0.05,
 		"pose %.2f at 0.1 s, %.2f at 0.25 s, %.2f at 0.78 s, %.2f 0.37 s after letting go" % [w_at[12], w_at[30], w_at[94], w_at[140]])
+	# every grab, in every trick it can be done in (straight air, spin, flip, cork): the hand still
+	# reaches the ski - the per-trick versions change the shape, never the grip
+	var ctx_worst := 0.0
+	var ctx_name := ""
+	for gname in gbody.GRAB_POSES:
+		for ctx in ["straight", "spin", "flip", "cork"]:
+			var gap: float = gbody._solve_grab(gname, 0.86, 0.06, ctx)["gap"]
+			if gap > ctx_worst:
+				ctx_worst = gap
+				ctx_name = "%s in a %s" % [gname, ctx]
+	check("every grab reaches the ski in a straight air, a spin, a flip and a cork", ctx_worst < 0.02,
+		"worst hand-to-ski gap %.3f m%s" % [ctx_worst, (" (" + ctx_name + ")") if ctx_name != "" else ""])
 	# every grab pose: the grabbing arm is a real reach (elbow not folded up) and clear of the skis
 	var worst_elbow := 180.0
 	var worst_clear := 1.0
@@ -2554,6 +2572,7 @@ func _grab_shots() -> void:
 	s.set_physics_process(false)
 	var only: String = Game.test_args.get("only", "")
 	body.skeleton_view = Game.test_args.get("skeleton", "0") == "1"
+	body.preview_ctx = String(Game.test_args.get("ctx", "straight"))      # straight / spin / flip / cork
 	for gname in body.GRAB_POSES:
 		if only != "" and gname != only:
 			continue
@@ -2581,8 +2600,9 @@ func _grab_shots() -> void:
 			var tbx: Basis = body.torso_basis
 			elb[sd] = "%.0f deg (straight = 180), elbow points %s" % [ang, str((tbx.inverse() * out_dir.normalized()).snapped(Vector3(0.01, 0.01, 0.01)))]
 		print("[TEST] grab %-12s elbows: L %s | R %s" % [gname, elb["l"], elb["r"]])
-		print("[TEST] grab %-12s grip along the ski: %s" % [gname, str(body._solved.get(gname, {}).get("along", {}))])
-		print("[TEST] grab %-12s solved: %s" % [gname, str(body._solved.get(gname, {}))])
+		var skey: String = body._skey(gname, body.preview_ctx)
+		print("[TEST] grab %-12s grip along the ski: %s" % [gname, str(body._solved.get(skey, {}).get("along", {}))])
+		print("[TEST] grab %-12s solved (%s): %s" % [gname, body.preview_ctx, str(body._solved.get(skey, {}))])
 		# joints in the skier's root frame (x his right, y up, z back), m
 		var hb2: Basis = s.visual_xform().basis.orthonormalized()     # the skier's root (hips before the twist)
 		var loc := {}
@@ -2601,10 +2621,16 @@ func _grab_shots() -> void:
 		var tag := String(gname).replace(" ", "_")
 		var mid_ank: Vector3 = (body.joints["ankle_l"] + body.joints["ankle_r"]) * 0.5 - body.joints["pelvis"]
 		var up_spine: Vector3 = (body.joints["chest"] - body.joints["pelvis"]).normalized()
-		var sv: Dictionary = body._solved.get(gname, {})
+		var sv: Dictionary = body._solved.get(body._skey(gname, body.preview_ctx), {})
 		print("[TEST] grab %-12s skis sideways from the pelvis %.2f m (+ = his right), %.2f m below it; chest leans %.0f deg forward, %.0f deg to his %s; solved pitch %.0f deg" % [
 			gname, mid_ank.dot(rt), -mid_ank.y, rad_to_deg(asin(clampf(up_spine.dot(fwd), -1, 1))), absf(rad_to_deg(asin(clampf(up_spine.dot(rt), -1, 1)))),
 			"right" if up_spine.dot(rt) > 0.0 else "left", float(sv.get("pitch", 0.0))])
+		# the ski shape: angle between the skis seen from above (the X), and how far each points tip-up
+		var zl: Vector3 = -body.ski_l.basis.z
+		var zr: Vector3 = -body.ski_r.basis.z
+		var xang := rad_to_deg(Vector2(zl.x, zl.z).normalized().angle_to(Vector2(zr.x, zr.z).normalized()))
+		print("[TEST] grab %-12s skis %.0f deg apart seen from above; tips up: left %.0f deg, right %.0f deg" % [gname, absf(xang),
+			rad_to_deg(asin(clampf(zl.y, -1, 1))), rad_to_deg(asin(clampf(zr.y, -1, 1)))])
 		c += Vector3.UP * 0.15
 		var views := [["front", fwd * 2.5 + Vector3.UP * 0.3], ["side", rt * 2.5 + Vector3.UP * 0.2],
 				["back", -fwd * 2.4 + Vector3.UP * 0.4], ["above", -rt * 1.6 + fwd * 1.0 + Vector3.UP * 1.9]]

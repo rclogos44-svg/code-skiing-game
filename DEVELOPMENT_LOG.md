@@ -805,3 +805,25 @@ Details, research links, the control table and tuning locations: FREESTYLE.md.
   to 36 % and were dragged out into a sail whenever the legs moved apart (switch turns, carving,
   the Truck Driver). Skinning and the pant-leg sway now go by the nearer leg's centre line: 0
   lower-leg vertices follow both legs, and gen_rider refuses to build if any do. Physics 169/169.
+
+## Japan and Mute from reference footage; slower grab-in; grabs that change with the trick
+
+- Reference: the player's Japan photos and a cork 7 mute video (frames studied in the scratchpad,
+  nothing added to the repo).
+- Mute: knees pulled to the chest, the skis swung into a wide X (82-83 deg between them, was ~56)
+  crossing under the boots by the bindings, the left hand onto the right ski at the crossing, the
+  right arm up and out with the pole pointing up; folded forward over the knees, little sideways
+  tilt. The X needs the lower legs to twist, so the leg model gained a lower-leg twist (`tib`,
+  +-25 deg, toes in / out) that the grab solver uses.
+- Japan: the grabbed (left) ski now goes TIP UP (~45 deg) across behind the right leg, gripped by
+  the binding, the other ski flat - it used to go tail-up, the opposite of the photos.
+- Grab-in is slower and staged for every grab: up to 0.75-0.9 s on a big jump (each grab's
+  time_in), 0.55 x the time left in the air on a small one (never under 0.55 s); knees first, then
+  the skis cross, then the hand travels in on a curve (out and a little up first). Scoring follows
+  the same timing; every grab off the medium kicker is still held 0.4 s and named.
+- Grabs differ with the trick (SkierBody.grab_def, chosen when the grab starts): flips (incl.
+  rodeo / misty) tucked tighter and squared up with the free arm in; corks / bios more twisted and
+  tweaked with longer legs and the free arm out wide; spins compact. Each version is solved so the
+  hand still holds the ski (new check over all grabs x 4 tricks, worst gap 1.3 cm).
+- --test=grabs --ctx=straight|spin|flip|cork; --test=grab_ride --grab=.. --size=S|M|L --view=front
+  --every=s. Physics 170/170.

@@ -119,8 +119,29 @@ the spin is steered onto its half-turn at touchdown (on Realistic it keeps its t
 
 ## Grabs
 
+Getting into a grab takes time, like a real one: up to 0.75-0.9 s on a big jump (each grab's
+`time_in`), quicker on a small one (0.55 x the time left in the air, never under 0.55 s), so on
+big air the grab is unhurried and on a small kicker there's still a grab to hold.
+
+The Mute and the Japan are fitted to reference footage / photos the player supplied (kept out of
+the repo): the **Mute** from a cork 7 mute video - arms out at the pop, knees pulled to the chest,
+the skis swung into a wide X (~80-85 deg between them) crossing under the boots by the bindings,
+then the left hand comes down onto the right ski at the crossing while the right arm goes up and
+out; the **Japan** from Japan photos - the right hand goes down between the legs behind the right
+knee to the left ski by the binding, and the left ski is pulled across behind the right leg TIP UP
+(~45 deg) while the other ski stays flat. The wide X needs the lower legs to twist (a bent knee
+allows it), so the leg model has a lower-leg twist (`tib`, +-25 deg, toes in / out).
+
+The same grab is held differently depending on the trick it's done in (`SkierBody.grab_def`, read
+when the grab starts): in a **flip** (back / front flips, rodeos, mistys) it is tucked tighter and
+squared up - knees higher, back rounder, little twist or tilt, the free arm kept in; in a **cork /
+bio** it is styled and tweaked - pulled across harder, legs a little longer, the free arm out wide;
+in a **spin** it is compact so it keeps spinning. Each version is solved separately so the hand
+still really holds the ski.
+
 Phases (shown in the F3 view): **reach** (the knees come up first, the skis cross, the hand
-arrives last: SkierBody stages `_gw_legs`, `_gw_cross`, `_gw_hand`, `_gw_body`), **contact**,
+travels in on a curve - out and a little up first - and arrives last: SkierBody stages `_gw_legs`,
+`_gw_cross`, `_gw_hand`, `_gw_body`), **contact**,
 **hold** (over the first half-second the grab is pulled in a little more: twist and spine curve,
 `_tweak`), **release** (the hand lets go first, then the legs, back toward a landing-ready
 stance), **landing prep**. Letting go before contact blends out from wherever the reach got to.
@@ -161,7 +182,8 @@ mountain are unchanged (build/parks.py applies it after the features and on clea
 - Flip / spin pop: Skier.FLIP_POP, WIND_SPIN, SPIN_MAX, UNWIND_TIME.
 - Off-axis: Skier.OFFAXIS, OFF_MIN_AIR, OFF_FLIP_RATE, OFF_FLIP_END; air control rates use the difficulty's `air_spin` /
   `air_flip`; landing help uses `level` (Skier.DIFFICULTIES).
-- Grabs: Skier.GRAB_IN / GRAB_OUT / GRAB_AUTO_RELEASE; poses in SkierBody.GRAB_POSES.
+- Grabs: Skier.GRAB_IN / GRAB_OUT / GRAB_AUTO_RELEASE; poses (and each one's `time_in`) in
+  SkierBody.GRAB_POSES; per-trick versions in SkierBody.grab_def.
 - Off-axis body shapes: SkierBody._compute_pose (search "off-axis takeoff shapes").
 - Landing tolerance / impact limits: Skier.DIFFICULTIES `land_tol`, `impact`.
 - Park layout and jump sizes: build/parks.py (DESIGNS "Ridgeline Park", STEPUP, KICKERS).
