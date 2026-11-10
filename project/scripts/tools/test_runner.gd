@@ -658,7 +658,7 @@ func _perf() -> void:
 		var draws := []
 		var prims := []
 		var last := Time.get_ticks_usec()
-		for f in 480:
+		for f in int(Game.test_args.get("frames", "240")):
 			var t := f % 240
 			var keys := {}
 			if t < 70:
@@ -1127,6 +1127,41 @@ func _park_kickers() -> void:
 				"'%s' %s · flip %.0f deg, max tilt %.0f deg, air %.2f s, waited for the lip %s" % [otr.get("name", "-"), oi.get("crash", "no landing"),
 				float(oi.get("off_flip", 0.0)), float(oi.get("off_tilt", 0.0)), float(oi.get("air_time", 0.0)), pend])
 	s.scripted_input = {}
+	# Ridgeline's step-up, ridden straight from its quick drop: clears the gap, lands on the deck
+	# (not the face) and rides away
+	if rp >= 0:
+		var su: Dictionary = {}
+		for sh in world.terrain.layout["parks"][rp].get("shapes", []):
+			if sh["kind"] == "stepup":
+				su = sh
+		if not su.is_empty():
+			var sdir := Vector3(su["dir"][0], 0, su["dir"][1])
+			var so := Vector3(su["origin"][0], 0, su["origin"][1])
+			var deck_t := float(su["ramp"]) + float(su["back"]) + float(su["gap"]) + float(su["face"])
+			var st2: Dictionary = world.park.park_start(rp, 5)
+			s.teleport(st2["pos"], st2["yaw"], 4.0)
+			var sbox := {}
+			var scb := func(info): sbox["info"] = info
+			s.landed.connect(scb)
+			var land_t2 := -99.0
+			var flew := false
+			for i in 2400:
+				s.scripted_input = {}
+				s.step(1.0 / 120.0)
+				s.time += 1.0 / 120.0
+				var along := (s.position - so).dot(sdir)
+				if s.airborne and along > float(su["ramp"]) - 1.0 and along < deck_t:
+					flew = true
+				if sbox.has("info") and flew:
+					land_t2 = along
+					break
+				if s.is_crashed or along > float(su["length"]) + 5.0:
+					break
+			s.landed.disconnect(scb)
+			var lip_v := 0.0
+			check("Ridgeline step-up: from its drop, flies the gap and lands on the raised deck", flew and land_t2 >= deck_t - 0.5 \
+				and land_t2 < float(su["length"]) and not s.is_crashed, "touched down %.1f m along (deck %.1f .. %.1f m)%s" % [land_t2, deck_t,
+				deck_t + float(su["deck"]), " CRASHED" if s.is_crashed else ""])
 	# grab keys (Q/E + W/S) never touch the flip: same rotation with and without a grab held
 	var flip_with := {}
 	for with_grab in [false, true]:
