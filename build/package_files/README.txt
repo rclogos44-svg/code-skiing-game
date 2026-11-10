@@ -58,6 +58,9 @@ Difficulty   Settings > Controls: Easy (default: lots of air control,
              from your takeoff, edges catch, rails need balancing)
 Mouse        Look around      Scroll wheel   Zoom camera
 C            Switch camera (standard / close chase)
+X            Switch stance: a 180 on the snow into riding switch (and back out).
+             Riding switch you look over a shoulder; landing a 180 keeps you switch.
+Left / Right On a rail or box: a quick tap spins you 180 on it.
 V            Skeleton view: hide the clothes and show the bones and joints
 B            Slow motion on / off (quarter speed)
 F            First-person view

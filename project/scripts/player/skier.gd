@@ -92,6 +92,13 @@ var time := 0.0
 var frozen := false
 var input_enabled := true
 var revert := 0.0
+var riding_switch := false         # going backwards (skis' tails first); the body faces back up the hill
+var stance_vis := 0.0              # body yaw on top of the heading: 0 forward, PI switch, in between mid-180
+var takeoff_switch := false        # was switch at the last takeoff (for trick names)
+var _stance_left := 0.0            # ground 180 still to turn (rad), its direction, cooldown, button edge
+var _stance_dir := 1.0
+var _stance_cd := 0.0
+var _stance_prev := false
 var takeoff_pos := Vector3.ZERO
 var max_air_height := 0.0
 var pushing := 0.0
@@ -254,6 +261,10 @@ func _reset_motion() -> void:
 	compression_vel = 0.0
 	is_crashed = false
 	revert = 0.0
+	riding_switch = false
+	stance_vis = 0.0
+	_stance_left = 0.0
+	_stance_cd = 0.0
 	steep_time = 0.0
 	stop_side = 0.0
 	edge_brake = 0.0
@@ -427,7 +438,7 @@ func step(dt: float) -> void:
 	var srate := 3.2 * steer_sens if absf(raw_steer) > absf(steer) else 5.0
 	steer = move_toward(steer, clampf(raw_steer, -1.0, 1.0), srate * dt)
 	tuck = 0.0
-	_want_push = want_tuck and not want_brake
+	_want_push = want_tuck and not want_brake and not riding_switch     # no pole-pushing backwards
 	brake = move_toward(brake, 1.0 if want_brake else 0.0, 4.0 * dt)
 	# jump charge
 	if jump_held:
@@ -446,6 +457,7 @@ func step(dt: float) -> void:
 	if not charging and _jump_buffer <= 0.0 and trick_set == Vector2i.ZERO:
 		charge = move_toward(charge, 0.0, 3.0 * dt)
 	_coyote = maxf(_coyote - dt, 0.0)
+	_stance_cd = maxf(_stance_cd - dt, 0.0)
 	if not grind.is_empty():
 		_grind_step(dt)
 		return
@@ -633,6 +645,22 @@ func _ground_step(dt: float, n: Vector3, cf: float) -> void:
 		sp = maxf(sp - dec2 * dt, 0.0)
 		vt = vdir * sp
 	vel = vt + n * vn
+	# --- switch stance: X does a clean 180 on the snow (0.45 s) into or out of riding switch; a
+	# press only counts if the last 180 has finished and its 0.9 s cooldown has run out
+	var sw_now := _pressed("switch_stance")
+	if sw_now and not _stance_prev and _stance_left <= 0.0 and _stance_cd <= 0.0 and sp > 1.5 and edge_brake < 0.2:
+		_stance_left = PI
+		_stance_dir = -1.0 if steer > 0.1 else 1.0       # spin the way you're turning, else to the left
+		_stance_cd = 0.9
+	_stance_prev = sw_now
+	if _stance_left > 0.0:
+		var st := minf(_stance_left, 7.0 * dt)
+		_stance_left -= st
+		stance_vis = wrapf(stance_vis + _stance_dir * st, -PI, PI)
+		vel *= 1.0 - 0.3 * dt                               # the skis skid through the 180
+		if _stance_left <= 0.0:
+			riding_switch = not riding_switch
+			stance_vis = PI if riding_switch else 0.0
 	# --- pole push / skating on the flats
 	pushing = 0.0
 	if _want_push and sp < PUSH_MAX and brake < 0.1:
@@ -812,6 +840,10 @@ func _take_off(from_jump := false) -> void:
 	if not from_jump and trick_set.x != 0:
 		wind = 0.0              # set but not popped: rolling off the lip doesn't unwind into a spin
 	airborne = true
+	takeoff_switch = riding_switch
+	if _stance_left > 0.0:          # popped mid-180: finish it as part of the air
+		_stance_left = 0.0
+		stance_vis = PI if riding_switch else 0.0
 	air_up = ground_n                # he leaves square to the snow he took off from
 	_land_probe = 0
 	# superpipe: off the coping you go straight up (a real wall is vertical at the top), not out over
@@ -884,6 +916,7 @@ func _land(n: Vector3, impact: float) -> void:
 		"height": max_air_height, "distance": Vector2(position.x - takeoff_pos.x, position.z - takeoff_pos.z).length(),
 		"crash": "", "flip": air_pitch, "pitch_peak": air_pitch_peak, "pitch_off": rad_to_deg(pitch_off),
 		"grab_kind_l": grab_kind_l, "grab_kind_r": grab_kind_r, "grab_name": _jump_grab, "grab_time": grab_time,
+		"takeoff_switch": takeoff_switch,
 	}
 	ground_n = n
 	# the legs absorb the landing: the impact sets them sinking (the compression spring peaks ~0.13 s
@@ -910,8 +943,10 @@ func _land(n: Vector3, impact: float) -> void:
 		# absorb part of the impact
 		vel *= 1.0 - clampf((impact - 5.0) * 0.012, 0.0, 0.12)
 		if is_switch:
+			# landed the other way round: you ride away in that stance (switch, or back to forward)
 			heading = wrapf(heading + PI, -PI, PI)
-			revert = PI * (1.0 if spin_vel >= 0.0 else -1.0)
+			riding_switch = not riding_switch
+			stance_vis = PI if riding_switch else 0.0
 		yaw_rate = 0.0
 	spin_vel = 0.0
 	flip_vel = 0.0
@@ -1350,6 +1385,8 @@ func _mount(r: Dictionary, s: float, lat01: float, vh: float, dir: Vector3) -> v
 	grind_slide = absf(rel) > PI * 0.25 and absf(rel) < PI * 0.75
 	grind_switch = absf(rel) >= PI * 0.75
 	_stance_off = signf(rel) * PI * 0.5 if grind_slide else (PI if grind_switch else 0.0)
+	if riding_switch and not grind_slide:
+		grind_switch = not grind_switch          # the body is the other way round already
 	heading = wrapf(ay + _stance_off, -PI, PI)
 	_grind_entry = air_rotation if airborne else 0.0
 	_grind_yaw = ay

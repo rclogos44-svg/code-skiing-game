@@ -335,6 +335,8 @@ var preview_grab := ""
 const CLOTH_PARTS := {"hood": [Vector3(0, -0.6, 0.8), -0.02, 0.2]}   # rigid hood; the skinned jacket carries its own weights
 const CLOTH_SPRING := {"hem": [140.0, 0.3, 0.02, 0.12], "hood": [60.0, 0.22, 0.02, 0.12], "sleeve": [220.0, 0.35, 0.012, 0.05]}
 var _cloth := {}                # spring -> [offset, velocity] (world, m and m/s)
+var _look_side := 1.0           # riding switch: +1 looking over the left shoulder, -1 the right
+var _look_hold := 0.0
 var _cloth_prev := Vector3.ZERO
 var _cloth_pv := Vector3.ZERO
 var _cloth_acc := Vector3.ZERO
@@ -371,7 +373,7 @@ func setup(s: Skier) -> void:
 	global_transform = Transform3D.IDENTITY
 	_build()
 	ragdoll.terrain = s.terrain
-	for k in ["layout", "ftuck", "chatter", "pelvis_h", "pelvis_z", "pitch", "counter", "hand_spread", "plow", "feet_up", "arms_air", "tuck", "grab_l", "grab_r", "brake", "edgeb"]:
+	for k in ["layout", "ftuck", "chatter", "pelvis_h", "pelvis_z", "pitch", "counter", "hand_spread", "plow", "feet_up", "arms_air", "tuck", "grab_l", "grab_r", "brake", "edgeb", "switch_look", "look_yaw"]:
 		_p[k] = 0.0
 	_p["pelvis_h"] = 0.9
 	for gname in GRAB_POSES:
@@ -613,9 +615,10 @@ func _compute_pose(dt: float) -> void:
 	var s := skier
 	var root := s.visual_xform()
 	var up := root.basis.y
-	# yaw revert after a switch landing: body keeps spinning to face forward
-	if absf(s.revert) > 0.001:
-		root.basis = Basis(up, s.revert) * root.basis
+	# riding switch (and the 180 into or out of it): the body faces back up the hill
+	var yaw_add := s.revert + s.stance_vis
+	if absf(yaw_add) > 0.001:
+		root.basis = Basis(up, yaw_add) * root.basis
 	# flips: the whole body rotates about its centre of mass
 	if s.airborne and absf(s.air_pitch) > 0.001:
 		var piv := root.origin + up * 0.9
@@ -645,7 +648,8 @@ func _compute_pose(dt: float) -> void:
 	var w_lean := 9.0
 	_lean_v += (w_lean * w_lean * (lean_t - _lean) - 2.0 * w_lean * _lean_v) * dt
 	_lean = clampf(_lean + _lean_v * dt, -0.9, 0.9)
-	var L := Transform3D(root.basis * Basis(Vector3(0, 0, 1), -_lean), root.origin)
+	# the lean is into the turn in the world; with the body turned round (switch) that's the other way
+	var L := Transform3D(root.basis * Basis(Vector3(0, 0, 1), -_lean * cos(s.stance_vis)), root.origin)
 	# off-axis grab: the whole body tilts in the air (legs and skis swing out to one side)
 	var g_roll := float(GRAB_POSES[_ag].get("roll", 0.0)) * _gw_body if GRAB_POSES.has(_ag) else 0.0
 	if absf(g_roll) > 0.0001:
@@ -657,11 +661,25 @@ func _compute_pose(dt: float) -> void:
 	var LH := Transform3D(L.basis * Basis(Vector3.UP, hips_yaw), L.origin)
 	# upper body faces the direction of travel: when the skis pivot underneath, the torso lags
 	# behind instead of snapping, and it counter-rotates slightly toward the outside of the turn
-	var torso_t := 0.0
+	# riding switch: he looks down the hill over a shoulder - the left one going straight or turning
+	# right, the right one in a left turn.  The shoulder only changes once a turn has been held for
+	# half a second, and the head swings across smoothly, so tapping the arrows can't whip it about.
+	var want_side := -1.0 if s.steer < -0.35 else 1.0          # +1 = over the left shoulder
+	if want_side != _look_side:
+		_look_hold += dt
+		if _look_hold > 0.5:
+			_look_side = want_side
+			_look_hold = 0.0
+	else:
+		_look_hold = 0.0
+	var look_on := 1.0 if s.riding_switch and (not s.airborne or absf(s.air_rotation) < PI * 0.5) else 0.0
+	var sw_look := _sm("switch_look", look_on, 5.0, dt)
+	var look_yaw := _sm("look_yaw", _look_side * 1.3, 4.0, dt) * sw_look
+	var torso_t := look_yaw * 0.3                                  # the shoulders open toward the look
 	if not s.airborne and s.speed > 1.5:
 		# hockey stop: the skis pivot underneath while the upper body keeps facing downhill
 		var lim := lerpf(0.7, 1.3, maxf(s.edge_brake, 1.0 if s.grind_slide and s.is_grinding() else 0.0))
-		torso_t = clampf(wrapf(s.travel_yaw - s.heading, -PI, PI), -lim, lim) * lerpf(0.75, 0.9, s.edge_brake) + _lean * 0.22
+		torso_t += clampf(wrapf(s.travel_yaw - s.heading, -PI, PI), -lim, lim) * lerpf(0.75, 0.9, s.edge_brake) + _lean * 0.22
 	# winding up for a spin: shoulders coil against the spin (Left held -> shoulders left -> right 360)
 	torso_t += s.wind * 0.55
 	# in the air the head and shoulders lead the spin and the hips follow
@@ -853,7 +871,7 @@ func _compute_pose(dt: float) -> void:
 	joints["thoracic"] = thoracic
 	joints["chest"] = chest
 	# head keeps the eyes level and looks into the turn
-	var hb := tb * Basis(Vector3.UP, -_lean * 0.35) * Basis(Vector3(0, 0, 1), _lean * 0.3) * Basis(Vector3(1, 0, 0), pitch * 0.8 - deg_to_rad(6.0))
+	var hb := tb * Basis(Vector3.UP, -_lean * 0.35 + look_yaw) * Basis(Vector3(0, 0, 1), _lean * 0.3) * Basis(Vector3(1, 0, 0), pitch * 0.8 - deg_to_rad(6.0))
 	# grabbing: look at the ski you're reaching for (over the shoulder for a tail grab), within
 	# what a neck can turn; the head turns first, then the hand follows
 	var gl_pose: Dictionary = GRAB_POSES.get(_ag, {})

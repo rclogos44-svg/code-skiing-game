@@ -143,6 +143,10 @@ static func evaluate(info: Dictionary) -> Dictionary:
 		q_mul = 0.6
 	if info.get("switch", false) and spin >= 180:
 		tags.append("switch")
+	if info.get("takeoff_switch", false) and not parts.is_empty() and parts[0] != "Air":
+		parts.insert(0, "Switch")               # took off riding switch: harder, worth more
+		points = int(points * 1.2)
+		tags.append("switch_takeoff")
 	points = int(round(points * q_mul))
 	return {"name": " ".join(parts), "points": points, "quality": quality, "spin": spin, "grabs": grabs,
 		"air_time": air, "tags": tags}

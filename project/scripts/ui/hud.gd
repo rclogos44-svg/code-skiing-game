@@ -349,12 +349,12 @@ func show_controls_hint() -> void:
 	if skier and skier.mode == Skier.Mode.LIFT:
 		hint_label.text = "Mouse: look around · hold %s to skip to the top · %s map" % [b.call("interact"), b.call("map")]
 		return
-	hint_label.text = "%s/%s turn · %s pole push · %s hockey stop · TRICKS: hold an arrow to set, press the opposite one to pop · %s then %s: backflip · %s then %s: front flip · %s then %s: left spin · %s then %s: right spin · let go without the opposite: ollie · grabs: %s / %s (+ %s / %s for front / back of the ski) · on rails %s/%s balance · %s back to the top · %s slow-mo · %s skeleton" % [
+	hint_label.text = "%s/%s turn · %s pole push · %s hockey stop · TRICKS: hold an arrow to set, press the opposite one to pop · %s then %s: backflip · %s then %s: front flip · %s then %s: left spin · %s then %s: right spin · let go without the opposite: ollie · grabs: %s / %s (+ %s / %s for front / back of the ski) · on rails %s/%s balance, tap %s/%s to spin · %s switch stance · %s back to the top · %s slow-mo · %s skeleton" % [
 		b.call("steer_left"), b.call("steer_right"), b.call("tuck"), b.call("brake"),
 		b.call("lean_forward"), b.call("lean_back"), b.call("lean_back"), b.call("lean_forward"),
 		b.call("lean_right"), b.call("lean_left"), b.call("lean_left"), b.call("lean_right"),
 		b.call("grab_left"), b.call("grab_right"), b.call("tuck"), b.call("brake"), b.call("steer_left"), b.call("steer_right"),
-		b.call("map"), b.call("slow_mo"), b.call("skeleton_view")]
+		b.call("lean_left"), b.call("lean_right"), b.call("switch_stance"), b.call("map"), b.call("slow_mo"), b.call("skeleton_view")]
 
 
 func show_region(name: String) -> void:

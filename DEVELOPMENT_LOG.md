@@ -657,3 +657,16 @@ no map, parks, keep the ragdoll crashes, black baggy gear, only flips, spins and
   S-Rail / Tabletop / Flat-Down", "Gap to Rail".
 - Checks: each shape ridden to the end, gap to rail with no input, assist from 0.8 m off line, a
   180 on a box. Physics 139/139.
+- Riding switch: X (gamepad D-pad left) does a clean 180 on the snow (0.45 s, the skis skid a
+  little) into riding switch and back; a press only counts once the last 180 has finished and its
+  0.9 s cooldown has passed, so mashing it gives one 180. The body faces back up the hill (the turn
+  lean is mirrored to stay into the turn); landing a 180 / 540 jump now keeps you riding switch
+  (it used to spin you back to forward); no pole-pushing backwards. Riding switch the head looks
+  down the hill over a shoulder (~75 deg, shoulders opening ~17 deg toward it): the left one going
+  straight or turning right, the right one in a left turn; the shoulder only changes after a turn
+  has been held 0.5 s and the head swings across smoothly - tapping the turn keys can't whip it
+  back and forth. The look holds through a switch wind-up and the first quarter of a switch spin,
+  and flips stay relative to his body. Tricks taken off switch are named "Switch ..." (+20 %);
+  rails ridden switch read as Switch 50-50. Checks: mashing X = one 180; tapping left/right while
+  switch = no shoulder swaps; a held left turn = right shoulder. --test=switch_shots renders it.
+  Physics 141/141.

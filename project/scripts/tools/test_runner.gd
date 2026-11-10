@@ -50,6 +50,8 @@ func run(w: World) -> void:
 			_pipe_report()
 		"pipe_anim":
 			await _pipe_anim()
+		"switch_shots":
+			await _switch_shots()
 		_:
 			print("[TEST] unknown test mode ", Game.test_mode)
 			failures += 1
@@ -383,6 +385,42 @@ func _pipe_anim() -> void:
 	s.set_physics_process(true)
 
 
+## Frames of the stance 180 into switch, then riding switch looking over each shoulder.
+func _switch_shots() -> void:
+	var s := world.skier
+	var body = world.body
+	var st: Dictionary = world.park.park_start(0)
+	world.spawn(st["pos"], st["yaw"])
+	await _frames(10)
+	s.set_physics_process(false)
+	body.set_process(false)
+	var pk: Dictionary = world.park.parks[0]
+	var d := Vector3(pk["dir"][0], 0, pk["dir"][1])
+	s.teleport(Vector3(pk["origin"][0], 0, pk["origin"][1]) + d * 30.0 + d.cross(Vector3.UP) * 15.0, Skier.yaw_of(d), 8.0)
+	var shot := 0
+	for f in 120 * 5:
+		var inp := {}
+		if f >= 30 and f < 40:
+			inp["switch_stance"] = 1.0
+		if f >= 330:
+			inp["steer_left"] = 1.0
+		s.scripted_input = inp
+		s.step(1.0 / 120.0)
+		s.time += 1.0 / 120.0
+		s._prev_xform = s._cur_xform
+		s._cur_xform = s._compose_xform()
+		body._process(1.0 / 120.0)
+		if f in [36, 50, 64, 90, 250, 300, 480, 590]:
+			var fw := Vector3(-sin(s.heading), 0, -cos(s.heading))
+			var c: Vector3 = body.joints["pelvis"] + Vector3.UP * 0.4
+			var cam := c + fw * 3.0 + fw.cross(Vector3.UP) * (1.6 if shot % 2 == 0 else -1.6) + Vector3.UP * 0.6
+			_free_cam(cam, c)
+			await _frames(2)
+			await _snap("switch_%02d" % shot)
+			shot += 1
+	s.set_physics_process(true)
+
+
 ## --test=pipe [--t0=40 --ang=55 --v0=13]: ride into the pipe and print the hits and a trace.
 func _pipe_report() -> void:
 	var ai := {}
@@ -481,6 +519,48 @@ func _park_kickers() -> void:
 			ok = ok and r["crash"] == "" and float(r["air"]) > 0.5 and float(r["land"]) > -1.0 and float(r["land"]) < float(r["landing"]) + 1.0
 			desc.append("%s %.1f m/s %.1fs @%.1f/%.1f%s" % [r["size"], r["v_in"], r["air"], r["land"], r["landing"], (" " + r["crash"]) if r["crash"] != "" else ""])
 		check("%s jump line ridden top to bottom: all %d jumps land on their landings" % [pk2["name"], rows.size()], ok, ", ".join(desc))
+	# switch: X turns you round with a 180 on the snow; mashing it does one 180, not several; landing
+	# a 180 jump keeps you riding switch; riding switch the head looks over a shoulder, and tapping
+	# left / right quickly doesn't swing it back and forth
+	var sw_spot := _find_slope(12.0, 20.0)
+	if not sw_spot.is_empty():
+		var sk := _settle_on(sw_spot["pos"], sw_spot["yaw"])
+		_run(sk, 1.5, {})
+		var flips := 0
+		var was := sk.riding_switch
+		for f in 120:
+			sk.scripted_input = {"switch_stance": 1.0} if (f / 6) % 2 == 0 else {}     # mashing X for 1 s
+			sk.step(1.0 / 120.0)
+			sk.time += 1.0 / 120.0
+			if sk.riding_switch != was:
+				flips += 1
+				was = sk.riding_switch
+		check("switch stance: X does one clean 180 into switch, mashing it doesn't stack more", sk.riding_switch and flips == 1
+			and absf(absf(sk.stance_vis) - PI) < 0.01, "%d stance changes, body yaw %.0f deg" % [flips, rad_to_deg(sk.stance_vis)])
+		var bd = world.body
+		bd._look_side = 1.0
+		bd._look_hold = 0.0
+		var side_changes := 0
+		var last_side: float = bd._look_side
+		for f in 240:
+			sk.scripted_input = {"steer_left": 1.0} if (f / 12) % 2 == 0 else {"steer_right": 1.0}   # tapping 0.1 s each
+			sk.step(1.0 / 120.0)
+			sk.time += 1.0 / 120.0
+			sk._prev_xform = sk._cur_xform
+			sk._cur_xform = sk._compose_xform()
+			bd._process(1.0 / 120.0)
+			if bd._look_side != last_side:
+				side_changes += 1
+				last_side = bd._look_side
+		var held_changes := 0
+		for f in 120:
+			sk.scripted_input = {"steer_left": 1.0}                                   # a held left turn
+			sk.step(1.0 / 120.0)
+			sk.time += 1.0 / 120.0
+			bd._process(1.0 / 120.0)
+		check("riding switch: the head stays over one shoulder when the turn keys are tapped, moves for a held turn",
+			side_changes == 0 and bd._look_side < 0.0, "%d swaps while tapping; held left -> %s shoulder" % [side_changes,
+			"right" if bd._look_side < 0.0 else "left"])
 	# the mega pipe: across the flat into a wall, straight up out of it and back in; and wall to wall
 	var pr := _pipe_ride(50.0, 65.0, 15.0, 1)
 	if not pr.is_empty():

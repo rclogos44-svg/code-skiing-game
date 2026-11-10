@@ -28,6 +28,7 @@ const ACTIONS := {
 	"pause": {"label": "Pause", "keys": [KEY_P]},
 	"skeleton_view": {"label": "Skeleton view (see the joints)", "keys": [KEY_V]},
 	"slow_mo": {"label": "Slow motion on / off", "keys": [KEY_B]},
+	"switch_stance": {"label": "Switch stance (a 180 on the snow: ride switch / back to forward)", "keys": [KEY_X]},
 }
 
 ## Gamepad defaults (not rebindable through the UI, always present).
@@ -41,6 +42,7 @@ const JOY_BUTTONS := {
 	"camera_switch": [JOY_BUTTON_RIGHT_STICK],
 	"first_person": [JOY_BUTTON_LEFT_STICK],
 	"interact": [JOY_BUTTON_DPAD_UP],
+	"switch_stance": [JOY_BUTTON_DPAD_LEFT],
 	"skis": [JOY_BUTTON_DPAD_DOWN],
 	"map": [JOY_BUTTON_BACK],
 	"pause": [JOY_BUTTON_START],
