@@ -642,3 +642,18 @@ no map, parks, keep the ragdoll crashes, black baggy gear, only flips, spins and
   The old rigid torso / sleeve / leg pieces stay built but hidden (skeleton view still works).
 - Landings: the impact now sets the leg-compression spring moving (peaks ~0.13 s later and comes
   back up) instead of snapping into a crouch on the frame he touches down.
+- Rails are paths now (park.gd rails: pts + cumulative lengths; Skier.rail_at): shaped rails and
+  boxes from parks.py - kink (down-flat-down, last part steeper), flat-down, tabletop (up-flat-
+  down), rainbow (an arch), S-rail (an S in plan, the bends push your balance outward), level
+  "flat" rails. Grinding follows the path (gravity per section: you slow on the way up a rainbow).
+  Gap to rail: a small snow lip, a 1.3 m gap and a level rail that runs out over the slope.
+- Every park got jib rows - three features side by side (box / rail / tube or wide box) - plus the
+  new shapes and a gap-to-rail (Main Park, Big Air, Jib Garden, both Sierra jib lanes).
+- Rail assist (Easy strong, Normal some, Realistic none): in the air, heading for a rail within
+  ~40 deg of its line, your sideways drift is steered so you arrive over it; a little more reach
+  when you jump onto one. Shaped boxes rise off the snow, so they take a pop like rails.
+- Spins on rails and boxes: a quick tap of Left / Right while sliding turns you 180 on it (through
+  a slide to switch); trick names say "180 Spin" / "360 Spin" and "on the Kinked / Rainbow /
+  S-Rail / Tabletop / Flat-Down", "Gap to Rail".
+- Checks: each shape ridden to the end, gap to rail with no input, assist from 0.8 m off line, a
+  180 on a box. Physics 139/139.

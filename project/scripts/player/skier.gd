@@ -146,6 +146,12 @@ var rails: Array = []              # jib features {a, b (top line), kind, width,
 var grind := {}                    # the rail being slid
 var grind_slide := false           # skis across the rail (slide) instead of along it (50-50)
 var grind_switch := false
+var _stance_off := 0.0             # skis' angle to the rail while on it (0 50-50, +-90 slide, 180 switch)
+var _grind_yaw := 0.0
+var _rspin_left := 0.0             # on-rail spin still to turn (rad), its direction, and the total
+var _rspin_dir := 1.0
+var _rspin_total := 0.0
+var _set_x := 0                    # the Left/Right arrow last set (for on-rail spin taps)
 var grind_time := 0.0
 var grind_press := 0.0             # seconds pressing the tips (+) or tails (-)
 var rail_balance := 0.0            # -1..1, falls off past either end
@@ -334,18 +340,23 @@ func _arrow_tricks(dt: float) -> void:
 		return
 	# let go of a set arrow without popping the opposite one
 	var was_set := trick_set != Vector2i.ZERO
+	if trick_set.x == 0 and trick_set.y != 0:
+		_set_x = 0
 	if (trick_set.x == 1 and not r) or (trick_set.x == -1 and not l):
 		trick_set.x = 0
 	if (trick_set.y == 1 and not u) or (trick_set.y == -1 and not d):
 		trick_set.y = 0
 	if was_set and trick_set == Vector2i.ZERO:
-		if _set_time > 0.1:
+		if not grind.is_empty() and _set_x != 0 and _set_time < 0.3:
+			rail_spin(float(_set_x))        # on a rail / box: a tap of Left / Right spins you on it
+		elif _set_time > 0.1:
 			_arrow_pop(Vector2i.ZERO)       # straight pop (ollie)
 		_set_time = 0.0
 		return
 	# new set
 	if trick_set.x == 0 and r != l:
 		trick_set.x = 1 if r else -1
+		_set_x = trick_set.x
 	if trick_set.y == 0 and u != d:
 		trick_set.y = 1 if u else -1
 	if trick_set != Vector2i.ZERO:
@@ -651,6 +662,7 @@ func _ground_step(dt: float, n: Vector3, cf: float) -> void:
 func _air_step(dt: float, spin_in: float, flip_in: float) -> void:
 	vel += Vector3(0, -G, 0) * dt
 	_tilt_for_landing(dt)
+	_rail_assist(dt)
 	var sp := vel.length()
 	var compact := maxf(tuck, (grab_l + grab_r) * 0.5)
 	var cda := lerpf(0.0042, 0.0022, compact)
@@ -1228,47 +1240,121 @@ func is_grinding() -> bool:
 
 
 ## Boxes (low) can be ridden onto from the snow; rails (higher) need a pop.
+## Point, unit direction and segment index on a rail's path at arc length `s` (rails, boxes and
+## tubes are polylines: straight, kinked, rainbow, S-shaped...).
+static func rail_at(r: Dictionary, s: float) -> Array:
+	var pts: Array = r["pts"]
+	var cum: Array = r["cum"]
+	var i := 0
+	while i < pts.size() - 2 and s > float(cum[i + 1]):
+		i += 1
+	var a: Vector3 = pts[i]
+	var seg := maxf(float(cum[i + 1]) - float(cum[i]), 0.0001)
+	var dir: Vector3 = ((pts[i + 1] as Vector3) - a) / seg
+	return [a + dir * (s - float(cum[i])), dir, i]
+
+
 func _try_mount() -> void:
+	var k := float(diff()["rail_assist"])
+	var lat_extra := 0.15 * k if airborne else 0.0          # rail assist: a little more reach when you jump at it
 	for r: Dictionary in rails:
-		var a: Vector3 = r["a"]
-		var ab: Vector3 = r["b"] - a
-		var length := ab.length()
-		var dir := ab / length
-		var t := (position - a).dot(dir)
-		if t < 0.3 or t > length - 0.6:
+		var pts: Array = r["pts"]
+		var cum: Array = r["cum"]
+		var total := float(r["length"])
+		if Vector2(position.x - (r["a"] as Vector3).x, position.z - (r["a"] as Vector3).z).length() > total + 4.0:
 			continue
-		var top := a + dir * t
-		var side := dir.cross(Vector3.UP).normalized()
-		var lat := (position - top).dot(side)
-		if absf(lat) > float(r["width"]) * 0.5 + 0.3:
-			continue
-		var dy := position.y - top.y
-		# boxes and tubes can be ridden onto from the snow, rails need a pop
-		if dy < {"box": -0.42, "widebox": -0.5, "tube": -0.62}.get(r["kind"], -0.1) or dy > 0.45:
-			continue
-		var vh := vel.dot(dir)
-		if absf(vh) < 2.0 or (airborne and vel.y > 1.0):
-			continue
-		_mount(r, t, lat / (float(r["width"]) * 0.5 + 0.3), vh)
+		for i in pts.size() - 1:
+			var a: Vector3 = pts[i]
+			var ab: Vector3 = (pts[i + 1] as Vector3) - a
+			var length := ab.length()
+			var dir := ab / length
+			var t := (position - a).dot(dir)
+			var s := float(cum[i]) + t
+			if t < -0.05 or t > length + 0.05 or s < 0.3 or s > total - 0.6:
+				continue
+			var top := a + dir * t
+			var side := dir.cross(Vector3.UP).normalized()
+			var lat := (position - top).dot(side)
+			var reach := float(r["width"]) * 0.5 + 0.3
+			if absf(lat) > reach + lat_extra:
+				continue
+			var dy := position.y - top.y
+			# boxes and tubes can be ridden onto from the snow, rails need a pop
+			if dy < {"box": -0.42, "widebox": -0.5, "tube": -0.62}.get(r["kind"], -0.1) or dy > 0.45 + 0.1 * k:
+				continue
+			var vh := vel.dot(dir)
+			if absf(vh) < 2.0 or (airborne and vel.y > 1.0):
+				continue
+			_mount(r, s, clampf(lat / reach, -1.0, 1.0), vh, dir)
+			return
+
+
+## Rail assist (like Riders Republic / Skate): in the air, heading for a rail roughly along it,
+## your sideways drift is steered so you arrive over it.  Strength by difficulty (none on Realistic).
+func _rail_assist(dt: float) -> void:
+	var k := float(diff()["rail_assist"])
+	if k <= 0.0 or rails.is_empty() or _rail_cd > 0.0:
 		return
+	var hv := Vector3(vel.x, 0.0, vel.z)
+	var sp := hv.length()
+	if sp < 2.0:
+		return
+	var best_lat := INF
+	var best := {}
+	for r: Dictionary in rails:
+		if Vector2(position.x - (r["a"] as Vector3).x, position.z - (r["a"] as Vector3).z).length() > float(r["length"]) + 10.0:
+			continue
+		var pts: Array = r["pts"]
+		for i in pts.size() - 1:
+			var a: Vector3 = pts[i]
+			var ab: Vector3 = (pts[i + 1] as Vector3) - a
+			var length := ab.length()
+			var dir := ab / length
+			var dh := Vector3(dir.x, 0.0, dir.z).normalized()
+			var along := hv.dot(dh) / sp
+			if absf(along) < 0.75:
+				continue                       # more than ~40 deg off the rail
+			var t := (position - a).dot(dir)
+			if t < -6.0 or t > length - 0.4:
+				continue
+			var top := a + dir * clampf(t, 0.3, length)
+			var side := dh.cross(Vector3.UP)
+			var lat := (position - top).dot(side)
+			var dy := position.y - top.y
+			if absf(lat) > 2.0 or dy < -0.4 or dy > 3.5:
+				continue
+			if absf(lat) < best_lat:
+				best_lat = absf(lat)
+				best = {"lat": lat, "side": side, "ahead": maxf(-t, 0.0) + 0.6, "v": absf(hv.dot(dh))}
+	if best.is_empty():
+		return
+	var side2: Vector3 = best["side"]
+	var t_reach := maxf(float(best["ahead"]) / maxf(float(best["v"]), 1.0), 0.15)
+	var want := -float(best["lat"]) / t_reach
+	var cur := vel.dot(side2)
+	vel += side2 * (move_toward(cur, want, k * 6.0 * dt) - cur)
 
 
-func _mount(r: Dictionary, t: float, lat01: float, vh: float) -> void:
+func _mount(r: Dictionary, s: float, lat01: float, vh: float, dir: Vector3) -> void:
 	if airborne and absf(wrapf(air_pitch, -PI, PI)) > deg_to_rad(50.0):
 		crash("Missed the rail")
 		return
 	grind = r
 	_grind_dir = signf(vh)
-	_grind_t = t
+	_grind_t = s
 	_grind_v = absf(vh) * 0.95
-	var axis: Vector3 = (r["b"] - r["a"]).normalized() * _grind_dir
+	var axis: Vector3 = dir * _grind_dir
 	var ay := yaw_of(Vector3(axis.x, 0.0, axis.z))
-	# stance from how you land on it: along the rail (50-50) or across it (slide)
+	# stance from how you land on it: along the rail (50-50) or across it (slide), or switch
 	var rel := wrapf(heading - ay, -PI, PI)
 	grind_slide = absf(rel) > PI * 0.25 and absf(rel) < PI * 0.75
 	grind_switch = absf(rel) >= PI * 0.75
-	heading = wrapf(ay + (signf(rel) * PI * 0.5 if grind_slide else (PI if grind_switch else 0.0)), -PI, PI)
+	_stance_off = signf(rel) * PI * 0.5 if grind_slide else (PI if grind_switch else 0.0)
+	heading = wrapf(ay + _stance_off, -PI, PI)
 	_grind_entry = air_rotation if airborne else 0.0
+	_grind_yaw = ay
+	_rspin_left = 0.0
+	_rspin_total = 0.0
 	airborne = false
 	spin_vel = 0.0
 	flip_vel = 0.0
@@ -1278,16 +1364,25 @@ func _mount(r: Dictionary, t: float, lat01: float, vh: float) -> void:
 	_rail_bal_vel = 0.0
 	grind_time = 0.0
 	grind_press = 0.0
-	compression = 0.3
+	compression_vel = maxf(compression_vel, 4.0)      # soak up the landing on the rail
+
+
+## Spin on a rail or box: a tap of Left / Right turns you 180 deg on it (through a slide).
+func rail_spin(sgn: float) -> void:
+	if grind.is_empty():
+		return
+	_rspin_left += PI
+	_rspin_dir = sgn
 
 
 func _grind_step(dt: float) -> void:
 	var r := grind
-	var a: Vector3 = r["a"]
-	var dir: Vector3 = (r["b"] - a).normalized()
+	var ra := rail_at(r, _grind_t)
+	var dir: Vector3 = ra[1]
 	var axis := dir * _grind_dir
 	var d := diff()
-	# speed along the rail: gravity, sliding friction (more when sideways), air drag
+	# speed along the rail: gravity (each section: up, flat, down), sliding friction (more when
+	# sideways), air drag
 	var mu := (0.035 if r["kind"] == "rail" else 0.06) + (0.04 if grind_slide else 0.0)
 	_grind_v += (-G * axis.y - mu * G - 0.003 * _grind_v * _grind_v) * dt
 	_grind_t += _grind_v * dt * _grind_dir
@@ -1295,19 +1390,34 @@ func _grind_step(dt: float) -> void:
 	ground_time = 0.0
 	if absf(lean_fa) > 0.5:
 		grind_press += signf(lean_fa) * dt
-	# balance: an inverted pendulum held with A/D (assist and instability depend on difficulty)
+	# balance: an inverted pendulum held with A/D (assist and instability depend on difficulty);
+	# a curving rail (S-rail) throws you to the outside of each bend
 	var k := float(d["rail"])
+	var ay := yaw_of(Vector3(axis.x, 0.0, axis.z))
+	var turn := wrapf(ay - _grind_yaw, -PI, PI) / maxf(dt, 0.001)
+	_grind_yaw = ay
 	var wobble := sin(time * 2.3 + _grind_t * 1.7) * 0.6 + sin(time * 5.3) * 0.4
-	_rail_bal_vel += (rail_balance * (2.0 * k - float(d["rail_assist"])) + wobble * k * 0.5 + _raw_steer * 5.0) * dt
+	_rail_bal_vel += (rail_balance * (2.0 * k - float(d["rail_assist"])) + wobble * k * 0.5 + _raw_steer * 5.0
+		+ turn * _grind_v * 0.12 * maxf(k, 1.0)) * dt
 	_rail_bal_vel *= 1.0 - 1.8 * dt
 	rail_balance += _rail_bal_vel * dt
-	var top := a + dir * _grind_t
+	# spinning on it
+	if _rspin_left > 0.0:
+		var step := minf(_rspin_left, 10.5 * dt)          # 180 deg in 0.3 s
+		_rspin_left -= step
+		_rspin_total += step
+		_stance_off = wrapf(_stance_off - _rspin_dir * step, -PI, PI)
+		var a2 := absf(_stance_off)
+		grind_slide = a2 > PI * 0.25 and a2 < PI * 0.75
+		grind_switch = a2 >= PI * 0.75
+	heading = wrapf(ay + _stance_off, -PI, PI)
+	var top: Vector3 = rail_at(r, _grind_t)[0]
 	position = top
 	vel = axis * _grind_v
 	speed = _grind_v
 	contact = false
 	ground_n = Vector3.UP
-	travel_yaw = yaw_of(Vector3(axis.x, 0.0, axis.z))
+	travel_yaw = ay
 	lat_acc = 0.0
 	if absf(rail_balance) >= 1.0:
 		var side := dir.cross(Vector3.UP).normalized() * signf(rail_balance)
@@ -1329,4 +1439,5 @@ func _leave_rail(how: String) -> void:
 	grind = {}
 	_rail_cd = 0.4
 	jibbed.emit({"kind": r["kind"], "time": grind_time, "slide": grind_slide, "switch": grind_switch,
-		"press": grind_press, "entry_rot": _grind_entry, "how": how})
+		"press": grind_press, "entry_rot": _grind_entry, "how": how, "spin": rad_to_deg(_rspin_total),
+		"shape": r.get("shape", "straight")})

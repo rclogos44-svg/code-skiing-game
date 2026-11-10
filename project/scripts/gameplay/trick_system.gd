@@ -175,6 +175,17 @@ static func evaluate_jib(info: Dictionary) -> Dictionary:
 	parts.append("50-50" if not slide else {"box": "Box Slide", "widebox": "Box Slide", "tube": "Tube Slide"}.get(info["kind"], "Rail Slide"))
 	if slide:
 		points *= 1.3
+	# spins on it (taps of Left / Right) and the shape of the feature
+	var spun := int(round(float(info.get("spin", 0.0)) / 90.0)) * 90
+	if spun >= 180:
+		parts.append("%d Spin" % spun)
+		points += 220.0 * (spun / 180.0)
+	var shape := String(info.get("shape", "straight"))
+	var shape_name := {"kink": "Kinked", "flatdown": "Flat-Down", "tabletop": "Tabletop", "rainbow": "Rainbow", "srail": "S-Rail",
+		"flat": "Gap to Rail"}
+	if shape_name.has(shape):
+		parts.append("on the %s" % shape_name[shape])
+		points *= 1.3
 	var press := float(info["press"])
 	if absf(press) >= 0.4:
 		parts.append("to Nose Press" if press > 0.0 else "to Tail Press")

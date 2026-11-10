@@ -423,6 +423,8 @@ func _park_kickers() -> void:
 	var worst_tilt := 0.0
 	for pk in world.terrain.layout.get("parks", []):
 		for k in pk["kickers"]:
+			if k.get("rail_lip", false):
+				continue                    # a gap-to-rail lip: you land on the rail (tested in _jibs)
 			var d := Vector3(k["dir"][0], 0, k["dir"][1]).normalized()       # hips point off the fall line
 			var knuckle := Vector3(k["knuckle"][0], 0, k["knuckle"][1])
 			var origin := Vector3(k["origin"][0], 0, k["origin"][1])
@@ -908,14 +910,41 @@ func _jib_run(r: Dictionary, back: float, v0: float, ctl: Callable, heading_off 
 	return res
 
 
+func _run_shape(r: Dictionary, back: float, v0: float, ctl: Callable) -> Dictionary:
+	var s := world.skier
+	var a: Vector3 = r["pts"][0]
+	var dir: Vector3 = ((r["pts"][1] as Vector3) - a).normalized()
+	var flat := Vector3(dir.x, 0, dir.z).normalized()
+	s.teleport(a - flat * back, Skier.yaw_of(flat), v0)
+	var res := {"mounted": false, "info": {}, "crash": ""}
+	var box := {}
+	var cb := func(info): box["info"] = info
+	var ccb := func(reason, _v): box["crash"] = reason
+	s.jibbed.connect(cb)
+	s.crashed.connect(ccb)
+	for i in 900:
+		if s.is_crashed or box.has("info"):
+			break
+		s.scripted_input = ctl.call(s)
+		s.step(1.0 / 120.0)
+		s.time += 1.0 / 120.0
+		if s.is_grinding():
+			res["mounted"] = true
+	s.jibbed.disconnect(cb)
+	s.crashed.disconnect(ccb)
+	res["info"] = box.get("info", {})
+	res["crash"] = box.get("crash", "")
+	return res
+
+
 func _jibs() -> void:
 	var s := world.skier
 	var park = world.park
 	if park == null or park.rails.is_empty():
 		check("terrain park has rails and boxes", false)
 		return
-	var boxes: Array = park.rails.filter(func(r): return r["kind"] == "box")
-	var rls: Array = park.rails.filter(func(r): return r["kind"] == "rail")
+	var boxes: Array = park.rails.filter(func(r): return r["kind"] == "box" and r["shape"] == "straight")
+	var rls: Array = park.rails.filter(func(r): return r["kind"] == "rail" and r["shape"] == "straight")
 	check("terrain park has rails and boxes", not boxes.is_empty() and not rls.is_empty(), "%d boxes, %d rails" % [boxes.size(), rls.size()])
 	var saved := s.difficulty
 	var none := func(_s): return {}
@@ -966,7 +995,70 @@ func _jibs() -> void:
 	var rl := _jib_run(long_rail, 11.0, 9.0, lpop)
 	check("long %.0f m lift-tower rail: pop on and slide it out" % float(long_rail["length"]), rl["mounted"] and rl["crash"] == "",
 		"%s, %.1f s %s" % [rl["info"].get("how", "no slide"), float(rl["info"].get("time", 0.0)), rl["crash"]])
+	# every shaped rail and box can be ridden to the end (Normal, balancing with A/D as needed): pop
+	# onto rails, ride onto boxes; approach along the first section
 	s.difficulty = 1
+	var shapes_ok := {}
+	for r in park.rails:
+		var shp: String = r["shape"]
+		if shp == "straight" or shp == "flat" or shapes_ok.has(shp + r["kind"]):
+			continue
+		var d0: Vector3 = ((r["pts"][1] as Vector3) - r["pts"][0]).normalized()
+		var ctl := func(sk: Skier):
+			if sk.is_grinding():
+				var c := -sk.rail_balance * 3.0 - sk._rail_bal_vel * 1.5
+				return {"steer_right": clampf(c, 0.0, 1.0), "steer_left": clampf(-c, 0.0, 1.0)}
+			var dist: float = ((r["a"] as Vector3) - sk.position).dot(d0)
+			return {"jump": 1.0} if dist > 4.0 else {}        # shaped boxes rise off the snow too: pop on
+		var rr := _run_shape(r, 11.0, 9.0, ctl)
+		shapes_ok[shp + r["kind"]] = true
+		check("%s %s: ride it to the end" % [shp, r["kind"]], rr["mounted"] and rr["info"].get("how", "") == "end" and rr["crash"] == "",
+			"%s, %.1f s %s -> '%s'" % [rr["info"].get("how", "no slide"), float(rr["info"].get("time", 0.0)), rr["crash"],
+			str(TrickSystem.evaluate_jib(rr["info"]).get("name", "")) if not rr["info"].is_empty() else ""])
+	# gap to rail: roll over the snow lip (no input) and the rail assist puts you on the level rail
+	var lips: Array = []
+	for pk in world.terrain.layout["parks"]:
+		for k in pk["kickers"]:
+			if k.get("rail_lip", false):
+				lips.append(k)
+	if not lips.is_empty():
+		var lk: Dictionary = lips[0]
+		var ld := Vector3(lk["dir"][0], 0, lk["dir"][1]).normalized()
+		var lo := Vector3(lk["origin"][0], 0, lk["origin"][1])
+		s.teleport(lo - ld * 10.0, Skier.yaw_of(ld), 9.0)
+		s.scripted_input = {}
+		var got := {}
+		var lcb := func(info): got["info"] = info
+		s.jibbed.connect(lcb)
+		var mounted := false
+		var crash_r := ""
+		for f in 600:
+			s.step(1.0 / 120.0)
+			s.time += 1.0 / 120.0
+			mounted = mounted or s.is_grinding()
+			if s.is_crashed:
+				crash_r = "crashed"
+				break
+			if got.has("info") and not s.airborne and not s.is_grinding():
+				break
+		s.jibbed.disconnect(lcb)
+		check("gap to rail: pop off the lip onto the level rail and slide it out", mounted and got.get("info", {}).get("how", "") == "end"
+			and crash_r == "", "%s %s" % [str(got.get("info", {}).get("how", "no slide")), crash_r])
+	# rail assist: jumping at a rail 0.8 m off its line still lands you on it (not on Realistic)
+	var popper2 := func(sk: Skier):
+		var dist: float = (rls[0]["a"] as Vector3 - sk.position).dot((rls[0]["b"] - rls[0]["a"]).normalized())
+		return {"jump": 1.0} if dist > 4.0 else {}
+	var ra := _jib_run(rls[0], 11.0, 8.5, popper2, 0.0, false, 0.8)
+	check("rail assist: jump at a rail 0.8 m off line and land on it", ra["mounted"], "%s %s" % [ra["info"].get("how", "missed"), ra["crash"]])
+	# spin on a box: ride on, tap Right - a 180 on it, and the trick says so
+	var tapper := func(sk: Skier):
+		if sk.is_grinding() and sk.grind_time > 0.15 and sk.grind_time < 0.22:
+			return {"lean_right": 1.0}
+		return {}
+	var rs := _jib_run(boxes[0], 10.0, 8.0, tapper)
+	check("spin on a box: a tap of Right turns you 180 on it", rs["mounted"] and float(rs["info"].get("spin", 0.0)) >= 170.0,
+		"%s spun %.0f deg -> '%s'" % [rs["info"].get("how", "no slide"), float(rs["info"].get("spin", 0.0)),
+		str(TrickSystem.evaluate_jib(rs["info"]).get("name", "")) if not rs["info"].is_empty() else ""])
 	var r6 := _jib_run(boxes[0], 0.0, 7.0, none, PI * 0.5, true)
 	check("landing across a box gives a slide", r6["mounted"] and r6["slide"], str(TrickSystem.evaluate_jib(r6["info"]).get("name", "")) if not r6["info"].is_empty() else r6["crash"])
 	s.difficulty = saved
@@ -1905,6 +1997,14 @@ func _park_shots() -> void:
 	_free_cam(at.call(230.0, 30.0) + side * 85.0, at.call(230.0, 0.0))
 	await _frames(20)
 	await _snap("park_line_side")
+	# the jib lane: from above its start looking down it, and a low close look at a row of rails
+	var ju := float(pk["lines"].get("jib", 34.0))
+	_free_cam(at.call(20.0, 9.0) + side * ju, at.call(150.0, 0.0) + side * ju)
+	await _frames(20)
+	await _snap("park_jib")
+	_free_cam(at.call(40.0, 3.0) + side * (ju - 12.0), at.call(75.0, 0.5) + side * ju)
+	await _frames(20)
+	await _snap("park_jib_row")
 	for pp in pk.get("pipes", []):
 		var po := Vector3(pp["origin"][0], 0, pp["origin"][1])
 		var pd := Vector3(pp["dir"][0], 0, pp["dir"][1]).normalized()

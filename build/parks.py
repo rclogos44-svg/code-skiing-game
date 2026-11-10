@@ -45,6 +45,58 @@ def kicker_geometry(size, theta_deg, speeds=None, h2=None):
     if h2 != h:
         g["knuckle_h"] = h2
     return g
+# rails / boxes / tubes: height of the top above the snow (matches park.gd HEIGHT)
+RAIL_H = {"box": 0.35, "rail": 0.55, "tube": 0.5, "widebox": 0.45}
+
+
+def rail_points(shape, L, theta, kind):
+    """(s, u, h) points of a shaped rail along its lane, h above the park's plane (the regraded slope
+    drops tan(theta) per metre, so a "flat" stretch climbs above the snow).  Shapes: straight down
+    rail, kink (down-flat-down, the last part steeper), flatdown, tabletop (up-flat-down), rainbow
+    (an arch), srail (an S in plan view), flat (level the whole way, for gap-to-rail)."""
+    t = math.tan(theta)
+    h0 = RAIL_H[kind]
+    if shape == "kink":
+        l1, l2 = 0.35 * L, 0.3 * L
+        return [(0, 0, h0), (l1, 0, h0), (l1 + l2, 0, h0 + t * l2), (L, 0, h0)]
+    if shape == "flatdown":
+        l1 = 0.45 * L
+        return [(0, 0, h0), (l1, 0, h0 + t * l1), (L, 0, h0)]
+    if shape == "tabletop":
+        l1, l2, up = 0.25 * L, 0.25 * L, 0.4
+        return [(0, 0, h0), (l1, 0, h0 + up + t * l1), (l1 + l2, 0, h0 + up + t * (l1 + l2)), (L, 0, h0)]
+    if shape == "rainbow":
+        return [(L * i / 14.0, 0, h0 + 0.6 * math.sin(math.pi * i / 14.0)) for i in range(15)]
+    if shape == "srail":
+        return [(L * i / 16.0, 0.8 * math.sin(TWO_PI * i / 16.0), h0) for i in range(17)]
+    if shape == "flat":
+        return [(0, 0, h0), (L, 0, h0 + t * L)]
+    return [(0, 0, h0), (L, 0, h0)]
+
+
+TWO_PI = 2.0 * math.pi
+RAIL_LIP = dict(h=0.7, lip_deg=20.0, deck=0.4, gap=1.3, rail_h=0.9, half_width=1.6)
+
+
+def rail_lip(s0, u0, L, theta, x0, z0, dx, dz, line):
+    """Gap to rail: a small snow lip, a short gap, then a level ("flat") rail that runs out over the
+    slope - you pop off the lip onto it, slide it and drop off the end."""
+    g = RAIL_LIP
+    th = theta
+    s_end = math.tan(math.radians(g["lip_deg"]) + th)
+    lr = 2.0 * g["h"] / s_end
+    ll = g["h"] / math.tan(math.radians(LANDING_DEG) - th)
+    pt = lambda t: [round(x0 + dx * (s0 + t) - dz * u0, 2), round(z0 + dz * (s0 + t) + dx * u0, 2)]
+    k = dict(height=g["h"], ramp=round(lr, 2), deck=g["deck"], landing=round(ll, 2), half_width=g["half_width"],
+             lip_deg=g["lip_deg"], speed=8.0, approach_speed=9.0, line=line, size="S", start_s=s0, dir=[dx, dz],
+             origin=pt(0.0), lip=pt(lr), knuckle=pt(lr + g["deck"]), end=pt(lr + g["deck"] + ll), rail_lip=True)
+    r0 = s0 + lr + g["deck"] + g["gap"]
+    t = math.tan(th)
+    pts = [[round(x0 + dx * (r0 + s) - dz * u0, 2), round(z0 + dz * (r0 + s) + dx * u0, 2), round(g["rail_h"] + t * s, 3)]
+           for s in (0.0, L)]
+    return k, dict(kind="rail", shape="flat", line=line, pts=pts)
+
+
 # superpipes (s0, s1 down the park, centred on lane u): flat bottom, quarter-circle walls of radius
 # `radius` that steepen to `wall_deg` at the top (a heightfield can't hold a true vertical; the game
 # sends riders straight up off the coping), a flat deck behind the coping and an outer bank back down
@@ -67,7 +119,14 @@ DESIGNS = [
     ("Main Park", [
         ("prog", "kicker", 70, "S"), ("prog", "box", 150, 8.0), ("prog", "kicker", 240, "S"), ("prog", "tube", 330, 8.0),
         ("jump", "kicker", 90, "S"), ("jump", "kicker", 210, "M"), ("jump", "kicker", 350, "L"),
-        ("jib", "box", 80, 9.0), ("jib", "rail", 165, 9.0), ("jib", "tube", 250, 9.0), ("jib", "rail", 335, 12.0), ("jib", "box", 420, 12.0),
+        # jib line: a row of three side by side, then shaped rails, a gap-to-rail and another row
+        ("jib", "box", 70, 9.0, {"u": 27.0}), ("jib", "rail", 70, 9.0), ("jib", "tube", 70, 9.0, {"u": 41.0}),
+        ("jib", "rail", 150, 12.0, {"u": 30.0, "shape": "kink"}), ("jib", "box", 150, 10.0, {"u": 39.0, "shape": "flatdown"}),
+        ("jib", "rail", 235, 10.0, {"u": 30.0, "shape": "rainbow"}), ("jib", "box", 235, 12.0, {"u": 39.0, "shape": "tabletop"}),
+        ("jib", "raillip", 320, 7.0),
+        ("jib", "rail", 400, 12.0, {"u": 34.0, "shape": "srail"}), ("jib", "rail", 400, 12.0, {"u": 26.0}),
+        ("jib", "box", 400, 12.0, {"u": 42.0}),
+        ("prog", "box", 400, 8.0, {"u": -38.0}), ("prog", "widebox", 400, 8.0, {"u": -30.0}),
     ]),
     ("Big Air Park", [
         ("prog", "kicker", 70, "S"), ("prog", "kicker", 170, "S"), ("prog", "box", 270, 9.0),
@@ -78,31 +137,45 @@ DESIGNS = [
         ("jump", "kicker", 156, ("XL", 16.7, 13.7, 1.08)), ("jump", "kicker", 216, ("XL", 17.6, 14.7, 1.08)),
         ("jump", "kicker", 276, ("XL", 18.0, 15.0, 0.72)), ("jump", "kicker", 336, ("XL", 18.4, 15.5, 1.35)),
         ("jump", "kicker", 398, ("XL", 18.6, 15.7, 2.16)),
-        ("jib", "rail", 90, 10.0), ("jib", "box", 190, 10.0), ("jib", "tube", 290, 10.0),
+        ("jib", "rail", 80, 10.0, {"u": 28.0}), ("jib", "box", 80, 10.0), ("jib", "tube", 80, 10.0, {"u": 40.0}),
+        ("jib", "raillip", 170, 8.0),
+        ("jib", "rail", 260, 12.0, {"u": 30.0, "shape": "kink"}), ("jib", "rail", 260, 10.0, {"u": 39.0, "shape": "rainbow"}),
+        ("jib", "rail", 350, 12.0, {"shape": "srail"}),
     ]),
     ("Jib Garden", [
         ("prog", "box", 70, 8.0), ("prog", "tube", 150, 8.0), ("prog", "box", 230, 10.0), ("prog", "kicker", 320, "S"),
         ("jump", "kicker", 90, "S"), ("jump", "kicker", 220, "M"),
-        ("jib", "box", 70, 9.0), ("jib", "rail", 140, 9.0), ("jib", "tube", 210, 10.0), ("jib", "rail", 280, 12.0),
-        ("jib", "box", 350, 12.0), ("jib", "rail", 420, 14.0),
+        # the jib garden: rows of rails side by side and every shape - tabletop, S-rail, rainbow,
+        # kinks, a flat-down box, a gap-to-rail
+        ("jib", "box", 60, 9.0, {"u": 27.0}), ("jib", "rail", 60, 9.0), ("jib", "widebox", 60, 8.0, {"u": 41.0}),
+        ("jib", "rail", 130, 12.0, {"shape": "tabletop"}), ("jib", "box", 130, 12.0, {"u": 43.0, "shape": "tabletop"}),
+        ("jib", "rail", 200, 14.0, {"u": 30.0, "shape": "srail"}), ("jib", "rail", 200, 10.0, {"u": 40.0, "shape": "rainbow"}),
+        ("jib", "raillip", 275, 8.0),
+        ("jib", "rail", 350, 14.0, {"u": 28.0, "shape": "kink"}), ("jib", "box", 350, 12.0, {"u": 36.0, "shape": "flatdown"}),
+        ("jib", "tube", 350, 12.0, {"u": 44.0}),
+        ("jib", "rail", 430, 14.0), ("jib", "box", 430, 14.0, {"u": 27.0}), ("jib", "box", 430, 12.0, {"u": 42.0, "shape": "rainbow"}),
+        ("prog", "box", 400, 10.0, {"u": -38.0}), ("prog", "tube", 400, 10.0, {"u": -30.0}),
     ]),
     # after Mammoth Mountain's Main Park (Unbound): five lanes side by side - jibs on both edges, a
     # medium jump line ending in a step-down, the XL line down the middle (each jump sized for the
     # speed carried from the one before), and a transfer lane of hips that kick you left and right
     # across it; the mega pipe fills the bottom of the run (pipes, below)
     ("Sierra Main Park", [
-        ("jib_l", "box", 50, 8.0), ("jib_l", "rail", 95, 8.0), ("jib_l", "widebox", 140, 6.0), ("jib_l", "tube", 185, 9.0),
-        ("jib_l", "box", 235, 12.0), ("jib_l", "rail", 290, 10.0), ("jib_l", "box", 345, 10.0), ("jib_l", "rail", 400, 12.0),
-        ("jib_l", "rail", 455, 14.0), ("jib_l", "box", 505, 10.0),
+        ("jib_l", "box", 45, 8.0, {"u": -56.0}), ("jib_l", "rail", 45, 8.0), ("jib_l", "tube", 45, 8.0, {"u": -44.0}),
+        ("jib_l", "rail", 110, 12.0, {"shape": "kink"}), ("jib_l", "raillip", 180, 7.0),
+        ("jib_l", "rail", 255, 10.0, {"u": -53.0, "shape": "rainbow"}), ("jib_l", "widebox", 255, 8.0, {"u": -45.0}),
+        ("jib_l", "rail", 335, 12.0, {"shape": "srail"}), ("jib_l", "box", 410, 12.0, {"shape": "tabletop"}),
+        ("jib_l", "rail", 480, 14.0, {"u": -54.0}), ("jib_l", "box", 480, 12.0, {"u": -46.0}),
         ("med", "kicker", 55, "M"), ("med", "kicker", 105, "M"), ("med", "kicker", 165, "L"),
         ("med", "kicker", 235, "L", {"h2": 1.6}),
         ("jump", "kicker", 90, ("XL", 16.1, 13.1, 1.13)), ("jump", "kicker", 150, ("XL", 18.1, 15.3, 2.53)),
         ("jump", "kicker", 218, ("XL", 19.1, 16.4, 3.21)), ("jump", "kicker", 290, ("XL", 19.7, 17.0, 3.84)),
         ("hip", "kicker", 60, "M", {"u": 21.0, "yaw": 22.0}), ("hip", "kicker", 140, "M", {"u": 37.0, "yaw": -22.0}),
         ("hip", "kicker", 220, "L", {"u": 21.0, "yaw": 22.0}), ("hip", "kicker", 300, "M", {"u": 33.0, "h2": 1.0}),
-        ("jib", "rail", 55, 10.0), ("jib", "rail", 100, 18.0), ("jib", "tube", 165, 12.0), ("jib", "rail", 225, 14.0),
-        ("jib", "widebox", 285, 8.0), ("jib", "rail", 335, 12.0), ("jib", "tube", 390, 10.0), ("jib", "rail", 440, 16.0),
-        ("jib", "box", 500, 10.0),
+        ("jib", "rail", 55, 10.0), ("jib", "widebox", 55, 6.0, {"u": 56.0}), ("jib", "rail", 100, 18.0),
+        ("jib", "tube", 165, 12.0), ("jib", "rail", 165, 12.0, {"u": 44.0}), ("jib", "rail", 230, 14.0, {"shape": "srail"}),
+        ("jib", "raillip", 300, 8.0), ("jib", "rail", 370, 14.0, {"shape": "kink"}),
+        ("jib", "rail", 440, 12.0, {"shape": "rainbow"}), ("jib", "tube", 440, 10.0, {"u": 56.0}), ("jib", "box", 505, 10.0),
     ], {"jib_l": -50.0, "med": -27.0, "jump": 0.0, "hip": 27.0, "jib": 50.0}),
 ]
 
@@ -197,6 +270,14 @@ def apply_parks(g, H, lay, groomed, placer):
                 if yaw != 0.0:
                     kg["yaw"] = float(opt["yaw"])
                 kickers.append(kg)
+            elif kind == "raillip":
+                k, r = rail_lip(s0, uc, float(arg), theta, x0, z0, dx, dz, line)
+                kickers.append(k)
+                rails.append(r)
+            elif "shape" in opt:
+                pts = [[round(x0 + dx * (s0 + ps) - dz * (uc + pu), 2), round(z0 + dz * (s0 + ps) + dx * (uc + pu), 2), round(ph, 3)]
+                       for ps, pu, ph in rail_points(opt["shape"], float(arg), theta, kind)]
+                rails.append(dict(kind=kind, shape=opt["shape"], line=line, pts=pts))
             else:
                 a = (x0 + dx * s0 - dz * uc, z0 + dz * s0 + dx * uc)
                 b = (x0 + dx * (s0 + arg) - dz * uc, z0 + dz * (s0 + arg) + dx * uc)

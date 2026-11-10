@@ -20,7 +20,18 @@ func setup(td: TerrainData, obstacles: Obstacles) -> void:
 	for pi in parks.size():
 		var pk: Dictionary = parks[pi]
 		for r in pk["rails"]:
-			_add_feature(String(r[4]), Vector2(r[0], r[1]), Vector2(r[2], r[3]), obstacles, pi)
+			if r is Dictionary:
+				# shaped rail: points with heights above the park's (un-kickered) snow
+				var pts: Array[Vector3] = []
+				for q in r["pts"]:
+					pts.append(Vector3(q[0], terrain.base_height(q[0], q[1]) + float(q[2]), q[1]))
+				_add_feature(String(r["kind"]), pts, obstacles, pi, String(r.get("shape", "straight")))
+			else:
+				var a2 := Vector2(r[0], r[1])
+				var b2 := Vector2(r[2], r[3])
+				var h: float = HEIGHT[String(r[4])]
+				_add_feature(String(r[4]), [Vector3(a2.x, terrain.height(a2.x, a2.y) + h, a2.y),
+					Vector3(b2.x, terrain.height(b2.x, b2.y) + h, b2.y)] as Array[Vector3], obstacles, pi, "straight")
 		for k in pk["kickers"]:
 			_kicker_mesh(k)
 			_mark_kicker(k, pk)
@@ -47,42 +58,51 @@ func park_at(pos: Vector3) -> int:
 	return -1
 
 
-func _add_feature(kind: String, a2: Vector2, b2: Vector2, obstacles: Obstacles, park_i: int) -> void:
-	var h: float = HEIGHT[kind]
-	var a := Vector3(a2.x, terrain.height(a2.x, a2.y) + h, a2.y)
-	var b := Vector3(b2.x, terrain.height(b2.x, b2.y) + h, b2.y)
-	var length := a.distance_to(b)
-	var dir := (b - a).normalized()
-	rails.append({"a": a, "b": b, "kind": kind, "width": float(WIDTH[kind]), "length": length, "park": park_i})
-	var side := Vector3(dir.x, 0, dir.z).normalized().cross(Vector3.UP)
+func _add_feature(kind: String, pts: Array[Vector3], obstacles: Obstacles, park_i: int, shape: String) -> void:
+	var cum: Array[float] = [0.0]
+	for i in range(1, pts.size()):
+		cum.append(cum[i - 1] + pts[i].distance_to(pts[i - 1]))
+	var length: float = cum[cum.size() - 1]
+	rails.append({"a": pts[0], "b": pts[pts.size() - 1], "pts": pts, "cum": cum, "kind": kind, "width": float(WIDTH[kind]),
+		"length": length, "park": park_i, "shape": shape})
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var deck := SurfaceTool.new()
 	deck.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var n := int(ceil(length / 2.5))
+	# posts / legs every ~2.5 m along the whole rail
+	var n_posts := maxi(int(ceil(length / 2.5)), 1)
+	var posts: Array[Vector3] = []
+	for k in n_posts + 1:
+		posts.append(_rail_point(pts, cum, length * k / n_posts))
 	match kind:
 		"rail":
-			_bar(deck, a - Vector3.UP * 0.035, b - Vector3.UP * 0.035, 0.035)
-			for k in n + 1:
-				var q := a.lerp(b, float(k) / n) - Vector3.UP * 0.07
+			for i in pts.size() - 1:
+				_bar(deck, pts[i] - Vector3.UP * 0.035, pts[i + 1] - Vector3.UP * 0.035, 0.035)
+			for q0 in posts:
+				var q := q0 - Vector3.UP * 0.07
 				_bar(st, q, Vector3(q.x, terrain.height(q.x, q.z) - 0.3, q.z), 0.045)
 				obstacles.add(q.x, q.z, 0.2, q.y - 1.6, q.y + 0.05, Obstacles.Kind.POLE)
 		"tube":
 			var r := 0.35
-			_bar(deck, a - Vector3.UP * r, b - Vector3.UP * r, r, 14)
-			for k in [0, n]:
-				var q := a.lerp(b, float(k) / n) - Vector3.UP * r
+			for i in pts.size() - 1:
+				_bar(deck, pts[i] - Vector3.UP * r, pts[i + 1] - Vector3.UP * r, r, 14)
+			for q0 in [posts[0], posts[posts.size() - 1]]:
+				var q: Vector3 = q0 - Vector3.UP * r
 				_bar(st, q, Vector3(q.x, terrain.height(q.x, q.z) - 0.3, q.z), 0.12)
 		_:
 			var w: float = WIDTH[kind] * 0.5
-			for k in n:
-				var q0 := a.lerp(b, float(k) / n)
-				var q1 := a.lerp(b, float(k + 1) / n)
-				_quad(deck, q0 - side * w, q0 + side * w, q1 + side * w, q1 - side * w)
-				for s: float in [-1.0, 1.0]:
-					var g0 := Vector3(q0.x, terrain.height(q0.x, q0.z) - 0.3, q0.z) + side * (w * s)
-					var g1 := Vector3(q1.x, terrain.height(q1.x, q1.z) - 0.3, q1.z) + side * (w * s)
-					_quad(st, q0 + side * (w * s), g0, g1, q1 + side * (w * s))
+			for i in pts.size() - 1:
+				var dir := pts[i + 1] - pts[i]
+				var side := Vector3(dir.x, 0, dir.z).normalized().cross(Vector3.UP)
+				var nseg := maxi(int(ceil(dir.length() / 2.5)), 1)
+				for k in nseg:
+					var q0 := pts[i].lerp(pts[i + 1], float(k) / nseg)
+					var q1 := pts[i].lerp(pts[i + 1], float(k + 1) / nseg)
+					_quad(deck, q0 - side * w, q0 + side * w, q1 + side * w, q1 - side * w)
+					for sg: float in [-1.0, 1.0]:
+						var g0 := Vector3(q0.x, terrain.height(q0.x, q0.z) - 0.3, q0.z) + side * (w * sg)
+						var g1 := Vector3(q1.x, terrain.height(q1.x, q1.z) - 0.3, q1.z) + side * (w * sg)
+						_quad(st, q0 + side * (w * sg), g0, g1, q1 + side * (w * sg))
 	st.generate_normals()
 	deck.generate_normals()
 	var body := MeshInstance3D.new()
@@ -94,6 +114,14 @@ func _add_feature(kind: String, a2: Vector2, b2: Vector2, obstacles: Obstacles, 
 	top.material_override = _mat({"box": Color(0.92, 0.93, 0.95), "widebox": Color(0.92, 0.93, 0.95), "tube": Color(0.75, 0.77, 0.8), "rail": Color(0.95, 0.85, 0.15)}[kind],
 		0.25, 0.6 if not kind.ends_with("box") else 0.0)
 	add_child(top)
+
+
+static func _rail_point(pts: Array[Vector3], cum: Array[float], s: float) -> Vector3:
+	for i in pts.size() - 1:
+		if s <= cum[i + 1] or i == pts.size() - 2:
+			var seg := cum[i + 1] - cum[i]
+			return pts[i].lerp(pts[i + 1], clampf((s - cum[i]) / maxf(seg, 0.0001), 0.0, 1.0))
+	return pts[0]
 
 
 ## Snow surface of a kicker (TerrainData.kicker_offset gives its shape; the GPU terrain underneath is
@@ -241,7 +269,7 @@ func _mark_kicker(k: Dictionary, pk: Dictionary) -> void:
 	mi.mesh = st.commit()
 	mi.material_override = _mat(ORANGE, 0.6)
 	add_child(mi)
-	if k["line"] in ["prog", "jump", "med", "hip"]:
+	if k["line"] in ["prog", "jump", "med", "hip"] or k.get("rail_lip", false):
 		var tip := c_label(k)
 		if tip != "":
 			_sign(Vector3(k["lip"][0], 0, k["lip"][1]) - d * 14.0 + side * (hw + 4.0), tip, 34, Color(1, 1, 1))
@@ -250,6 +278,8 @@ func _mark_kicker(k: Dictionary, pk: Dictionary) -> void:
 func c_label(k: Dictionary) -> String:
 	if k["line"] != "prog":
 		var what := "JUMP"
+		if k.get("rail_lip", false):
+			return "GAP TO RAIL"
 		if absf(float(k.get("yaw", 0.0))) > 1.0:
 			what = "HIP " + ("RIGHT" if float(k["yaw"]) > 0.0 else "LEFT")
 		elif k.has("knuckle_h"):
