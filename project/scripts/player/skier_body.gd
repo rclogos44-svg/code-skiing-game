@@ -332,12 +332,7 @@ func _leg_fk(hip: Vector3, sgn: float, a: Array) -> Array:
 var preview_grab := ""
 ## Cloth pieces that move: [weight axis (mesh-local), weight 0 at, weight 1 at] - the hem of the
 ## body, the back of the hood, the cuff end of each sleeve; and which spring drives each.
-const CLOTH_PARTS := {
-	"torso": [Vector3(0, -1, 0), -0.25, 0.22], "jacket_details": [Vector3(0, -1, 0), -0.25, 0.22],
-	"hood": [Vector3(0, -0.6, 0.8), -0.02, 0.2],
-	"uarm_l": [Vector3(0, 1, 0), 0.05, 0.6], "uarm_r": [Vector3(0, 1, 0), 0.05, 0.6],
-	"farm_l": [Vector3(0, 1, 0), -0.05, 0.3], "farm_r": [Vector3(0, 1, 0), -0.05, 0.3],
-}
+const CLOTH_PARTS := {"hood": [Vector3(0, -0.6, 0.8), -0.02, 0.2]}   # rigid hood; the skinned jacket carries its own weights
 const CLOTH_SPRING := {"hem": [140.0, 0.3, 0.02, 0.12], "hood": [60.0, 0.22, 0.02, 0.12], "sleeve": [220.0, 0.35, 0.012, 0.05]}
 var _cloth := {}                # spring -> [offset, velocity] (world, m and m/s)
 var _cloth_prev := Vector3.ZERO
@@ -345,7 +340,11 @@ var _cloth_pv := Vector3.ZERO
 var _cloth_acc := Vector3.ZERO
 var _cloth_phase := 0.0
 var _cloth_flutter := 0.0
-const HIDDEN_PARTS := ["stripe", "backpack", "helmet", "helmet_trim", "helmet_dark", "stack_l", "stack_r", "pocket_l", "pocket_r"]   # built but not worn (beanie, no pack)
+const HIDDEN_PARTS := ["stripe", "backpack", "helmet", "helmet_trim", "helmet_dark", "stack_l", "stack_r", "pocket_l", "pocket_r",
+	# the clothes are the skinned SkierRig garments now; these rigid pieces stay built but hidden
+	"pelvis", "torso", "collar", "jacket_details", "uarm_l", "uarm_r", "farm_l", "farm_r", "thigh_l", "thigh_r", "shin_l", "shin_r",
+	"shoulder_cap_l", "shoulder_cap_r", "elbow_cap_l", "elbow_cap_r", "knee_cap_l", "knee_cap_r"]   # built but not worn (beanie, no pack)
+var rig: SkierRig
 var skeleton_view := false        # V: hide the clothes and show bones + joints
 const BONES := [["pelvis", "hip_l"], ["pelvis", "hip_r"], ["hip_l", "knee_l"], ["knee_l", "ankle_l"], ["hip_r", "knee_r"],
 	["knee_r", "ankle_r"], ["pelvis", "waist"], ["waist", "lumbar"], ["lumbar", "thoracic"], ["thoracic", "chest"], ["chest", "head"],
@@ -459,6 +458,21 @@ func _build() -> void:
 		_add("basket_" + side, pl[2], basket_m)
 	# a stripe of accent colour on the jacket
 	_add("stripe", SkierModel.lathe([Vector2(0.0, 0.0), Vector2(0.18, 0.0), Vector2(0.183, 0.035), Vector2(0.0, 0.035)], 1.19, 0.73, 18), accent)
+	# the clothes: one skinned jacket (with sleeves, collar, zip, pockets), a white shirt under it and
+	# baggy pants, all bending smoothly with the joints
+	rig = SkierRig.new()
+	rig.name = "rig"
+	add_child(rig)
+	var rig_jacket := SkierModel.cloth_material(Color(0.2, 0.2, 0.21))
+	rig_jacket.set_shader_parameter("color_weight", true)
+	var rig_trim := SkierModel.cloth_material(Color(0.12, 0.12, 0.13), Vector2(3.0, 3.0))
+	rig_trim.set_shader_parameter("color_weight", true)
+	var shirt := SkierModel.fabric(Color(0.94, 0.94, 0.92), 0.9, 120.0, 0.3, 0.1)
+	var rig_pants: StandardMaterial3D = pants.duplicate()
+	rig_pants.cull_mode = BaseMaterial3D.CULL_DISABLED          # open hems: the inside shows
+	rig.build(rig_jacket, shirt, rig_pants, rig_trim)
+	for k in rig.meshes:
+		parts[k] = rig.meshes[k]
 	for k in HIDDEN_PARTS:
 		parts[k].visible = false
 	for k in CLOTH_PARTS:
@@ -567,6 +581,13 @@ func _cloth_step(dt: float) -> void:
 
 ## Hand the springs to the cloth shader, in each piece's own mesh frame.
 func _cloth_apply() -> void:
+	if rig != null:
+		var hem: Vector3 = _cloth.get("hem", [Vector3.ZERO])[0]
+		for k in ["rig_jacket", "rig_details"]:
+			var rm := parts[k].material_override as ShaderMaterial
+			rm.set_shader_parameter("sway", hem)          # the rig's skeleton has no rotation: world = mesh space
+			rm.set_shader_parameter("flutter", _cloth_flutter)
+			rm.set_shader_parameter("phase", _cloth_phase)
 	for k in CLOTH_PARTS:
 		var key := "hem" if k in ["torso", "jacket_details"] else ("hood" if k == "hood" else "sleeve")
 		var off: Vector3 = _cloth.get(key, [Vector3.ZERO])[0]
@@ -1281,6 +1302,8 @@ func _apply_parts() -> void:
 		_set_skeleton(skeleton_view)
 	if skeleton_view:
 		_place_skeleton()
+	if rig != null:
+		rig.update(joints, pelvis_basis, torso_basis)
 	# skis bend under load (landings, crouching on the tails) and spring back in the air
 	var bend := clampf(skier.compression * 1.2 + skier.tail_load * 0.6 + skier.charge * 0.3, 0.0, 1.2)
 	if skier.airborne:

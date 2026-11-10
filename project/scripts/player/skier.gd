@@ -874,8 +874,10 @@ func _land(n: Vector3, impact: float) -> void:
 		"grab_kind_l": grab_kind_l, "grab_kind_r": grab_kind_r, "grab_name": _jump_grab, "grab_time": grab_time,
 	}
 	ground_n = n
-	compression = clampf(impact / 14.0, 0.1, 1.0) * (1.0 if air_time > 0.25 else 0.4)
-	compression_vel = 0.0
+	# the legs absorb the landing: the impact sets them sinking (the compression spring peaks ~0.13 s
+	# later at this depth and comes back up), instead of snapping straight into a crouch
+	var depth := clampf(impact / 14.0, 0.1, 1.0) * (1.0 if air_time > 0.25 else 0.4)
+	compression_vel = maxf(compression_vel, depth * 17.0)
 	# crash conditions
 	var reason := ""
 	if pitch_off > tol + deg_to_rad(15.0) and air_time > 0.3:

@@ -628,3 +628,17 @@ no map, parks, keep the ragdoll crashes, black baggy gear, only flips, spins and
   touchdown 3.6 deg off the landing slope; pipe backflip (-307 deg) and front flip (+321 deg)
   popped at the coping land clean, body 0.0 deg off the wall. --test=pipe_anim renders a pipe air.
   Physics 129/129.
+- Realistic rider (player: "jacket like a bubble with a weird bottom, pants are bubbles"): the
+  clothes are now skinned meshes on a Skeleton3D (scripts/player/skier_rig.gd) driven straight from
+  the joint positions every frame - bones run head joint -> tail joint, limbs twisted by their
+  knee / elbow hinge axis (sign kept frame to frame so sleeves can't flip). Garments are built from
+  cross-section rings in a standing bind pose with blended bone weights, so shoulders, elbows,
+  hips and knees bend smoothly with no separate pieces or round joint caps:
+  * jacket: hip-length, roomy, square-ish shoulders sloping to a stand collar, open hem (double-
+    sided cloth shader shows a darker lining inside), sleeves to the wrist with cuffs, zip down
+    the front and two flapped chest pockets; the hem sways (per-vertex weight in the vertex colour)
+  * white shirt under it, a little shorter - it shows when the jacket hem rides up (flips, wind)
+  * pants: roomy seat, two straight wide legs stacking over the boots, open hems
+  The old rigid torso / sleeve / leg pieces stay built but hidden (skeleton view still works).
+- Landings: the impact now sets the leg-compression spring moving (peaks ~0.13 s later and comes
+  back up) instead of snapping into a crouch on the frame he touches down.
