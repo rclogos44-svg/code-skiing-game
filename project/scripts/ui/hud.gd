@@ -42,6 +42,10 @@ var lift_panel: Control
 var _lift_info := {}
 var _lift_skip := 0.0
 var _streaks: ColorRect
+var prep_ui: Control
+var dev_label: Label
+var _label_time := 0.0
+var _last_label := ""
 
 
 func setup(s: Skier, td: TerrainData) -> void:
@@ -287,6 +291,74 @@ func _build_misc() -> void:
 	fps_label = UITheme.label("", 14, UITheme.DIM, 500, 3)
 	fps_label.position = Vector2(8, 4)
 	root.add_child(fps_label)
+	# trick preparation: a small arrow + charge ring low in the middle (clear of the skier and the
+	# landing), the trick the arrows resolved to, "at the lip" while it waits for the takeoff
+	prep_ui = Control.new()
+	prep_ui.anchor_left = 0.5
+	prep_ui.anchor_right = 0.5
+	prep_ui.anchor_top = 1.0
+	prep_ui.anchor_bottom = 1.0
+	prep_ui.offset_left = -140
+	prep_ui.offset_right = 140
+	prep_ui.offset_top = -190
+	prep_ui.offset_bottom = -110
+	prep_ui.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	prep_ui.draw.connect(_draw_prep)
+	root.add_child(prep_ui)
+	dev_label = UITheme.label("", 13, UITheme.TEXT, 500, 3)
+	dev_label.position = Vector2(10, 26)
+	dev_label.visible = false
+	root.add_child(dev_label)
+
+
+const ARROW_GLYPH := {Vector2i(1, 0): "→", Vector2i(-1, 0): "←", Vector2i(0, 1): "↑", Vector2i(0, -1): "↓"}
+
+
+func _draw_prep() -> void:
+	if skier == null or skier.mode != Skier.Mode.SKI:
+		return
+	var c := Vector2(prep_ui.size.x * 0.5, 30.0)
+	var f := UITheme.font(700)
+	var st := skier.trick_state
+	if st == Skier.TrickState.PREPARE:
+		var a := clampf(skier._prep_t / 0.12, 0.0, 1.0)
+		prep_ui.draw_circle(c, 24.0, Color(0, 0, 0, 0.35 * a))
+		prep_ui.draw_arc(c, 24.0, -PI * 0.5, -PI * 0.5 + TAU * skier.charge, 40, Color(UITheme.ACCENT, a), 4.0, true)
+		var g: String = ARROW_GLYPH.get(skier.prep_dir, "")
+		var w := f.get_string_size(g, HORIZONTAL_ALIGNMENT_LEFT, -1, 26).x
+		prep_ui.draw_string(f, c + Vector2(-w * 0.5, 9), g, HORIZONTAL_ALIGNMENT_LEFT, -1, 26, Color(1, 1, 1, a))
+		if skier.charge >= 0.999:
+			prep_ui.draw_arc(c, 28.0, 0.0, TAU, 40, Color(1, 1, 1, 0.5 * a), 2.0, true)
+	var lbl := ""
+	if st == Skier.TrickState.PENDING:
+		lbl = skier.trick_label + "  ·  at the lip"
+	elif _label_time > 0.0:
+		lbl = skier.trick_label
+	if lbl != "":
+		var w2 := f.get_string_size(lbl, HORIZONTAL_ALIGNMENT_LEFT, -1, 17).x
+		var p2 := Vector2(prep_ui.size.x * 0.5 - w2 * 0.5, 74)
+		prep_ui.draw_string_outline(f, p2, lbl, HORIZONTAL_ALIGNMENT_LEFT, -1, 17, 5, Color(0, 0, 0, 0.6))
+		prep_ui.draw_string(f, p2, lbl, HORIZONTAL_ALIGNMENT_LEFT, -1, 17, UITheme.TEXT)
+
+
+func _update_dev() -> void:
+	var s := skier
+	var body = get_tree().get_first_node_in_group("skier_body")
+	var gph := ""
+	if body:
+		gph = body.grab_phase_name()
+	var lines := [
+		"DEV  (F3)  ·  slow-mo %s" % ("x%.2f" % Engine.time_scale if Engine.time_scale < 0.99 else "off"),
+		"input  %s  prep %s  charge %.2f  pending %s" % [Skier.TrickState.keys()[s.trick_state], ARROW_GLYPH.get(s.prep_dir, "-"), s.charge,
+			s.pending_trick.get("label", "-")],
+		"trick  %s  %s" % [s.trick_label if s.trick_label != "" else "-", ("%s %s" % [s.off_family, "R" if s.off_dir > 0 else "L"]) if s.off_family != "" else ""],
+		"state  %s%s  speed %.1f m/s" % ["AIR" if s.airborne else "ground", (" %.2fs" % s.air_time) if s.airborne else "", s.speed],
+		"rotation  spin %.1f rad/s (%.0f deg)  flip %.1f rad/s (%.0f deg)  off-axis %.1f rad/s (%.0f deg, tilt %.0f)" % [s.spin_vel,
+			rad_to_deg(s.air_rotation), s.flip_vel, rad_to_deg(s.air_pitch), s.off_rate, rad_to_deg(s.off_angle), s.off_max_tilt],
+		"landing  in %.2f s  normal %s" % [s.land_t if s.land_t < 8.0 else -1.0, str(s.land_n.snapped(Vector3(0.01, 0.01, 0.01)))],
+		"grab  %s  %s" % [s.grab_name if s.grab_name != "" else "-", gph],
+	]
+	dev_label.text = "\n".join(lines)
 
 
 func _draw_reticle() -> void:
@@ -336,6 +408,18 @@ func _process(delta: float) -> void:
 	if fps_label.visible:
 		fps_label.text = "%d FPS" % Engine.get_frames_per_second()
 	reticle.queue_redraw()
+	# the resolved trick's name stays up a moment after the pop
+	if skier.trick_label != _last_label:
+		_last_label = skier.trick_label
+		_label_time = 1.2
+	if skier.trick_state == Skier.TrickState.PENDING:
+		_label_time = 1.2
+	_label_time = maxf(_label_time - delta, 0.0)
+	prep_ui.queue_redraw()
+	if InputMap.has_action("dev_view") and Input.is_action_just_pressed("dev_view"):
+		dev_label.visible = not dev_label.visible
+	if dev_label.visible:
+		_update_dev()
 
 
 func show_controls_hint() -> void:
@@ -349,12 +433,16 @@ func show_controls_hint() -> void:
 	if skier and skier.mode == Skier.Mode.LIFT:
 		hint_label.text = "Mouse: look around · hold %s to skip to the top · %s map" % [b.call("interact"), b.call("map")]
 		return
-	hint_label.text = "%s/%s turn · %s pole push · %s hockey stop · TRICKS: hold an arrow to set, press the opposite one to pop · %s then %s: backflip · %s then %s: front flip · %s then %s: left spin · %s then %s: right spin · let go without the opposite: ollie · grabs: %s / %s (+ %s / %s for front / back of the ski) · on rails %s/%s balance, tap %s/%s to spin · %s switch stance · %s back to the top · %s slow-mo · %s skeleton" % [
+	var u: String = b.call("lean_forward")
+	var dn: String = b.call("lean_back")
+	var l: String = b.call("lean_left")
+	var r: String = b.call("lean_right")
+	hint_label.text = "%s/%s turn · %s push · %s stop · TRICKS: hold an arrow to load, press a 2nd to go · opposite: %s%s backflip, %s%s front flip, %s%s right spin, %s%s left spin · sideways: %s%s/%s%s rodeo, %s%s/%s%s misty, %s%s/%s%s cork, %s%s/%s%s bio · let go alone: ollie · grabs %s/%s (+%s/%s) · %s switch · %s top · %s slow-mo · %s dev view" % [
 		b.call("steer_left"), b.call("steer_right"), b.call("tuck"), b.call("brake"),
-		b.call("lean_forward"), b.call("lean_back"), b.call("lean_back"), b.call("lean_forward"),
-		b.call("lean_right"), b.call("lean_left"), b.call("lean_left"), b.call("lean_right"),
-		b.call("grab_left"), b.call("grab_right"), b.call("tuck"), b.call("brake"), b.call("steer_left"), b.call("steer_right"),
-		b.call("lean_left"), b.call("lean_right"), b.call("switch_stance"), b.call("map"), b.call("slow_mo"), b.call("skeleton_view")]
+		u, dn, dn, u, l, r, r, l,
+		u, r, u, l, dn, r, dn, l, l, dn, r, dn, l, u, r, u,
+		b.call("grab_left"), b.call("grab_right"), b.call("tuck"), b.call("brake"),
+		b.call("switch_stance"), b.call("map"), b.call("slow_mo"), b.call("dev_view")]
 
 
 func show_region(name: String) -> void:

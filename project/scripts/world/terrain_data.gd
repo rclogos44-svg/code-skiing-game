@@ -70,6 +70,8 @@ func load_data(base := "res://world/") -> bool:
 
 
 var _pipes: Array = []        # superpipes: {o, d, len, hf (half flat), r, ww, wh, deck, outer, taper}
+var _shapes: Array = []       # snow shapes (rollers, banks, step-ups): the layout entry + o, d
+var _shape_cells := {}        # 64 m cell key -> Array of shape indices
 
 
 func _load_kickers() -> void:
@@ -78,6 +80,28 @@ func _load_kickers() -> void:
 			_pipes.append({"o": Vector2(pp["origin"][0], pp["origin"][1]), "d": Vector2(pp["dir"][0], pp["dir"][1]).normalized(),
 				"len": float(pp["length"]), "hf": float(pp["flat"]) * 0.5, "r": float(pp["radius"]), "ww": float(pp["wall_w"]),
 				"wh": float(pp["wall_h"]), "deck": float(pp["deck"]), "outer": float(pp["outer"]), "taper": float(pp["taper"])})
+	for pk in layout.get("parks", []):
+		for sh in pk.get("shapes", []):
+			var e: Dictionary = sh.duplicate()
+			e["o"] = Vector2(sh["origin"][0], sh["origin"][1])
+			e["d"] = Vector2(sh["dir"][0], sh["dir"][1]).normalized()
+			var reach := float(sh["half_width"]) + float(sh.get("wall", 0.0)) + 5.0
+			var idx2 := _shapes.size()
+			_shapes.append(e)
+			var dd: Vector2 = e["d"]
+			var side2 := Vector2(-dd.y, dd.x) * reach
+			var o2: Vector2 = e["o"]
+			var lo2 := o2
+			var hi2 := o2
+			for c in [o2 + side2, o2 - side2, o2 + dd * float(sh["length"]) + side2, o2 + dd * float(sh["length"]) - side2]:
+				lo2 = lo2.min(c)
+				hi2 = hi2.max(c)
+			for cz in range(int(floor(lo2.y / KICK_CELL)), int(floor(hi2.y / KICK_CELL)) + 1):
+				for cx in range(int(floor(lo2.x / KICK_CELL)), int(floor(hi2.x / KICK_CELL)) + 1):
+					var key2 := cz * 4096 + cx
+					if not _shape_cells.has(key2):
+						_shape_cells[key2] = []
+					_shape_cells[key2].append(idx2)
 	for pk in layout.get("parks", []):
 		for k in pk["kickers"]:
 			var o := Vector2(k["origin"][0], k["origin"][1])
@@ -162,7 +186,77 @@ func height(x: float, z: float) -> float:
 ## Height of the park's shaped snow (kickers, pipe walls) above the regraded slope.
 func feature_offset(x: float, z: float) -> float:
 	var k := kicker_offset(x, z) if not _kick_cells.is_empty() else 0.0
+	if not _shape_cells.is_empty():
+		k = maxf(k, shape_offset(x, z))
 	return maxf(k, pipe_offset(x, z)) if not _pipes.is_empty() else k
+
+
+## Extra height of the park's snow shapes at (x, z), each a smooth profile on top of the regraded
+## slope (so the rider meets no edges):
+##  roller  - a cosine bump across the lane;
+##  bank    - a wall beside the lane on one side (`side` +1 = the park's right), a curved
+##            transition up to a narrow top, a short back slope; it grows in and out over 7 m;
+##  stepup  - parabolic takeoff to the lip, a short drop behind it, a gap, a face up to a deck
+##            higher than the lip (the slope falls away beneath, so `top` is above the snow there),
+##            the deck (landing) and a rollout back to grade.
+func shape_offset(x: float, z: float) -> float:
+	var key := int(floor(z / KICK_CELL)) * 4096 + int(floor(x / KICK_CELL))
+	if not _shape_cells.has(key):
+		return 0.0
+	var best := 0.0
+	for idx in _shape_cells[key]:
+		var e: Dictionary = _shapes[idx]
+		var rel := Vector2(x, z) - (e["o"] as Vector2)
+		var d: Vector2 = e["d"]
+		var t := rel.dot(d)
+		var L: float = e["length"]
+		if t <= 0.0 or t >= L:
+			continue
+		var us := rel.x * -d.y + rel.y * d.x            # + = the park's right
+		var hw: float = e["half_width"]
+		var h: float = e["height"]
+		var y := 0.0
+		match String(e["kind"]):
+			"roller":
+				if absf(us) >= hw + 2.0:
+					continue
+				y = h * 0.5 * (1.0 - cos(TAU * t / L)) * smoothstep(hw + 2.0, hw - 1.0, absf(us))
+			"bank":
+				var w: float = e["wall"]
+				var u := us * float(e["side"]) - hw          # 0 where the wall starts
+				if u <= 0.0 or u >= w + 4.5:
+					continue
+				if u < w:
+					y = h * (u / w) * (u / w)
+				elif u < w + 1.5:
+					y = h
+				else:
+					y = h * (1.0 - (u - w - 1.5) / 3.0)
+				y *= smoothstep(0.0, 7.0, t) * smoothstep(L, L - 7.0, t)
+			"stepup":
+				if absf(us) >= hw + 2.0:
+					continue
+				var lr: float = e["ramp"]
+				var a1: float = lr + float(e["back"])
+				var a2: float = a1 + float(e["gap"])
+				var a3: float = a2 + float(e["face"])
+				var a4: float = a3 + float(e["deck"])
+				var top: float = e["top"]
+				if t < lr:
+					y = h * (t / lr) * (t / lr)
+				elif t < a1:
+					y = h * (1.0 - smoothstep(lr, a1, t))
+				elif t < a2:
+					y = 0.0
+				elif t < a3:
+					y = top * smoothstep(a2, a3, t)
+				elif t < a4:
+					y = top
+				else:
+					y = top * (1.0 - (t - a4) / (L - a4))
+				y *= clampf((hw + 2.0 - absf(us)) * 0.5, 0.0, 1.0)
+		best = maxf(best, y)
+	return best
 
 
 ## Superpipe walls: flat bottom, quarter-circle transitions steepening to the coping, a deck, an

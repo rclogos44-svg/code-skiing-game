@@ -934,6 +934,48 @@ func _park_kickers() -> void:
 			not ai.is_empty() and ai["crash"] == "" and str(atr.get("name", "")).contains(want),
 			"'%s' %s" % [atr.get("name", "-"), ai.get("crash", "no landing")])
 	s.scripted_input = {}
+	# off-axis tricks off Ridgeline's XL: prepare one arrow, press a perpendicular one before the lip
+	# (the trick waits for the takeoff), let go in the air; it must land clean and be named from what
+	# the body actually did
+	var rp := -1
+	for pi2 in world.terrain.layout["parks"].size():
+		if world.terrain.layout["parks"][pi2]["name"] == "Ridgeline Park":
+			rp = pi2
+	if rp >= 0:
+		var xk: Dictionary = {}
+		for k in world.terrain.layout["parks"][rp]["kickers"]:
+			if k["line"] == "big" and k["size"] == "XL" and xk.is_empty():
+				xk = k
+		var xdir := Vector3(xk["dir"][0], 0, xk["dir"][1])
+		var xlip := Vector3(xk["lip"][0], 0, xk["lip"][1])
+		for ot in [["Rodeo", "lean_forward", "lean_right"], ["Misty", "lean_back", "lean_left"], ["Cork", "lean_left", "lean_back"],
+				["Bio", "lean_right", "lean_forward"]]:
+			s.teleport(Vector3(xk["origin"][0], 0, xk["origin"][1]) - xdir * 12.0, Skier.yaw_of(xdir), float(xk["approach_speed"]) - 1.0)
+			var obox := {}
+			var ocb := func(info): obox["info"] = info
+			s.landed.connect(ocb)
+			var pend := false
+			for i in 1200:
+				var keys := {}
+				var to_lip := (xlip - s.position).dot(xdir)
+				if not s.airborne and to_lip > 0.0:
+					keys[ot[1]] = 1.0
+					if to_lip < 6.0:
+						keys[ot[2]] = 1.0
+				s.scripted_input = keys
+				s.step(1.0 / 120.0)
+				s.time += 1.0 / 120.0
+				pend = pend or s.trick_state == Skier.TrickState.PENDING
+				if obox.has("info") or s.is_crashed:
+					break
+			s.landed.disconnect(ocb)
+			var oi: Dictionary = obox.get("info", {})
+			var otr: Dictionary = TrickSystem.evaluate(oi) if not oi.is_empty() else {}
+			check("off-axis: %s off the XL (prepared, buffered to the lip, lands clean, named from the motion)" % ot[0],
+				pend and not oi.is_empty() and oi["crash"] == "" and str(otr.get("name", "")).contains(ot[0]),
+				"'%s' %s · flip %.0f deg, max tilt %.0f deg, air %.2f s, waited for the lip %s" % [otr.get("name", "-"), oi.get("crash", "no landing"),
+				float(oi.get("off_flip", 0.0)), float(oi.get("off_tilt", 0.0)), float(oi.get("air_time", 0.0)), pend])
+	s.scripted_input = {}
 	# grab keys (Q/E + W/S) never touch the flip: same rotation with and without a grab held
 	var flip_with := {}
 	for with_grab in [false, true]:

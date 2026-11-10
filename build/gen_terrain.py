@@ -745,6 +745,8 @@ def main():
     feats, marks, fmasks = features.apply_features(sys.modules[__name__], H2, layout, lake)
     layout["features"] = feats
     layout["landmarks"] = marks
+    parks.apply_late_parks(sys.modules[__name__], H2, layout, groomed, fmasks)
+    feats = layout["features"]
     log("features: " + ", ".join("%d %s" % (sum(1 for f in feats if f["type"] == t), t) for t in ("cliff", "lip", "gully", "lake", "moguls", "trail")))
 
     log("surface maps")

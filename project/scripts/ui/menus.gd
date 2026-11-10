@@ -288,6 +288,12 @@ func show_parks() -> void:
 		var b := _button("%s   ·   %d jumps, %d rails & boxes" % [pk["name"], pk["kickers"].size(), pk["rails"].size()],
 			func(): request.emit("park", idx), list_box)
 		b.custom_minimum_size = Vector2(680, 46)
+		# quick drops onto the park's routes (Tab then brings you back to the same one)
+		var secs: Array = pk.get("sections", [])
+		for k in range(1, secs.size()):
+			var sid := "%d:%d" % [i, k]
+			var sb := _button("      ↳ %s" % secs[k]["name"], func(): request.emit("park", sid), list_box)
+			sb.custom_minimum_size = Vector2(680, 36)
 	_push(list_panel)
 
 

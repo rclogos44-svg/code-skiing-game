@@ -37,11 +37,18 @@ func setup(td: TerrainData, obstacles: Obstacles) -> void:
 			_mark_kicker(k, pk)
 		for pp in pk.get("pipes", []):
 			_pipe_mesh(pp)
+		for sh in pk.get("shapes", []):
+			_shape_mesh(sh)
 		_staging(pk)
 
 
-func park_start(i: int) -> Dictionary:
+func park_start(i: int, section := -1) -> Dictionary:
 	var pk: Dictionary = parks[clampi(i, 0, parks.size() - 1)]
+	var secs: Array = pk.get("sections", [])
+	if section > 0 and section < secs.size():
+		# a quick drop onto one of the park's routes, facing down the park
+		var sc: Dictionary = secs[section]
+		return {"pos": Vector3(sc["pos"][0], 0, sc["pos"][1]), "yaw": float(pk["yaw"]), "name": "%s · %s" % [pk["name"], sc["name"]]}
 	return {"pos": Vector3(pk["start"][0], 0, pk["start"][1]), "yaw": float(pk["yaw"]), "name": pk["name"]}
 
 
@@ -177,6 +184,85 @@ func _kicker_mesh(k: Dictionary) -> void:
 	add_child(mi)
 
 
+## Snow surface of a roller, bank or step-up (TerrainData.shape_offset gives the shape), sampled
+## finely along and across so the curves read smooth; the step-up's lip and deck edge are marked.
+func _shape_mesh(e: Dictionary) -> void:
+	var o := Vector3(e["origin"][0], 0, e["origin"][1])
+	var d := Vector3(e["dir"][0], 0, e["dir"][1]).normalized()
+	var side := d.cross(Vector3.UP)           # + = the park's right (TerrainData.shape_offset)
+	var hw := float(e["half_width"])
+	var L := float(e["length"])
+	var kind := String(e["kind"])
+	var u0 := -hw - 2.0
+	var u1 := hw + 2.0
+	var du := 0.6
+	if kind == "bank":
+		var sg := float(e["side"])
+		var far := hw + float(e["wall"]) + 4.6
+		u0 = minf(sg * (hw - 0.5), sg * far)
+		u1 = maxf(sg * (hw - 0.5), sg * far)
+		du = 0.4
+	var ts: Array[float] = []
+	var t := 0.0
+	while t < L:
+		ts.append(t)
+		t += 0.35 if kind == "stepup" else 0.6
+	ts.append(L)
+	var us: Array[float] = []
+	var u := u0
+	while u < u1:
+		us.append(u)
+		u += du
+	us.append(u1)
+	var verts := PackedVector3Array()
+	var norms := PackedVector3Array()
+	for tt in ts:
+		for uu in us:
+			var q := o + d * tt + side * uu
+			verts.append(Vector3(q.x, terrain.height(q.x, q.z) + 0.03, q.z))
+			norms.append(terrain.normal(q.x, q.z, 0.2))
+	var idx := PackedInt32Array()
+	var nu := us.size()
+	for i in ts.size() - 1:
+		for j in nu - 1:
+			var a := i * nu + j
+			idx.append_array([a, a + nu, a + 1, a + 1, a + nu, a + nu + 1])
+	var arr := []
+	arr.resize(Mesh.ARRAY_MAX)
+	arr[Mesh.ARRAY_VERTEX] = verts
+	arr[Mesh.ARRAY_NORMAL] = norms
+	arr[Mesh.ARRAY_INDEX] = idx
+	var am := ArrayMesh.new()
+	am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+	var mi := MeshInstance3D.new()
+	mi.mesh = am
+	mi.material_override = _snow
+	add_child(mi)
+	if kind == "stepup":
+		var st := SurfaceTool.new()
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		var lr := float(e["ramp"])
+		var deck_t := lr + float(e["back"]) + float(e["gap"]) + float(e["face"])
+		for tm: float in [lr - 0.3, deck_t + 0.3]:
+			var c := o + d * tm
+			var pts: Array[Vector3] = []
+			for k in 9:
+				var q := c + side * lerpf(-hw, hw, k / 8.0)
+				q.y = terrain.height(q.x, q.z) + 0.04
+				pts.append(q)
+			for k in 8:
+				var ex := d * 0.18
+				_quad(st, pts[k] - ex, pts[k + 1] - ex, pts[k + 1] + ex, pts[k] + ex)
+		st.generate_normals()
+		var mk := MeshInstance3D.new()
+		mk.mesh = st.commit()
+		mk.material_override = _mat(ORANGE, 0.6)
+		add_child(mk)
+		_sign(o + d * (lr - 14.0) + side * (hw + 4.0), "STEP-UP · CARRY SPEED", 34, Color(1, 1, 1))
+	elif kind == "bank":
+		_sign(o + d * -6.0 + side * (float(e["side"]) * (hw + 3.0)), "BANK " + ("RIGHT" if float(e["side"]) > 0.0 else "LEFT"), 30, Color(1, 1, 1))
+
+
 ## Snow surface of a superpipe (TerrainData.pipe_offset gives its shape over the plain slope): a
 ## grid fine across the transitions, with a blue line along each coping.
 func _pipe_mesh(pp: Dictionary) -> void:
@@ -269,7 +355,7 @@ func _mark_kicker(k: Dictionary, pk: Dictionary) -> void:
 	mi.mesh = st.commit()
 	mi.material_override = _mat(ORANGE, 0.6)
 	add_child(mi)
-	if k["line"] in ["prog", "jump", "med", "hip"] or k.get("rail_lip", false):
+	if k["line"] in ["prog", "jump", "med", "hip", "big", "flow", "bighip"] or k.get("rail_lip", false):
 		var tip := c_label(k)
 		if tip != "":
 			_sign(Vector3(k["lip"][0], 0, k["lip"][1]) - d * 14.0 + side * (hw + 4.0), tip, 34, Color(1, 1, 1))
@@ -284,6 +370,8 @@ func c_label(k: Dictionary) -> String:
 			what = "HIP " + ("RIGHT" if float(k["yaw"]) > 0.0 else "LEFT")
 		elif k.has("knuckle_h"):
 			what = "STEP-DOWN"
+		if k["size"] == "XS":
+			return "SIDE HIT"
 		return "%s %s · %d KM/H" % [{"S": "SMALL", "M": "MEDIUM", "L": "LARGE", "XL": "XL"}[k["size"]], what, roundi(float(k["approach_speed"]) * 3.6)]
 	return "HOLD ↑ · LET GO AT THE LIP TO POP" if float(k["start_s"]) < 100.0 else "HOLD ↑ · PRESS ↓ AT THE LIP: BACKFLIP"
 
@@ -298,8 +386,10 @@ func _staging(pk: Dictionary) -> void:
 		"hip": "TRANSFERS"}
 	if lines.has("med"):
 		names["jump"] = "XL LINE"
+	names["flow"] = "FLOW LINE"
+	names["big"] = "BIG LINE"
 	for key in lines:
-		_sign(s + d * 28.0 + side * float(lines[key]), names[key], 48, Color(1, 1, 1))
+		_sign(s + d * 28.0 + side * float(lines[key]), names.get(key, String(key).to_upper()), 48, Color(1, 1, 1))
 	var fm := _mat(ORANGE, 0.5)
 	var pm := _mat(Color(0.2, 0.2, 0.22), 0.5)
 	for u: float in [-float(pk["half_width"]), float(pk["half_width"])]:

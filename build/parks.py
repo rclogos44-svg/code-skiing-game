@@ -15,7 +15,7 @@ LINES = {"prog": -34.0, "jump": 0.0, "jib": 34.0}
 # tabletop kickers: height (m), lip angle above horizontal (deg), approach speed shown on the sign (m/s),
 # lip speed a skier arriving at that speed actually has (measured in --test=physics), half width
 KICKERS = {"S": (1.2, 22.0, 10.0, 9.3, 3.5), "M": (2.0, 26.0, 13.0, 11.2, 4.0), "L": (3.0, 30.0, 16.0, 13.2, 4.5),
-           "XL": (5.0, 28.0, 19.0, 15.5, 6.0)}
+           "XL": (5.0, 28.0, 19.0, 15.5, 6.0), "XS": (0.7, 18.0, 9.0, 8.5, 2.2)}
 LANDING_DEG = 32.0       # landing slope, absolute
 SWEET = 0.4              # design touchdown point, as a fraction of the landing
 
@@ -114,6 +114,36 @@ def pipe_geometry(s0, s1, u, x0, z0, dx, dz):
     return g
 
 
+# snow shapes (exact profiles the game adds on top of the regraded slope, like kickers - see
+# TerrainData.shape_offset): rollers, banks (a curved wall beside the lane to carve up), step-ups
+# (takeoff, a gap, a face up to a deck higher than the lip, then a rollout)
+STEPUP = dict(h1=1.2, back=1.2, gap=1.6, face=3.0, h2=3.3, deck=7.0)
+
+
+def shape_entry(kind, arg, opt, s0, uc, theta, x0, z0, dx, dz, line):
+    pt = lambda t: [round(x0 + dx * (s0 + t) - dz * uc, 2), round(z0 + dz * (s0 + t) + dx * uc, 2)]
+    e = dict(kind=kind, line=line, start_s=s0, dir=[dx, dz], origin=pt(0.0))
+    if kind == "roller":
+        h, L = arg
+        e.update(height=h, length=L, half_width=float(opt.get("hw", 7.0)))
+    elif kind == "bank":
+        h, L = arg
+        e.update(height=h, length=L, half_width=float(opt.get("hw", 5.0)), side=float(opt.get("side", 1.0)),
+                 wall=float(opt.get("wall", 4.5)))
+    elif kind == "stepup":
+        g = dict(STEPUP)
+        g.update(opt.get("geo", {}))
+        lr = 2.0 * g["h1"] / math.tan(math.radians(24.0) + theta)
+        ll = g["h2"] / math.tan(math.radians(LANDING_DEG) - theta)
+        e.update(height=g["h1"], ramp=round(lr, 2), back=g["back"], gap=g["gap"], face=g["face"], top=g["h2"],
+                 deck=g["deck"], landing=round(ll, 2), half_width=float(opt.get("hw", 4.5)),
+                 length=round(lr + g["back"] + g["gap"] + g["face"] + g["deck"] + ll, 2))
+        e["lip"] = pt(lr)
+        e["deck_start"] = pt(lr + g["back"] + g["gap"] + g["face"])
+    e["end"] = pt(e["length"])
+    return e
+
+
 # per park: (line, kind, start metres down the park, size or length)
 DESIGNS = [
     ("Main Park", [
@@ -177,6 +207,38 @@ DESIGNS = [
         ("jib", "raillip", 300, 8.0), ("jib", "rail", 370, 14.0, {"shape": "kink"}),
         ("jib", "rail", 440, 12.0, {"shape": "rainbow"}), ("jib", "tube", 440, 10.0, {"u": 56.0}), ("jib", "box", 505, 10.0),
     ], {"jib_l": -50.0, "med": -27.0, "jump": 0.0, "hip": 27.0, "jib": 50.0}),
+    # Ridgeline Park: the freestyle development park.  Four routes side by side that cross where the
+    # hips send you: a progression lane (forgiving small tables, wide boxes, low rollers, room to
+    # learn the arrow tricks), a flow lane (rollers, banked walls, side hits, a transfer hip and a
+    # step-up), the big line (tables sized for the speed carried from the one before, for off-axis
+    # spins and flips, a transfer hip and a step-down) and a jib lane (flat-down, down, kinked,
+    # rainbow and S rails, boxes).  Sections are quick drops in the pause menu.
+    ("Ridgeline Park", [
+        ("prog", "roller", 22, (0.5, 10.0)), ("prog", "roller", 36, (0.5, 10.0)), ("prog", "kicker", 62, ("S", 12.1, 11.1)),
+        ("prog", "widebox", 130, 8.0, {"u": -46.0}), ("prog", "box", 130, 8.0, {"u": -38.0}),
+        ("prog", "kicker", 190, ("S", 15.8, 14.2)), ("prog", "roller", 255, (0.6, 12.0)), ("prog", "widebox", 290, 10.0),
+        ("prog", "kicker", 350, ("S", 16.6, 15.0)), ("prog", "widebox", 425, 10.0, {"u": -46.0}), ("prog", "box", 425, 10.0, {"u": -38.0}),
+        ("flow", "roller", 24, (0.9, 12.0)), ("flow", "roller", 42, (1.0, 12.0)), ("flow", "roller", 60, (0.8, 10.0)),
+        ("flow", "bank", 92, (2.2, 34.0), {"side": 1.0, "u": -14.0}),
+        ("flow", "kicker", 148, ("XS", 15.2, 13.6), {"u": -21.0, "yaw": 28.0}),
+        ("flow", "kicker", 180, ("M", 15.6, 13.2), {"yaw": 24.0}),
+        ("flow", "roller", 248, (1.0, 12.0)), ("flow", "roller", 266, (1.2, 14.0)),
+        ("flow", "bank", 292, (2.2, 34.0), {"side": -1.0, "u": -16.0}),
+        ("flow", "kicker", 346, ("XS", 15.6, 14.0), {"u": -8.0, "yaw": -28.0}),
+        ("flow", "stepup", 380, None),
+        ("flow", "roller", 468, (0.8, 10.0)), ("flow", "roller", 484, (0.8, 10.0)),
+        # sized for the speed carried from the jump before (line_design, --test=line): 1.3-2 s of air
+        ("big", "kicker", 55, ("M", 11.7, 10.1)), ("big", "kicker", 112, ("L", 14.2, 12.0)),
+        ("big", "kicker", 178, ("XL", 15.7, 12.3)), ("big", "kicker", 250, ("XL", 16.6, 13.3, 0.86)),
+        ("bighip", "kicker", 330, ("L", 15.8, 12.7), {"u": 16.0, "yaw": -24.0}),
+        ("bighip", "kicker", 410, ("L", 14.3, 12.0), {"u": 16.0, "h2": 1.8}),
+        ("jib", "widebox", 40, 8.0, {"u": 40.0}), ("jib", "rail", 40, 8.0, {"u": 48.0, "shape": "flatdown"}),
+        ("jib", "rail", 100, 12.0), ("jib", "rail", 165, 14.0, {"shape": "kink"}), ("jib", "box", 230, 12.0, {"shape": "flatdown"}),
+        ("jib", "rail", 295, 10.0, {"shape": "rainbow"}), ("jib", "rail", 360, 14.0, {"shape": "srail"}),
+        ("jib", "raillip", 425, 7.0), ("jib", "box", 490, 12.0, {"u": 40.0, "shape": "tabletop"}), ("jib", "tube", 490, 10.0, {"u": 48.0}),
+    ], {"prog": -42.0, "flow": -14.0, "big": 16.0, "jib": 44.0},
+        [("Top", 0.0, 0.0), ("Progression", 0.0, -42.0), ("Flow line", 0.0, -14.0), ("Big line", 30.0, 16.0),
+         ("Jib lane", 20.0, 44.0), ("Step-up", 350.0, -14.0)]),
 ]
 
 
@@ -220,12 +282,87 @@ def find_sites(g, H, lay, placer, count):
     return chosen
 
 
+# parks added after the mountain's natural features are placed (so adding them doesn't move any
+# cliff, lip or gully elsewhere): they regrade their own footprint and drop the features inside it
+LATE = {"Ridgeline Park"}
+PARK_SLOPE = {"Ridgeline Park": 10.0}
+_late_jobs = []
+
+
 def apply_parks(g, H, lay, groomed, placer):
     parks = []
-    for (score, x0, z0, dx, dz, h0, slope), entry in zip(find_sites(g, H, lay, placer, len(DESIGNS)), DESIGNS):
+    lay["parks"] = parks
+    sites = find_sites(g, H, lay, placer, len(DESIGNS) + 24)
+    legacy = [e for e in DESIGNS if e[0] not in LATE]
+    for site, entry in zip(sites, legacy):            # the original parks keep their original sites
+        _apply_one(g, H, lay, groomed, placer, site, entry)
+    for entry in DESIGNS:
+        if entry[0] in LATE:
+            _late_jobs.append((sites[len(legacy):], entry))
+    return parks
+
+
+def _footprint_hits(site, feats):
+    score, x0, z0, dx, dz, h0, slope = site
+    hits = []
+    for f in feats:
+        rx, rz = f["x"] - x0, f["z"] - z0
+        s_ = rx * dx + rz * dz
+        u_ = -rx * dz + rz * dx
+        if -STAGE - BLEND - 15.0 < s_ < LENGTH + 75.0 and abs(u_) < HALF_W + BLEND + 15.0:     # the regraded area
+            hits.append(dict(f, _s=round(s_), _u=round(u_)))
+    return hits
+
+
+def apply_late_parks(g, H, lay, groomed, masks):
+    """The parks in LATE, after the features: regrade, then clear the features and their rock /
+    gully masks from the footprint (the regrade has flattened them)."""
+    for spare, entry in _late_jobs:
+        # a learning park wants an even, moderate slope (speed you can control on the small lines),
+        # on ground with none of the mountain's cliffs, lips or gullies in the way
+        taken = [(p["origin"][0], p["origin"][1]) for p in lay["parks"]]
+        ok = []
+        for st in spare:
+            # slide the park sideways up to 30 m if that clears a feature at its edge
+            for shift in (0.0, -15.0, 15.0, -30.0, 30.0):
+                sc, x0, z0, dx, dz, h0, slope = st
+                cand = (sc + abs(shift) * 0.02, x0 - dz * shift, z0 + dx * shift, dx, dz, h0, slope)
+                if not _footprint_hits(cand, lay.get("features", [])) \
+                        and all(math.hypot(cand[1] - a, cand[2] - b) > 700.0 for a, b in taken):
+                    ok.append(cand)
+                    break
+        pool = ok if ok else spare
+        site = min(pool, key=lambda st: abs(st[6] - 12.5) + st[0] * 0.05)
+        g.log("late park %s: slope %.1f deg (clear candidates %s; all %s)" % (entry[0], site[6], ", ".join("%.1f" % st[6] for st in ok),
+              ", ".join("%.1f/%s" % (st[6], [(h["type"], h["_s"], h["_u"]) for h in _footprint_hits(st, lay.get("features", []))]) for st in spare)))
+        pk, (i0, i1, j0, j1, w) = _apply_one(g, H, lay, groomed, None, site, entry)
+        o = np.array(pk["origin"])
+        d = np.array(pk["dir"])
+        keep = []
+        for f in lay.get("features", []):
+            rel = np.array([f["x"], f["z"]]) - o
+            s_ = float(rel @ d)
+            u_ = float(rel @ np.array([-d[1], d[0]]))
+            if -STAGE - BLEND - 15.0 < s_ < LENGTH + 75.0 and abs(u_) < HALF_W + BLEND + 15.0:
+                g.log("  %s: removed %s %s (inside the park)" % (pk["name"], f["type"], f.get("name", "")))
+                continue
+            keep.append(f)
+        lay["features"] = keep
+        for m in masks.values():
+            m[i0:i1 + 1, j0:j1 + 1] *= (1.0 - w)
+    _late_jobs.clear()
+
+
+def _apply_one(g, H, lay, groomed, placer, site, entry):
+    parks = lay["parks"]
+    score, x0, z0, dx, dz, h0, slope = site
+    if True:
         name, design = entry[0], entry[1]
         lines = entry[2] if len(entry) > 2 else LINES
+        sections = entry[3] if len(entry) > 3 else []
         theta = math.radians(min(max(slope, 11.0), 16.0))
+        if name in PARK_SLOPE:
+            theta = math.radians(PARK_SLOPE[name])     # a gentler regrade than the hillside (speed you can learn on)
         pad = HALF_W + BLEND + 10.0
         r = LENGTH + STAGE + 80.0
         i0 = int(max(min(z0, z0 + dz * r) - pad - STAGE, 0) / g.SP)
@@ -246,11 +383,11 @@ def apply_parks(g, H, lay, groomed, placer):
         sub = H[i0:i1 + 1, j0:j1 + 1]
         H[i0:i1 + 1, j0:j1 + 1] = sub * (1 - w) + target * w
         groomed[i0:i1 + 1, j0:j1 + 1] = np.maximum(groomed[i0:i1 + 1, j0:j1 + 1], g.smoothstep(HALF_W + 12.0, HALF_W, np.abs(Ug)) * (Sg > -STAGE - 10))
-        kickers, rails, tips = [], [], []
+        kickers, rails, tips, shapes = [], [], [], []
         for item in design:
             line, kind, s0, arg = item[:4]
             opt = item[4] if len(item) > 4 else {}
-            uc = float(opt.get("u", lines[line]))
+            uc = float(opt["u"]) if "u" in opt else float(lines[line])
             if kind == "kicker":
                 # kickers are exact shapes the game adds on top of the regraded slope (sharper than the 2 m grid);
                 # opt: "u" lateral position, "yaw" (deg, + toward the park's right) for a hip / transfer jump,
@@ -270,6 +407,8 @@ def apply_parks(g, H, lay, groomed, placer):
                 if yaw != 0.0:
                     kg["yaw"] = float(opt["yaw"])
                 kickers.append(kg)
+            elif kind in ("roller", "bank", "stepup"):
+                shapes.append(shape_entry(kind, arg, opt, s0, uc, theta, x0, z0, dx, dz, line))
             elif kind == "raillip":
                 k, r = rail_lip(s0, uc, float(arg), theta, x0, z0, dx, dz, line)
                 kickers.append(k)
@@ -284,10 +423,17 @@ def apply_parks(g, H, lay, groomed, placer):
                 rails.append([round(a[0], 2), round(a[1], 2), round(b[0], 2), round(b[1], 2), kind, line])
         pipes = [pipe_geometry(a, b, u, x0, z0, dx, dz) for a, b, u in PIPES.get(name, [])]
         sx, sz = x0 - dx * 14.0, z0 - dz * 14.0           # spawn near the drop-in so you roll straight in
-        parks.append(dict(name=name, start=[round(sx, 1), round(sz, 1), float(g.sample(H, sx, sz))], yaw=math.atan2(-dx, -dz),
-                          origin=[round(x0, 1), round(z0, 1)], dir=[dx, dz], slope=round(math.degrees(theta), 1),
-                          length=LENGTH, half_width=HALF_W, lines=lines, kickers=kickers, rails=rails, pipes=pipes))
-        placer.take(x0 + dx * LENGTH * 0.5, z0 + dz * LENGTH * 0.5, LENGTH * 0.5 + 60.0)
+        pk = dict(name=name, start=[round(sx, 1), round(sz, 1), float(g.sample(H, sx, sz))], yaw=math.atan2(-dx, -dz),
+                  origin=[round(x0, 1), round(z0, 1)], dir=[dx, dz], slope=round(math.degrees(theta), 1),
+                  length=LENGTH, half_width=HALF_W, lines=lines, kickers=kickers, rails=rails, pipes=pipes)
+        if shapes:
+            pk["shapes"] = shapes
+        if sections:
+            # quick drops: a point a few metres above the section, on its lane, facing down the park
+            pk["sections"] = [dict(name=n, pos=[round(x0 + dx * (ss - 14.0) - dz * uu, 1), round(z0 + dz * (ss - 14.0) + dx * uu, 1)])
+                              for n, ss, uu in sections]
+        parks.append(pk)
+        if placer is not None:
+            placer.take(x0 + dx * LENGTH * 0.5, z0 + dz * LENGTH * 0.5, LENGTH * 0.5 + 60.0)
         g.log("park %s at (%.0f, %.0f) slope %.1f deg, fit rms %.1f m" % (name, x0, z0, math.degrees(theta), score))
-    lay["parks"] = parks
-    return parks
+    return pk, (i0, i1, j0, j1, w)

@@ -28,6 +28,7 @@ const ACTIONS := {
 	"pause": {"label": "Pause", "keys": [KEY_P]},
 	"skeleton_view": {"label": "Skeleton view (see the joints)", "keys": [KEY_V]},
 	"slow_mo": {"label": "Slow motion on / off", "keys": [KEY_B]},
+	"dev_view": {"label": "Developer view (trick input, rotation, landing)", "keys": [KEY_F3]},
 	"switch_stance": {"label": "Switch stance (a 180 on the snow: ride switch / back to forward)", "keys": [KEY_X]},
 }
 

@@ -304,6 +304,10 @@ const SUMMIT_FILES = __MANIFEST__;
     loader.hidden = true;
     const c = document.getElementById("canvas");
     c.focus();
+    // arrows and space are game keys: never scroll the page with them while the game has focus
+    window.addEventListener("keydown", function (e) {
+      if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " ", "PageUp", "PageDown"].indexOf(e.key) >= 0) { e.preventDefault(); }
+    }, { passive: false });
   }, function (err) {
     window.__summitFail(err && err.message ? err.message : String(err));
   });

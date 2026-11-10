@@ -40,6 +40,7 @@ const MAX_HIKE_SLOPE := 40.0
 const GRABS := true
 const GRAB_IN := 0.55               # seconds to reach a grab (it takes time to get the hand to the ski)
 const GRAB_OUT := 0.35              # seconds to let go and open back up
+const GRAB_AUTO_RELEASE := 0.3      # assisted difficulties let go this long before touchdown (s)
 const WIND_SPIN := 5.4             # spin rate (rad/s) the unwinding body reaches after a full wind-up
 const UNWIND_TIME := 0.35          # the spin builds up over this long after takeoff (hips follow shoulders)
 const PUSH_MAX := 6.5              # W pole-pushes only below this speed (m/s, ~23 km/h); faster, it does nothing
@@ -222,6 +223,10 @@ static func yaw_of(dir: Vector3) -> float:
 
 
 func teleport(pos: Vector3, yaw: float, initial_speed := 0.0, keep_mode := false) -> void:
+	off_family = ""
+	off_angle = 0.0
+	off_max_tilt = 0.0
+	_reset_trick_input()
 	if not keep_mode and mode != Mode.SKI:
 		mode = Mode.SKI
 		mode_changed.emit(mode)
@@ -320,84 +325,396 @@ func _ink(action: String) -> float:
 	return 0.0 if _latched.has(action) else _in(action)
 
 
-## Arrow trick input (see trick_set): set, then pop with the opposite arrow, or let go to ollie.
+## Arrow trick input - an explicit state machine (see the control table in FREESTYLE.md):
+##   IDLE -> PREPARE: press an arrow on the snow: he loads into it (crouch, coil / lean), charge
+##     builds to its cap in 0.55 s and stays there however long it's held.
+##   PREPARE -> trick: a NEW press of a second arrow resolves the trick from (prepared, second):
+##     opposite = a flip or spin, perpendicular = an off-axis trick (rodeo / misty / cork / bio).
+##     Near a kicker lip it waits (PENDING) and goes at the takeoff, otherwise it pops right away.
+##   PREPARE -> IDLE: let go of the prepared arrow alone = a straight pop (ollie); a short tap of
+##     Left / Right on a rail = a rail spin; a tap under 0.1 s does nothing.
+##   AIR: in the first 0.3 s off a lip, prepare + second arrow still starts a trick (weaker); after
+##     that the arrows only adjust the rotation that's going (body english, within limits).
+##   RECOVER: 0.25 s after touchdown new presses are ignored (no accidental tricks off a landing).
+## Each initiation is consumed once: the arrows still held are latched and do nothing until let go.
+enum TrickState { IDLE, PREPARE, PENDING, AIR, RECOVER }
+const ARROW_BITS := {"lean_right": 1, "lean_left": 2, "lean_forward": 4, "lean_back": 8}
+const PREP_MIN := 0.06              # a second arrow counts once the first has been held this long
+const TAKEOFF_BUFFER := 0.9         # longest a trick waits for the lip (s)
+const LATE_WINDOW := 0.3            # an off-the-lip initiation still counts this long into the air (s)
+const RECOVER_TIME := 0.25
+var trick_state := TrickState.IDLE
+var prep_dir := Vector2i.ZERO        # prepared arrow: (1,0) Right, (-1,0) Left, (0,1) Up, (0,-1) Down
+var _prep_t := 0.0
+var _keys_prev := 0
+var pending_trick := {}              # resolved, waiting for the lip
+var _pending_t := 0.0
+var _recover_t := 0.0
+var trick_label := ""                # what the input resolved to (HUD)
+var _late_used := false
+
+
+static func _dir_of_bit(bit: int) -> Vector2i:
+	match bit:
+		1: return Vector2i(1, 0)
+		2: return Vector2i(-1, 0)
+		4: return Vector2i(0, 1)
+		8: return Vector2i(0, -1)
+	return Vector2i.ZERO
+
+
+static func _bit_of_dir(d: Vector2i) -> int:
+	if d.x == 1: return 1
+	if d.x == -1: return 2
+	if d.y == 1: return 4
+	if d.y == -1: return 8
+	return 0
+
+
+## The trick for a prepared arrow followed by a second one.  The prepared arrow coils you the
+## opposite way, the second snaps you in its own direction:
+##   opposite:  Up>Down backflip, Down>Up front flip, Left>Right right spin, Right>Left left spin
+##   flip-led off-axis (prepared Up / Down, then Left / Right):  Up>Right rodeo right,
+##     Up>Left rodeo left, Down>Right misty right, Down>Left misty left
+##   spin-led off-axis (prepared Left / Right, then Down / Up): Left>Down cork right,
+##     Right>Down cork left, Left>Up bio right, Right>Up bio left
+static func resolve_trick(prep: Vector2i, second: Vector2i) -> Dictionary:
+	if second == -prep:
+		if prep.y != 0:
+			return {"kind": "flip", "flip": float(-prep.y), "label": "BACKFLIP" if prep.y > 0 else "FRONT FLIP"}
+		return {"kind": "spin", "spin": float(-prep.x), "label": "RIGHT SPIN" if prep.x < 0 else "LEFT SPIN"}
+	if prep.y != 0 and second.x != 0:
+		var fam := "rodeo" if prep.y > 0 else "misty"
+		return {"kind": "offaxis", "family": fam, "dir": float(second.x), "label": "%s %s" % [fam.to_upper(), "RIGHT" if second.x > 0 else "LEFT"]}
+	if prep.x != 0 and second.y != 0:
+		var fam2 := "cork" if second.y < 0 else "bio"
+		var d := float(-prep.x)                    # prepared Left coils you for a RIGHT rotation
+		return {"kind": "offaxis", "family": fam2, "dir": d, "label": "%s %s" % [fam2.to_upper(), "RIGHT" if d > 0 else "LEFT"]}
+	return {}
+
+
+func _reset_trick_input() -> void:
+	trick_state = TrickState.IDLE
+	prep_dir = Vector2i.ZERO
+	trick_set = Vector2i.ZERO
+	_prep_t = 0.0
+	_set_time = 0.0
+	pending_trick = {}
+	_late_used = false
+
+
+## Focus lost: forget the arrows without doing anything (a half-prepared trick doesn't pop).
+func cancel_trick_input() -> void:
+	if trick_state in [TrickState.PREPARE, TrickState.PENDING]:
+		trick_state = TrickState.IDLE
+	prep_dir = Vector2i.ZERO
+	trick_set = Vector2i.ZERO
+	pending_trick = {}
+	_keys_prev = 0
+	_latched.clear()
+
+
+## Arrow trick input (state machine above).  `trick_set` mirrors the prepared arrow for the pose.
 func _arrow_tricks(dt: float) -> void:
-	var r := _ink("lean_right") > 0.5
-	var l := _ink("lean_left") > 0.5
-	var u := _ink("lean_forward") > 0.5
-	var d := _ink("lean_back") > 0.5
+	var held := 0
+	for a in ARROW_BITS:
+		if _ink(a) > 0.5:
+			held |= int(ARROW_BITS[a])
+	var pressed := held & ~_keys_prev
+	_keys_prev = held
 	if is_crashed or mode != Mode.SKI:
-		trick_set = Vector2i.ZERO
+		_reset_trick_input()
 		return
+	if trick_state == TrickState.RECOVER:
+		_recover_t -= dt
+		if _recover_t > 0.0:
+			return
+		trick_state = TrickState.IDLE
+		pressed = 0                         # keys still down from the air don't start a new trick
 	if airborne and _coyote <= 0.0:
-		# rolled off the lip still set without popping: the set arrows mustn't start a rotation
-		if trick_set != Vector2i.ZERO:
+		if trick_state == TrickState.PREPARE:
+			# rolled off the lip prepared but never initiated: a straight air; the held arrow is latched
 			_latch_set()
+			prep_dir = Vector2i.ZERO
 			trick_set = Vector2i.ZERO
+			trick_state = TrickState.AIR
 			_set_time = 0.0
+		elif trick_state != TrickState.AIR:
+			trick_state = TrickState.AIR
+		# late initiation off a lip: two arrows (the second a new press) in the first LATE_WINDOW s
+		if not _late_used and air_time < LATE_WINDOW and off_family == "" and absf(flip_vel) < 1.0 and absf(spin_vel) < 2.0:
+			var first := held & ~pressed
+			if first != 0 and pressed != 0:
+				var t := resolve_trick(_dir_of_bit(_lowest_bit(first)), _dir_of_bit(_lowest_bit(pressed)))
+				if not t.is_empty():
+					_late_used = true
+					_latch_keys(first)
+					_start_trick_in_air(t, 0.65)
 		return
-	# pop: the arrow opposite a set one
-	var trig := Vector2i.ZERO
-	if (trick_set.x == 1 and l) or (trick_set.x == -1 and r):
-		trig.x = -trick_set.x
-	if (trick_set.y == 1 and d) or (trick_set.y == -1 and u):
-		trig.y = -trick_set.y
-	if trig != Vector2i.ZERO:
-		if trig.x == 0:
-			trig.x = -trick_set.x          # a second set arrow still held turns into its trick too
-		if trig.y == 0:
-			trig.y = -trick_set.y
-		_arrow_pop(trig)
-		return
-	# let go of a set arrow without popping the opposite one
-	var was_set := trick_set != Vector2i.ZERO
-	if trick_set.x == 0 and trick_set.y != 0:
-		_set_x = 0
-	if (trick_set.x == 1 and not r) or (trick_set.x == -1 and not l):
-		trick_set.x = 0
-	if (trick_set.y == 1 and not u) or (trick_set.y == -1 and not d):
-		trick_set.y = 0
-	if was_set and trick_set == Vector2i.ZERO:
-		if not grind.is_empty() and _set_x != 0 and _set_time < 0.3:
-			rail_spin(float(_set_x))        # on a rail / box: a tap of Left / Right spins you on it
-		elif _set_time > 0.1:
-			_arrow_pop(Vector2i.ZERO)       # straight pop (ollie)
-		_set_time = 0.0
-		return
-	# new set
-	if trick_set.x == 0 and r != l:
-		trick_set.x = 1 if r else -1
-		_set_x = trick_set.x
-	if trick_set.y == 0 and u != d:
-		trick_set.y = 1 if u else -1
-	if trick_set != Vector2i.ZERO:
-		_set_time += dt
-		charge = minf(charge + dt / 0.55, 1.0)      # crouch / load while set
+	match trick_state:
+		TrickState.AIR:
+			trick_state = TrickState.IDLE
+		TrickState.IDLE:
+			if pressed != 0:
+				# first arrow wins; two pressed on the same step: Up / Down before Left / Right
+				var bit := 4 if pressed & 4 else (8 if pressed & 8 else (2 if pressed & 2 else 1))
+				prep_dir = _dir_of_bit(bit)
+				trick_set = prep_dir
+				if prep_dir.x != 0:
+					_set_x = prep_dir.x
+				_prep_t = 0.0
+				_set_time = 0.0
+				trick_state = TrickState.PREPARE
+		TrickState.PREPARE:
+			_prep_t += dt
+			_set_time = _prep_t
+			charge = minf(charge + dt / 0.55, 1.0)      # crouch / load while prepared, capped
+			var pbit := _bit_of_dir(prep_dir)
+			var second := pressed & ~pbit
+			if second != 0 and _prep_t >= PREP_MIN:
+				var t2 := resolve_trick(prep_dir, _dir_of_bit(_lowest_bit(second)))
+				# the prepared arrow is spent (it would fight the trick); keeping the second one held
+				# drives the rotation on in the air (body english)
+				_latch_keys(held & pbit)
+				_initiate(t2)
+			elif held & pbit == 0:
+				# let go of the prepared arrow alone
+				if not grind.is_empty() and prep_dir.x != 0 and _prep_t < 0.3:
+					rail_spin(float(prep_dir.x))        # on a rail / box: a tap of Left / Right spins you on it
+				elif _prep_t > 0.1:
+					_initiate({"kind": "ollie", "label": "OLLIE"})
+				prep_dir = Vector2i.ZERO
+				trick_set = Vector2i.ZERO
+				_set_time = 0.0
+				if trick_state == TrickState.PREPARE:
+					trick_state = TrickState.IDLE
+		TrickState.PENDING:
+			_pending_t -= dt
+			if _pending_t <= 0.0:
+				# no lip came: pop it here
+				var t3 := pending_trick
+				pending_trick = {}
+				trick_state = TrickState.IDLE
+				_pop_with(t3)
+
+
+static func _lowest_bit(m: int) -> int:
+	for b in [4, 8, 2, 1]:
+		if m & b:
+			return b
+	return 0
+
+
+func _latch_keys(held: int) -> void:
+	for a in ARROW_BITS:
+		if held & int(ARROW_BITS[a]):
+			_latched[a] = true
 
 
 func _latch_set() -> void:
-	if trick_set.x != 0:
-		_latched["lean_right" if trick_set.x == 1 else "lean_left"] = true
-	if trick_set.y != 0:
-		_latched["lean_forward" if trick_set.y == 1 else "lean_back"] = true
+	if prep_dir.x != 0:
+		_latched["lean_right" if prep_dir.x == 1 else "lean_left"] = true
+	if prep_dir.y != 0:
+		_latched["lean_forward" if prep_dir.y == 1 else "lean_back"] = true
 
 
-func _arrow_pop(trig: Vector2i) -> void:
-	# the set arrows are still held: they mustn't fight the trick in the air
-	_latch_set()
-	if trig.x != 0:
-		wind = float(trig.x) * maxf(absf(wind), 0.75)    # + = right spin
-	else:
-		wind = 0.0
-	_pop_flip = float(trig.y)                            # +1 front flip, -1 backflip
-	_arrow_trick = true
-	if airborne:
-		airborne = false        # popped a moment after leaving the lip: still counts as the takeoff
+## A trick has been resolved: wait for the lip if one is coming, otherwise pop now.
+func _initiate(t: Dictionary) -> void:
+	prep_dir = Vector2i.ZERO
 	trick_set = Vector2i.ZERO
 	_set_time = 0.0
+	if t.is_empty():
+		trick_state = TrickState.IDLE
+		return
+	trick_label = String(t.get("label", ""))
+	if t["kind"] != "ollie" and grind.is_empty() and _lip_ahead():
+		pending_trick = t.duplicate()
+		pending_trick["charge"] = charge
+		_pending_t = TAKEOFF_BUFFER
+		trick_state = TrickState.PENDING
+		return
+	trick_state = TrickState.IDLE
+	_pop_with(t)
+
+
+## Is a kicker lip (or step-up) coming within ~0.7 s along the way he's going?
+func _lip_ahead() -> bool:
+	var hv := Vector3(vel.x, 0.0, vel.z)
+	if hv.length() < 3.0:
+		return false
+	var dirv := hv.normalized()
+	var best := 0.0
+	var prev := terrain.feature_offset(position.x, position.z)
+	for i in range(1, 8):
+		var q := position + dirv * hv.length() * 0.1 * i
+		var f := terrain.feature_offset(q.x, q.z)
+		if f > 0.25 and f >= prev - 0.02:
+			best = maxf(best, f)
+		prev = f
+	return best > 0.25
+
+
+## Pop off the snow (or a rail) into trick t.
+func _pop_with(t: Dictionary) -> void:
+	_arrow_trick = true
+	match String(t["kind"]):
+		"flip":
+			_pop_flip = float(t["flip"])
+			wind = 0.0
+		"spin":
+			_pop_flip = 0.0
+			wind = float(t["spin"]) * maxf(absf(wind), 0.75)    # + = right spin; the coil while prepared adds
+		_:
+			_pop_flip = 0.0
+			wind = 0.0
+	if airborne:
+		airborne = false        # popped a moment after leaving the lip: still counts as the takeoff
 	_do_jump()
 	_arrow_trick = false
 	_spin_latch = 0.0
+	if t["kind"] == "offaxis":
+		_start_offaxis(String(t["family"]), float(t["dir"]), charge_at_pop)
+
+
+## A trick resolved at the lip (PENDING) or late in the air.
+func _start_trick_in_air(t: Dictionary, strength: float) -> void:
+	trick_label = String(t.get("label", ""))
+	match String(t["kind"]):
+		"flip":
+			flip_vel += float(t["flip"]) * FLIP_POP * strength * (0.75 + 0.25 * charge_at_pop)
+		"spin":
+			_spin_target = float(t["spin"]) * WIND_SPIN * strength * (0.7 + 0.3 * charge_at_pop)
+			_unwind = UNWIND_TIME
+		"offaxis":
+			_start_offaxis(String(t["family"]), float(t["dir"]), charge_at_pop * strength)
+
+
+# ------------------------------------------------------------------ off-axis tricks
+## Off-axis families (FREESTYLE.md has the research): a spin about the takeoff vertical (kept in
+## `heading`, so the camera, switch landings and naming work as for spins) plus ONE off-axis flip
+## about a diagonal body axis that turns with the spin - full flip + whole half-turns of spin
+## always ends upright.  The axis mixes the backflip (+X) or front flip (-X) axis with a roll
+## toward the lead shoulder, and leans up toward the spin axis by `elev` (a cork stays a cork -
+## never fully inverted - while rodeos and mistys go feet over head).  Spin-led families start the
+## spin at once and drop into the off-axis flip; flip-led ones go back / forward first and the
+## spin grows.  Rates are rad/s at no charge -> full charge.
+##   flip: +1 back, -1 forward; roll / elev in degrees; flip_in / spin_in: ramp-in times (s)
+const OFFAXIS := {
+	"cork": {"flip": 1.0, "roll": 60.0, "elev": 42.0, "min_tilt": 80.0, "flip_rate": [3.6, 4.8], "spin_rate": [4.4, 6.8], "flip_in": 0.25, "spin_in": 0.05,
+		"tuck": 0.85, "spin_max": 8.5},
+	"bio": {"flip": -1.0, "roll": 55.0, "elev": 36.0, "min_tilt": 60.0, "flip_rate": [3.6, 4.8], "spin_rate": [4.2, 6.4], "flip_in": 0.25, "spin_in": 0.05,
+		"tuck": 0.8, "spin_max": 8.0},
+	"rodeo": {"flip": 1.0, "roll": 28.0, "elev": 6.0, "min_tilt": 120.0, "flip_rate": [4.4, 5.8], "spin_rate": [1.9, 3.0], "flip_in": 0.05, "spin_in": 0.35,
+		"tuck": 0.6, "spin_max": 6.0},
+	"misty": {"flip": -1.0, "roll": 30.0, "elev": 6.0, "min_tilt": 120.0, "flip_rate": [4.4, 5.8], "spin_rate": [2.0, 3.2], "flip_in": 0.05, "spin_in": 0.35,
+		"tuck": 0.9, "spin_max": 6.0},
+}
+const OFF_MIN_AIR := 0.75           # less air than this (predicted) and an off-axis becomes a flat spin
+var off_family := ""
+var off_dir := 0.0                  # +1 right, -1 left
+var off_axis := Vector3.ZERO        # body frame (x right, y up, z back), turns with the spin
+var off_angle := 0.0                # off-axis flip so far (rad)
+var off_rate := 0.0                 # flip rate (rad/s)
+var off_spin_rate := 0.0            # spin rate (rad/s, magnitude)
+var off_t := 0.0
+var off_max_tilt := 0.0             # largest angle of his body's up from the sky's (deg): the inversion
+var charge_at_pop := 0.0
+
+
+func _start_offaxis(fam: String, d: float, chg: float) -> void:
+	var F: Dictionary = OFFAXIS[fam]
+	var T := _predict_air_time()
+	if T < OFF_MIN_AIR:
+		# not enough air for the off-axis part: a flat spin that way instead
+		_spin_target = d * WIND_SPIN * (0.7 + 0.3 * chg)
+		_unwind = UNWIND_TIME
+		trick_label = "TOO LOW · SPIN"
+		return
+	var roll := deg_to_rad(float(F["roll"]))
+	var elev := deg_to_rad(float(F["elev"]))
+	var flipax := Vector3(float(F["flip"]), 0.0, 0.0)
+	var rollax := Vector3(0.0, 0.0, -d)                  # dropping the lead shoulder
+	var spinax := Vector3(0.0, -d, 0.0)                  # the way the spin turns
+	off_axis = ((flipax * cos(roll) + rollax * sin(roll)) * cos(elev) + spinax * sin(elev)).normalized()
+	off_family = fam
+	off_dir = d
+	off_angle = 0.0
+	off_t = 0.0
+	off_max_tilt = 0.0
+	var fr: Array = F["flip_rate"]
+	var sr: Array = F["spin_rate"]
+	off_rate = lerpf(fr[0], fr[1], clampf(chg, 0.0, 1.0))
+	off_spin_rate = lerpf(sr[0], sr[1], clampf(chg, 0.0, 1.0))
+	# the off-axis replaces the plain flip / spin of the pop
+	flip_vel = 0.0
+	air_pitch = 0.0
+	_spin_target = 0.0
+	_unwind = 0.0
+	spin_vel = 0.0
+
+
+## Ballistic time to the snow from here (the same probe the landing tilt uses).
+func _predict_air_time() -> float:
+	var p := position
+	var v := vel
+	for i in 150:
+		v += Vector3.DOWN * G * 0.02
+		p += v * 0.02
+		if p.y <= terrain.height(p.x, p.z):
+			return (i + 1) * 0.02
+	return 3.0
+
+
+## One air step of an off-axis trick: the flip and spin follow the family's timing; the arrows
+## speed up / slow down each within limits; past 300 deg of flip he opens up so the flip finishes
+## at touchdown; near touchdown a nearly-finished spin is eased onto the half-turn (difficulty
+## `level`, none on Realistic).
+func _offaxis_step(dt: float, spin_in: float, flip_in: float) -> void:
+	var F: Dictionary = OFFAXIS[off_family]
+	var d := diff()
+	off_t += dt
+	# body english: spin key the trick's way spins faster, the other way slower (never reverses)
+	var smax: float = F["spin_max"]
+	var sr: Array = F["spin_rate"]
+	if absf(spin_in) > 0.1:
+		var want := smax if signf(spin_in) == off_dir else float(sr[0]) * 0.5
+		off_spin_rate = move_toward(off_spin_rate, want, float(d["air_spin"]) * 0.6 * dt)
+	# flip key the trick's way (Down for back families, Up for forward) flips faster, the other slower
+	var flip_key := -flip_in * float(F["flip"])        # flip_in: + = forward lean
+	if absf(flip_key) > 0.1:
+		off_rate = move_toward(off_rate, 7.0 if flip_key > 0.0 else 2.4, float(d["air_flip"]) * 0.5 * dt)
+	var rate := off_rate
+	if off_angle >= TAU - 0.01 and absf(flip_key) < 0.1:
+		# flip finished: he's opened right up and waits for the snow (still pulling = over-rotating)
+		off_rate = move_toward(off_rate, 0.0, 30.0 * dt)
+		rate = off_rate
+	elif off_angle > deg_to_rad(300.0):
+		# opening up: just enough to finish the flip at touchdown (never faster than he was going)
+		var need := (TAU - off_angle) / maxf(land_t - 0.1, 0.15)
+		off_rate = move_toward(off_rate, clampf(need, 0.6, off_rate), 9.0 * dt)
+		rate = off_rate
+	off_angle = minf(off_angle + rate * smoothstep(0.0, float(F["flip_in"]) + 0.001, off_t) * dt, TAU + 0.35)
+	var spin := off_spin_rate * smoothstep(0.0, float(F["spin_in"]) + 0.001, off_t)
+	# spin landing help: within 35 deg of a half-turn just before touchdown, ease onto it
+	if float(d["level"]) > 0.0 and land_t < 0.4:
+		var rot := absf(air_rotation)
+		var rem := roundf(rot / PI) * PI - rot
+		if absf(rem) < deg_to_rad(35.0) and rem > -deg_to_rad(35.0):
+			var need_s := rem / maxf(land_t, 0.08)
+			spin = move_toward(spin, clampf(spin + need_s * 0.6, 0.0, smax), float(d["level"]) * 6.0 * dt)
+	spin_vel = off_dir * spin
+	# how inverted he really is (for naming): his body's up against the sky
+	var b := Basis(off_axis.normalized(), off_angle)
+	var up_world := _cur_xform.basis * (b * Vector3.UP)
+	off_max_tilt = maxf(off_max_tilt, rad_to_deg(up_world.angle_to(Vector3.UP)))
+
+
+## Angle between his body's up now and where it would be with the off-axis flip finished (rad).
+func offaxis_error() -> float:
+	if off_family == "":
+		return 0.0
+	var horiz := sqrt(maxf(1.0 - off_axis.y * off_axis.y, 0.0))
+	return 2.0 * asin(clampf(horiz * absf(sin(off_angle * 0.5)), 0.0, 1.0))
 
 
 ## One physics step (public for automated tests).
@@ -701,16 +1018,22 @@ func _air_step(dt: float, spin_in: float, flip_in: float) -> void:
 		_spin_latch = 0.0
 	if _spin_latch != 0.0:
 		spin_in = 0.0
-	if _unwind > 0.0:
+	if off_family != "":
+		_offaxis_step(dt, spin_in, flip_in)
+	elif _unwind > 0.0:
 		_unwind -= dt
 		spin_vel = move_toward(spin_vel, _spin_target, absf(_spin_target) / UNWIND_TIME * 1.4 * dt)
-	if absf(spin_in) > 0.1:
+	if off_family != "":
+		pass
+	elif absf(spin_in) > 0.1:
 		spin_vel = move_toward(spin_vel, signf(spin_in) * SPIN_MAX, float(d["air_spin"]) * dt)
 	elif _unwind > 0.0:
 		pass
 	else:
 		spin_vel = move_toward(spin_vel, 0.0, float(d["spin_damp"]) * dt)
-	if absf(flip_in) > 0.1:
+	if off_family != "":
+		flip_vel = 0.0
+	elif absf(flip_in) > 0.1:
 		flip_vel = move_toward(flip_vel, signf(flip_in) * SPIN_MAX * 0.7, float(d["air_flip"]) * dt)
 	elif float(d["level"]) > 0.0 and absf(roundf(air_pitch / TAU) * TAU - air_pitch) < deg_to_rad(60.0) \
 			and not (absf(air_pitch) < PI and absf(flip_vel) > 2.0):     # leave a popped flip alone till it's past halfway
@@ -731,8 +1054,11 @@ func _air_step(dt: float, spin_in: float, flip_in: float) -> void:
 	if hv.length() > 1.0:
 		var right := hv.normalized().cross(Vector3.UP)
 		vel += right * steer * 1.1 * dt
-	var gl := GRABS and _pressed("grab_left")
-	var gr := GRABS and _pressed("grab_right")
+	# grabs let go by themselves just before touchdown (time to the real snow, from the landing
+	# probe) so the legs can come down for the landing - Easy / Normal; on Realistic it's on you
+	var auto_off := float(d["level"]) > 0.0 and land_t < GRAB_AUTO_RELEASE
+	var gl := GRABS and _pressed("grab_left") and not auto_off
+	var gr := GRABS and _pressed("grab_right") and not auto_off
 	grab_held = gl or gr
 	# which grab: Q = left hand, E = right hand, both = Truck Driver; W / S (pressed any time during
 	# the grab) pick the front / back of the ski and stick until you let go. The arrows never pick
@@ -814,6 +1140,7 @@ func _tilt_for_landing(dt: float) -> void:
 
 
 func _do_jump() -> void:
+	charge_at_pop = charge
 	if not grind.is_empty():
 		_leave_rail("pop")
 		ground_n = Vector3.UP
@@ -880,7 +1207,7 @@ func _take_off(from_jump := false) -> void:
 	# into a front flip - flips there come from the arrows only)
 	flip_vel = 0.0 if pipe_air else clampf(_ground_pitch_rate * 0.35, -1.0, 1.0)
 	if from_jump:
-		flip_vel += (_pop_flip if _arrow_trick else lean_fa) * FLIP_POP
+		flip_vel += (_pop_flip * (0.75 + 0.25 * charge_at_pop) if _arrow_trick else lean_fa) * FLIP_POP
 	air_pitch = 0.0
 	air_pitch_peak = 0.0
 	grab_kind_l = ""
@@ -890,6 +1217,17 @@ func _take_off(from_jump := false) -> void:
 	grab_time = 0.0
 	_s_grabbed = false
 	_jump_grab = ""
+	_late_used = false
+	off_family = ""
+	if trick_state == TrickState.PENDING and not pending_trick.is_empty():
+		# the trick waited for the lip: a little pop off it, then the rotation
+		var t := pending_trick
+		pending_trick = {}
+		charge_at_pop = float(t.get("charge", 0.5))
+		vel += ground_n * (0.4 + 0.8 * charge_at_pop)
+		_start_trick_in_air(t, 1.0)
+		_late_used = true
+	trick_state = TrickState.AIR
 	took_off.emit()
 
 
@@ -908,6 +1246,8 @@ func _land(n: Vector3, impact: float) -> void:
 	var misalign := minf(adiff, PI - adiff)
 	var grabbing := grab_l > 0.5 or grab_r > 0.5
 	var pitch_off := absf(wrapf(air_pitch, -PI, PI))
+	if off_family != "":
+		pitch_off = offaxis_error()           # off-axis: how far his body's up is from finishing the flip
 	var d := diff()
 	var tol := deg_to_rad(float(d["land_tol"]))
 	var info := {
@@ -917,6 +1257,7 @@ func _land(n: Vector3, impact: float) -> void:
 		"crash": "", "flip": air_pitch, "pitch_peak": air_pitch_peak, "pitch_off": rad_to_deg(pitch_off),
 		"grab_kind_l": grab_kind_l, "grab_kind_r": grab_kind_r, "grab_name": _jump_grab, "grab_time": grab_time,
 		"takeoff_switch": takeoff_switch,
+		"offaxis": off_family, "off_dir": off_dir, "off_flip": rad_to_deg(off_angle), "off_tilt": off_max_tilt,
 	}
 	ground_n = n
 	# the legs absorb the landing: the impact sets them sinking (the compression spring peaks ~0.13 s
@@ -926,7 +1267,10 @@ func _land(n: Vector3, impact: float) -> void:
 	# crash conditions
 	var reason := ""
 	if pitch_off > tol + deg_to_rad(15.0) and air_time > 0.3:
-		reason = "Landed on your back" if wrapf(air_pitch, -PI, PI) < 0.0 else "Landed on your head"
+		if off_family != "":
+			reason = "Landed on your back" if float(OFFAXIS[off_family]["flip"]) > 0.0 else "Landed on your head"
+		else:
+			reason = "Landed on your back" if wrapf(air_pitch, -PI, PI) < 0.0 else "Landed on your head"
 	elif impact > float(d["impact"]):
 		reason = "Hard landing"
 	elif impact > float(d["impact"]) - 7.0 and (misalign > deg_to_rad(32.0) or pitch_off > deg_to_rad(30.0)):
@@ -951,6 +1295,10 @@ func _land(n: Vector3, impact: float) -> void:
 	spin_vel = 0.0
 	flip_vel = 0.0
 	air_pitch = 0.0
+	off_family = ""
+	off_angle = 0.0
+	trick_state = TrickState.RECOVER
+	_recover_t = RECOVER_TIME
 	grab_l = 0.0
 	grab_r = 0.0
 	_last_land_t = time
@@ -967,6 +1315,8 @@ func crash(reason: String) -> void:
 	airborne = false
 	charging = false
 	charge = 0.0
+	off_family = ""
+	_reset_trick_input()
 	crashed.emit(reason, vel)
 
 

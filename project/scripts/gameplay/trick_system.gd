@@ -74,12 +74,34 @@ static func evaluate(info: Dictionary) -> Dictionary:
 	var flip := float(info.get("flip", 0.0))
 	var flips := int(floor((absf(rad_to_deg(flip)) + 60.0) / 360.0))
 	var cork := CORKS and flips == 0 and spin >= 360 and rad_to_deg(float(info.get("pitch_peak", 0.0))) >= 50.0
+	# off-axis: named from what his body actually did - the off-axis flip finished (>= 320 deg) and he
+	# really went as far over as that family does (Skier.OFFAXIS min_tilt: a cork / bio past ~80 / 60
+	# deg from upright, a rodeo / misty feet over head, > 120 deg).  Rodeos and mistys count the flip in the
+	# number (rodeo 540 = off-axis backflip + a half-turn of spin); corks and bios count the spin.
+	var fam := String(info.get("offaxis", ""))
+	var off_named := false
+	if fam != "" and float(info.get("off_flip", 0.0)) >= 320.0:
+		var odir := "Right" if float(info.get("off_dir", 1.0)) > 0.0 else "Left"
+		if float(info.get("off_tilt", 0.0)) >= float(Skier.OFFAXIS[fam]["min_tilt"]):
+			var deg := spin + (360 if fam in ["rodeo", "misty"] else 0)
+			parts.append("%s %s %d" % [odir, fam.capitalize(), deg])
+			var mult: float = {"cork": 1.35, "bio": 1.35, "rodeo": 1.45, "misty": 1.5}[fam]
+			points += 600 + int(float(SPIN_POINTS.get(deg, 4400 + (deg - 1440) * 6)) * mult)
+			tags.append("offaxis")
+			tags.append(fam)
+			tags.append(str(deg))
+		else:
+			parts.append("%s Off-axis %d" % [odir, maxi(spin, 180)])
+			points += int(float(SPIN_POINTS.get(maxi(spin, 180), 500)) * 1.1)
+			tags.append("spin")
+		off_named = true
+		flips = 0
 	if flips >= 1:
 		parts.append("%s%s" % [FLIP_NAMES.get(flips, "%dx " % flips), "Backflip" if flip < 0.0 else "Frontflip"])
 		points += int(FLIP_POINTS.get(flips, 4200 + (flips - 3) * 2000))
 		tags.append("flip")
 		tags.append("backflip" if flip < 0.0 else "frontflip")
-	if spin >= 180:
+	if spin >= 180 and not off_named:
 		var dir := "Right" if float(info["rotation"]) > 0.0 else "Left"
 		parts.append("%s %s%d" % [dir, "Cork " if cork else "", spin])
 		points += int(int(SPIN_POINTS.get(spin, 4400 + (spin - 1440) * 6)) * (1.3 if cork else 1.0))

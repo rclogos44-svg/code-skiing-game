@@ -17,6 +17,7 @@ var state := State.MENU
 var _save_timer := 0.0
 var _skip_hold := 0.0
 var park_i := 0
+var park_sec := -1               # chosen section of the park (quick drop), -1 = its top
 
 
 func _ready() -> void:
@@ -165,7 +166,7 @@ func _open_map() -> void:
 	if state == State.PAUSED:
 		_resume()
 	challenges.stop(false)
-	var st: Dictionary = world.park.park_start(park_i)
+	var st: Dictionary = world.park.park_start(park_i, park_sec)
 	_fade_then(func():
 		world.spawn(st["pos"], st["yaw"])
 		world.camera.snap())
@@ -218,8 +219,10 @@ func _on_menu_request(action: String, arg: String) -> void:
 		"map":
 			_open_map()
 		"park":
-			park_i = int(arg)
-			var st: Dictionary = world.park.park_start(park_i)
+			# "i" = the top of park i, "i:k" = its k-th section (a quick drop onto one of its routes)
+			park_i = int(arg.get_slice(":", 0))
+			park_sec = int(arg.get_slice(":", 1)) if arg.contains(":") else -1
+			var st: Dictionary = world.park.park_start(park_i, park_sec)
 			_fade_then(func():
 				world.spawn(st["pos"], st["yaw"])
 				_start_play("freeride")
@@ -384,3 +387,10 @@ func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
 		_store_position()
 		Game.save_game()
+	elif what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_WM_WINDOW_FOCUS_OUT:
+		# lost focus (alt-tab, clicked outside the browser canvas): release every held key so the
+		# skier can't stay loaded / rotating / grabbing, and drop a half-prepared trick without popping
+		for a in InputMap.get_actions():
+			Input.action_release(a)
+		if world and world.skier:
+			world.skier.cancel_trick_input()

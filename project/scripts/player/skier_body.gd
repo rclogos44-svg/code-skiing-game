@@ -396,11 +396,19 @@ var _gp := 0.0                    # linear progress behind _gw
 var _gw_legs := 0.0               # grab stages (see _compute_pose): knees up,
 var _gw_cross := 0.0              # skis swing across into the X,
 var _gw_hand := 0.0               # hand reaches the ski,
-var _gw_body := 0.0               # spine curve / twist / tilt              # spring-smoothed hand offsets: arms settle after the body
+var _gw_body := 0.0               # spine curve / twist / tilt
+var _grab_phase := ""             # reach / contact / hold / release / landing prep (dev view)
+var _grab_hold_t := 0.0
+var _tweak := 0.0                 # 0..1: the grab pulled in over the first half second of the hold              # spring-smoothed hand offsets: arms settle after the body
+
+
+func grab_phase_name() -> String:
+	return "%s  (reach %.2f, hold %.2f s, tweak %.2f)" % [_grab_phase if _grab_phase != "" else "-", _gp, _grab_hold_t, _tweak]
 
 
 func setup(s: Skier) -> void:
 	skier = s
+	add_to_group("skier_body")
 	top_level = true
 	global_transform = Transform3D.IDENTITY
 	_build()
@@ -696,6 +704,12 @@ func _compute_pose(dt: float) -> void:
 		var fr := Basis(root.basis.x.normalized(), -s.air_pitch)
 		root = Transform3D(fr * root.basis, piv + fr * (root.origin - piv))
 		up = root.basis.y
+	# off-axis tricks: about the diagonal axis in his own frame (it spins round with the heading)
+	if s.airborne and s.off_family != "" and s.off_angle > 0.0001:
+		var piv2 := root.origin + up * 0.9
+		var fr2 := Basis((root.basis * s.off_axis).normalized(), s.off_angle)
+		root = Transform3D(fr2 * root.basis, piv2 + fr2 * (root.origin - piv2))
+		up = root.basis.y
 	# visual sink in deep powder
 	var powder := s.surface.r * (1.0 - s.surface.g) if not s.airborne else 0.0
 	root.origin -= up * powder * 0.16 * (1.0 - clampf(s.speed / 25.0, 0.0, 0.6))
@@ -752,6 +766,9 @@ func _compute_pose(dt: float) -> void:
 		look_on = 1.0 if land_sw and flip_done and s.land_t < 0.45 and absf(s.spin_vel) < 2.5 else 0.0
 	var sw_look := _sm("switch_look", look_on, 5.0, dt)
 	var look_yaw := _sm("look_yaw", _look_side * 1.3, 4.0, dt) * sw_look
+	if s.airborne and s.off_family == "rodeo":
+		# throws his head back over the trailing shoulder at the pop, then spots the landing
+		look_yaw += -s.off_dir * 0.9 * smoothstep(0.0, 0.1, s.off_t) * smoothstep(0.6, 0.3, s.off_t)
 	var torso_t := look_yaw * 0.3                                  # the shoulders open toward the look
 	if not s.airborne and s.speed > 1.5:
 		# hockey stop: the skis pivot underneath while the upper body keeps facing downhill
@@ -817,6 +834,24 @@ func _compute_pose(dt: float) -> void:
 	_gw_body = _gw if preview_grab != "" else smoothstep(0.1, 0.95, _gp)
 	if _gp < 0.005 and preview_grab == "":
 		_ag = ""
+	# phases (dev view) and the hold: once the hand is on the ski he keeps pulling it in for half a
+	# second - the "tweak" - instead of freezing in the pose
+	var prev_phase := _grab_phase
+	if _ag == "":
+		_grab_phase = "landing prep" if (s.airborne and s.land_t < 0.4) else ""
+	elif want == "":
+		_grab_phase = "release"
+	elif _gw_hand < 0.97:
+		_grab_phase = "reach"
+	else:
+		_grab_phase = "contact" if prev_phase == "reach" else "hold"
+	if _grab_phase == "hold" or _grab_phase == "contact":
+		_grab_hold_t += dt
+	elif want == "":
+		_grab_hold_t = maxf(_grab_hold_t - dt * 3.0, 0.0)
+	else:
+		_grab_hold_t = 0.0
+	_tweak = smoothstep(0.0, 0.5, _grab_hold_t)
 	if GRAB_POSES.has(_ag):
 		if not _solved.has(_ag):
 			_solved[_ag] = _solve_grab(_ag, 0.86, 0.06)
@@ -824,6 +859,18 @@ func _compute_pose(dt: float) -> void:
 	pitch = _sm("pitch", pitch, 10.0, dt) + deg_to_rad(45.0) * _p["ftuck"]
 	# angulation: legs take the full inclination, the torso stays much more upright
 	var counter := _lean * 0.58
+	# off-axis takeoff shapes (first ~0.35 s): a cork / bio drops the lead shoulder, a rodeo arches
+	# back with the head thrown over the trailing shoulder, a misty curls forward over the chest
+	var off_init := 0.0
+	if s.airborne and s.off_family != "":
+		off_init = smoothstep(0.0, 0.08, s.off_t) * smoothstep(0.45, 0.2, s.off_t)
+		match s.off_family:
+			"cork", "bio":
+				counter += s.off_dir * 0.32 * off_init
+			"rodeo":
+				pitch -= deg_to_rad(18.0) * off_init
+			"misty":
+				pitch += deg_to_rad(28.0) * off_init
 	var plow := _sm("plow", 0.0, 8.0, dt)
 	# front flips are always tucked (knees to the chest, opening to spot the landing); backflips
 	# start laid out and tuck when the flip is pulled on into a double
@@ -832,6 +879,11 @@ func _compute_pose(dt: float) -> void:
 	var ft_want := s.flip_tuck if s.airborne else 0.0
 	if front and not near_land:
 		ft_want = 1.0
+	# off-axis: the family's tuck once the rotation is going, opening up to spot the landing
+	var off_open := 0.0
+	if s.airborne and s.off_family != "":
+		off_open = maxf(smoothstep(deg_to_rad(270.0), deg_to_rad(330.0), s.off_angle), smoothstep(0.45, 0.2, s.land_t))
+		ft_want = float(Skier.OFFAXIS[s.off_family]["tuck"]) * smoothstep(0.05, 0.3, s.off_t) * (1.0 - off_open)
 	var ftuck := _sm("ftuck", ft_want, 9.0, dt)
 	var feet_up := _sm("feet_up", air * (0.05 + 0.26 * grab + 0.42 * ftuck), 8.0, dt)
 	# layout backflip: body long from the shoulders to the knees, knees bent so the shins and skis
@@ -912,9 +964,9 @@ func _compute_pose(dt: float) -> void:
 	var pelvis := L * Vector3(0.0, ph, pz)
 	joints["pelvis"] = pelvis
 	var gpt: Dictionary = _solved.get(_ag, {})
-	var g_twist := float(gpt.get("twist", 0.0)) * _gw_body
+	var g_twist := float(gpt.get("twist", 0.0)) * _gw_body * (1.0 + 0.22 * _tweak)
 	var g_side := float(gpt.get("side", 0.0)) * _gw_body
-	var g_curve := float(GRAB_POSES[_ag].get("curve", 0.0)) * _gw_body if GRAB_POSES.has(_ag) else 0.0
+	var g_curve := float(GRAB_POSES[_ag].get("curve", 0.0)) * _gw_body * (1.0 + 0.2 * _tweak) if GRAB_POSES.has(_ag) else 0.0
 	var g_tdist: Array = GRAB_POSES[_ag].get("twist_dist", [1.0, 1.0, 1.0]) if GRAB_POSES.has(_ag) else [1.0, 1.0, 1.0]
 	var spine := spine_bases(L.basis * Basis(Vector3.UP, _torso_yaw), counter + g_side, g_curve, pitch, g_twist, g_tdist)
 	var tb: Basis = spine[2]
@@ -1072,6 +1124,8 @@ func _compute_pose(dt: float) -> void:
 		pd = pd.lerp(Vector3(sgn * 0.08, 0.25, 1.0), tuck)
 		pd = pd.lerp(Vector3(sgn * 0.45, -0.55, 0.7), arms_air)
 		pd = pd.lerp(Vector3(sgn * 0.3, -0.8, 0.45), edgeb)
+		if g > 0.01:
+			pd = pd.lerp(Vector3(sgn * 0.55, 0.3, 0.75), g)     # grabbing: the pole swings out and back, clear of the skis
 		if plant_side == sgn:
 			pd = pd.lerp(Vector3(sgn * 0.1, -0.96, -0.15), _pole_plant)
 		var planted := false
