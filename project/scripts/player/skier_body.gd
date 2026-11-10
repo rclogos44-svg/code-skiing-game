@@ -332,20 +332,52 @@ func _leg_fk(hip: Vector3, sgn: float, a: Array) -> Array:
 var preview_grab := ""
 ## Cloth pieces that move: [weight axis (mesh-local), weight 0 at, weight 1 at] - the hem of the
 ## body, the back of the hood, the cuff end of each sleeve; and which spring drives each.
-const CLOTH_PARTS := {"hood": [Vector3(0, -0.6, 0.8), -0.02, 0.2]}   # rigid hood; the skinned jacket carries its own weights
-const CLOTH_SPRING := {"hem": [140.0, 0.3, 0.02, 0.12], "hood": [60.0, 0.22, 0.02, 0.12], "sleeve": [220.0, 0.35, 0.012, 0.05]}
-var _cloth := {}                # spring -> [offset, velocity] (world, m and m/s)
+## Cloth springs: [stiffness, damping ratio, air drag, max offset (m), landing kick (s), inertia].
+## Each hangs on its own anchor point on the body (see _cloth_anchor): sleeves / waist and hood
+## (jacket), and each baggy pant leg.  The hood is loose and bouncy, the pants heavier, the sleeves
+## tight.  Inertia < 1: fabric lying on the body is partly carried along by friction.
+const CLOTH_SPRING := {"sleeves": [180.0, 0.32, 0.01, 0.03, 0.02, 0.5], "hood": [55.0, 0.2, 0.018, 0.09, 0.1, 0.4],
+	"pant_l": [95.0, 0.26, 0.014, 0.05, 0.045, 0.5], "pant_r": [95.0, 0.26, 0.014, 0.05, 0.045, 0.5]}
+var _cloth := {}                # spring -> [offset, velocity, anchor pos, anchor vel, anchor acc] (world)
+var _cloth_air := false
+var _cloth_vy := 0.0
+var _cloth_hood_flap := 0.0
+var _cloth_pant_flap := 0.0
 var _look_side := 1.0           # riding switch: +1 looking over the left shoulder, -1 the right
 var _look_hold := 0.0
 var _cloth_prev := Vector3.ZERO
-var _cloth_pv := Vector3.ZERO
-var _cloth_acc := Vector3.ZERO
 var _cloth_phase := 0.0
 var _cloth_flutter := 0.0
 const HIDDEN_PARTS := ["stripe", "backpack", "helmet", "helmet_trim", "helmet_dark", "stack_l", "stack_r", "pocket_l", "pocket_r",
 	# the clothes are the skinned SkierRig garments now; these rigid pieces stay built but hidden
 	"pelvis", "torso", "collar", "jacket_details", "uarm_l", "uarm_r", "farm_l", "farm_r", "thigh_l", "thigh_r", "shin_l", "shin_r",
-	"shoulder_cap_l", "shoulder_cap_r", "elbow_cap_l", "elbow_cap_r", "knee_cap_l", "knee_cap_r"]   # built but not worn (beanie, no pack)
+	"shoulder_cap_l", "shoulder_cap_r", "elbow_cap_l", "elbow_cap_r", "knee_cap_l", "knee_cap_r",
+	# head, gloves and boots are part of the skinned rider (SkierRig) now
+	"head", "beanie", "beanie_cuff", "goggle_band", "goggle_lens", "goggle_frame", "gaiter", "neck", "hood", "hood_rim",
+	"hand_l", "hand_r", "thumb_l", "thumb_r", "cuff_l", "cuff_r", "boot_l", "boot_r", "buckles_l", "buckles_r",
+	"bootstrap_l", "bootstrap_r"]
+## The rider's outfit (sRGB): sage park jacket with black zips and tabs, khaki pants, black helmet
+## with orange-mirror goggles, navy gaiter, black gloves, charcoal boots.  (Matte charcoal helmet.)
+const OUTFIT := {
+	"jacket": {"main_color": Color(0.4, 0.45, 0.33), "accent_color": Color(0.05, 0.05, 0.055), "third_color": Color(0.88, 0.88, 0.84),
+		"dark_color": Color(0.07, 0.075, 0.07), "roughness": 0.8, "accent_roughness": 0.45, "sheen": 0.22},
+	"pants": {"main_color": Color(0.64, 0.58, 0.46), "accent_color": Color(0.27, 0.26, 0.24), "third_color": Color(0.07, 0.07, 0.075),
+		"dark_color": Color(0.16, 0.15, 0.13),
+		"roughness": 0.86, "accent_roughness": 0.7, "sheen": 0.2},
+	"helmet": {"main_color": Color(0.13, 0.135, 0.14), "dark_color": Color(0.03, 0.03, 0.03), "roughness": 0.62, "clearcoat_amt": 0.08,
+		"specular": 0.3, "detail_strength": 0.0, "sheen": 0.08},
+	"goggle_frame": {"main_color": Color(0.06, 0.06, 0.065), "accent_color": Color(0.02, 0.02, 0.02), "roughness": 0.45,
+		"detail_strength": 0.0, "sheen": 0.05},
+	"goggle_lens": {"main_color": Color(0.98, 0.45, 0.08), "roughness": 0.05, "metallic": 0.75, "specular": 0.9,
+		"clearcoat_amt": 1.0, "detail_strength": 0.0, "sheen": 0.0},
+	"strap": {"main_color": Color(0.06, 0.06, 0.07), "accent_color": Color(0.42, 0.43, 0.45), "roughness": 0.7, "detail_strength": 0.5},
+	"gaiter": {"main_color": Color(0.11, 0.12, 0.16), "accent_color": Color(0.19, 0.21, 0.27), "roughness": 0.95, "detail_strength": 0.5},
+	"glove": {"main_color": Color(0.05, 0.05, 0.055), "accent_color": Color(0.15, 0.15, 0.16), "roughness": 0.65,
+		"accent_roughness": 0.92, "detail_strength": 0.45},
+	"boot": {"main_color": Color(0.17, 0.18, 0.2), "accent_color": Color(0.72, 0.73, 0.75), "dark_color": Color(0.03, 0.03, 0.03),
+		"roughness": 0.35, "accent_roughness": 0.3, "accent_metallic": 0.9, "clearcoat_amt": 0.4, "detail_strength": 0.0, "sheen": 0.05},
+}
+var rider_mats := {}
 var rig: SkierRig
 var skeleton_view := false        # V: hide the clothes and show bones + joints
 const BONES := [["pelvis", "hip_l"], ["pelvis", "hip_r"], ["hip_l", "knee_l"], ["knee_l", "ankle_l"], ["hip_r", "knee_r"],
@@ -460,30 +492,33 @@ func _build() -> void:
 		_add("basket_" + side, pl[2], basket_m)
 	# a stripe of accent colour on the jacket
 	_add("stripe", SkierModel.lathe([Vector2(0.0, 0.0), Vector2(0.18, 0.0), Vector2(0.183, 0.035), Vector2(0.0, 0.035)], 1.19, 0.73, 18), accent)
-	# the clothes: one skinned jacket (with sleeves, collar, zip, pockets), a white shirt under it and
-	# baggy pants, all bending smoothly with the joints
+	# the rider: skinned clothes and gear built offline (build/gen_rider.py), see SkierRig
 	rig = SkierRig.new()
 	rig.name = "rig"
 	add_child(rig)
-	var rig_jacket := SkierModel.cloth_material(Color(0.2, 0.2, 0.21))
-	rig_jacket.set_shader_parameter("color_weight", true)
-	var rig_trim := SkierModel.cloth_material(Color(0.12, 0.12, 0.13), Vector2(3.0, 3.0))
-	rig_trim.set_shader_parameter("color_weight", true)
-	var shirt := SkierModel.fabric(Color(0.94, 0.94, 0.92), 0.9, 120.0, 0.3, 0.1)
-	var rig_pants: StandardMaterial3D = pants.duplicate()
-	rig_pants.cull_mode = BaseMaterial3D.CULL_DISABLED          # open hems: the inside shows
-	rig.build(rig_jacket, shirt, rig_pants, rig_trim)
-	for k in rig.meshes:
-		parts[k] = rig.meshes[k]
+	var gear_shader: Shader = load("res://shaders/skier_gear.gdshader")
+	var weave: Texture2D = load("res://assets/rider/weave_normal.png")
+	for key in OUTFIT:
+		var m := ShaderMaterial.new()
+		m.shader = gear_shader
+		m.set_shader_parameter("detail_nrm", weave)
+		for prm in OUTFIT[key]:
+			m.set_shader_parameter(prm, OUTFIT[key][prm])
+		if key in ["jacket", "pants"]:
+			m.set_shader_parameter("use_atlas", true)
+			m.set_shader_parameter("atlas_tex", load("res://assets/rider/%s_albedo.png" % key))
+			m.set_shader_parameter("atlas_nrm", load("res://assets/rider/%s_normal.png" % key))
+		rider_mats[key] = m
+	if rig.build(rider_mats, HEAD_LAYER):
+		# weave tiles every ~1.2 cm whatever the atlas density
+		for key in rider_mats:
+			var garment: String = key if key != "glove" and key != "boot" else key + "_l"
+			(rider_mats[key] as ShaderMaterial).set_shader_parameter("detail_scale", 83.0 / rig.uv_per_m(garment))
+		for k in rig.meshes:
+			parts[k] = rig.meshes[k]
+		head_parts.append(rig.meshes["rig_head"])
 	for k in HIDDEN_PARTS:
 		parts[k].visible = false
-	for k in CLOTH_PARTS:
-		parts[k].material_override = (parts[k].material_override as ShaderMaterial).duplicate()
-		var cm := parts[k].material_override as ShaderMaterial
-		var cfg: Array = CLOTH_PARTS[k]
-		cm.set_shader_parameter("w_axis", cfg[0])
-		cm.set_shader_parameter("w0", cfg[1])
-		cm.set_shader_parameter("w1", cfg[2])
 	var bone_m := SkierModel.mat(Color(0.95, 0.95, 0.92), 0.6)
 	var joint_m := SkierModel.mat(Color(1.0, 0.45, 0.1), 0.5)
 	var cyl := CylinderMesh.new()
@@ -541,62 +576,98 @@ func _process(delta: float) -> void:
 	_cloth_apply()
 
 
-## Jacket cloth: each spring (hem, hood, sleeves) is a damped mass on the body.  It is pushed by the
-## body's acceleration (inertia), by the air (blown back with speed squared), and by gravity whenever
-## the jacket isn't hanging straight down (upside down in a flip it falls toward his head); it can
-## swing but not stretch much along the body.  Above ~15 km/h the fabric also ripples.
+## Where each cloth spring hangs: the hood from the upper back, each pant leg from its lower leg,
+## the sleeve ends and bloused waist from the chest.
+func _cloth_anchor(key: String) -> Vector3:
+	var tb := torso_basis
+	match key:
+		"hood":
+			return joints["chest"] + tb.y * -0.1 + tb.z * 0.15
+		"pant_l", "pant_r":
+			var sd: String = key.right(1)
+			return (joints["ankle_" + sd] as Vector3).lerp(joints["knee_" + sd], 0.3)
+	return joints["chest"]
+
+
+## Cloth: each spring is a damped mass on its anchor.  It lags the anchor's acceleration - a
+## landing throws the hood and pant legs down and they bounce back, a spin swings them out, a flip
+## carries them round - is blown back by the air (speed squared), and hangs toward gravity once
+## he's tipped well past his skiing lean (upside down the hood falls toward his head).  Above
+## ~15 km/h the fabric also flaps, the loose hood most.
 func _cloth_step(dt: float) -> void:
-	if dt <= 0.0 or not joints.has("chest"):
+	if dt <= 0.0 or not joints.has("chest") or not joints.has("knee_l"):
 		return
 	var c: Vector3 = joints["chest"]
-	if _cloth_prev == Vector3.ZERO or c.distance_to(_cloth_prev) > 3.0:      # first frame / teleport
-		_cloth_prev = c
-		_cloth_pv = Vector3.ZERO
-		_cloth_acc = Vector3.ZERO
+	var first := _cloth.is_empty() or c.distance_to(_cloth_prev) > 3.0          # first frame / teleport
+	if first:
 		_cloth.clear()
-	var v := (c - _cloth_prev) / dt
-	_cloth_acc = _cloth_acc.lerp((v - _cloth_pv) / dt, 1.0 - exp(-18.0 * dt))
 	_cloth_prev = c
-	_cloth_pv = v
-	var up := torso_basis.y.normalized()
-	var sp := v.length()
-	# gravity minus the hang the mesh was made with: only once he's tipped well past his skiing lean
-	# (layouts, corks, flips - upside down the hem falls toward his head)
-	var g_dev := (Vector3.DOWN + up) * 9.81
-	g_dev *= smoothstep(0.55, 1.3, g_dev.length() / 9.81)
+	# landing: the fabric keeps falling for a moment, then springs back up
+	var air := skier.airborne
+	var kick := 0.0
+	if _cloth_air and not air:
+		kick = clampf(-_cloth_vy, 0.0, 9.0)
+	_cloth_air = air
+	_cloth_vy = skier.vel.y
+	var sp := skier.vel.length()
 	for key in CLOTH_SPRING:
 		var cfg: Array = CLOTH_SPRING[key]
-		var st: Array = _cloth.get(key, [Vector3.ZERO, Vector3.ZERO])
+		var a := _cloth_anchor(String(key))
+		var st: Array = _cloth.get(key, [Vector3.ZERO, Vector3.ZERO, a, Vector3.ZERO, Vector3.ZERO])
 		var x: Vector3 = st[0]
 		var u: Vector3 = st[1]
+		# anchor velocity smoothed before it's differentiated, so pose jitter doesn't shake the cloth
+		var av: Vector3 = (st[3] as Vector3).lerp((a - (st[2] as Vector3)) / dt, 1.0 - exp(-30.0 * dt))
+		var acc: Vector3 = (st[4] as Vector3).lerp((av - (st[3] as Vector3)) / dt, 1.0 - exp(-14.0 * dt))
+		if first:
+			av = skier.vel
+			acc = Vector3.ZERO
+		# the clothes were made hanging on an upright skier: measure gravity against his body's up
+		var up := (torso_basis.y if key == "hood" or key == "sleeves" else pelvis_basis.y).normalized()
+		# gravity counts once he's tipped past ~50 deg (layouts, inverted in flips), not in a crouch
+		var g_dev := (Vector3.DOWN + up) * 9.81
+		g_dev *= smoothstep(0.8, 1.4, g_dev.length() / 9.81)
 		var k: float = cfg[0]
-		var f := -k * x - 2.0 * float(cfg[1]) * sqrt(k) * u - _cloth_acc.limit_length(60.0) \
-			- v * sp * float(cfg[2]) + g_dev
+		var f := -k * x - 2.0 * float(cfg[1]) * sqrt(k) * u - acc.limit_length(80.0) * float(cfg[5]) \
+			- av * av.length() * float(cfg[2]) + g_dev
 		u += f * dt
+		u += Vector3.DOWN * kick * float(cfg[4])
 		x += u * dt
-		x -= up * x.dot(up) * 0.6                          # fabric swings; it barely stretches
-		x = x.limit_length(float(cfg[3]))
-		_cloth[key] = [x, u]
-	_cloth_flutter = clampf((sp - 4.0) * 0.0009, 0.0, 0.012)
+		if key == "hood":
+			# it lifts off his back and flops, but can't sink into it
+			var into := -x.dot(torso_basis.z.normalized())
+			if into > 0.006:
+				x += torso_basis.z.normalized() * (into - 0.006)
+		elif key == "sleeves":
+			x -= up * x.dot(up) * 0.5
+		var lim: float = cfg[3]
+		if x.length() > lim:
+			# the fabric reaches the end of its play: stop there instead of sticking to the limit
+			var dir := x.normalized()
+			x = dir * lim
+			u -= dir * maxf(u.dot(dir), 0.0)
+		_cloth[key] = [x, u, a, av, acc]
+	_cloth_flutter = clampf((sp - 4.0) * 0.0007, 0.0, 0.008)
+	_cloth_hood_flap = clampf((sp - 5.0) * 0.0012, 0.0, 0.016)
+	_cloth_pant_flap = clampf((sp - 5.0) * 0.0008, 0.0, 0.011)
 	_cloth_phase = fmod(_cloth_phase + dt * (8.0 + sp * 1.3), TAU * 100.0)
 
 
-## Hand the springs to the cloth shader, in each piece's own mesh frame.
+## Hand the springs to the shaders (the rig's skeleton has no rotation: world = mesh space).
 func _cloth_apply() -> void:
-	if rig != null:
-		var hem: Vector3 = _cloth.get("hem", [Vector3.ZERO])[0]
-		for k in ["rig_jacket", "rig_details"]:
-			var rm := parts[k].material_override as ShaderMaterial
-			rm.set_shader_parameter("sway", hem)          # the rig's skeleton has no rotation: world = mesh space
-			rm.set_shader_parameter("flutter", _cloth_flutter)
-			rm.set_shader_parameter("phase", _cloth_phase)
-	for k in CLOTH_PARTS:
-		var key := "hem" if k in ["torso", "jacket_details"] else ("hood" if k == "hood" else "sleeve")
-		var off: Vector3 = _cloth.get(key, [Vector3.ZERO])[0]
-		var cm := parts[k].material_override as ShaderMaterial
-		cm.set_shader_parameter("sway", parts[k].global_transform.basis.orthonormalized().inverse() * off)
-		cm.set_shader_parameter("flutter", _cloth_flutter * (0.5 if key == "sleeve" else 1.0))
-		cm.set_shader_parameter("phase", _cloth_phase)
+	if rider_mats.has("jacket"):
+		var jm: ShaderMaterial = rider_mats["jacket"]
+		jm.set_shader_parameter("sway", _cloth.get("sleeves", [Vector3.ZERO])[0])
+		jm.set_shader_parameter("sway2", _cloth.get("hood", [Vector3.ZERO])[0])
+		jm.set_shader_parameter("flutter", _cloth_flutter)
+		jm.set_shader_parameter("flutter2", _cloth_hood_flap)
+		jm.set_shader_parameter("phase", _cloth_phase)
+		var pm: ShaderMaterial = rider_mats["pants"]
+		pm.set_shader_parameter("sway", _cloth.get("pant_l", [Vector3.ZERO])[0])
+		pm.set_shader_parameter("sway2", _cloth.get("pant_r", [Vector3.ZERO])[0])
+		pm.set_shader_parameter("flutter", _cloth_pant_flap)
+		pm.set_shader_parameter("flutter2", _cloth_pant_flap)
+		pm.set_shader_parameter("phase", _cloth_phase + 1.3)
 
 
 func _physics_process(dt: float) -> void:
@@ -672,7 +743,13 @@ func _compute_pose(dt: float) -> void:
 			_look_hold = 0.0
 	else:
 		_look_hold = 0.0
-	var look_on := 1.0 if s.riding_switch and (not s.airborne or absf(s.air_rotation) < PI * 0.5) else 0.0
+	# in the air he only looks once the rotation is done and touchdown is close (and he'll land switch)
+	var look_on := 1.0 if s.riding_switch and not s.airborne else 0.0
+	if s.airborne:
+		var hv := Vector2(s.vel.x, s.vel.z)
+		var land_sw := s.riding_switch != (absf(wrapf(s.heading - (Skier.yaw_of(s.vel) if hv.length() > 1.0 else s.heading), -PI, PI)) > PI * 0.5)
+		var flip_done := absf(roundf(s.air_pitch / TAU) * TAU - s.air_pitch) < deg_to_rad(30.0)
+		look_on = 1.0 if land_sw and flip_done and s.land_t < 0.45 and absf(s.spin_vel) < 2.5 else 0.0
 	var sw_look := _sm("switch_look", look_on, 5.0, dt)
 	var look_yaw := _sm("look_yaw", _look_side * 1.3, 4.0, dt) * sw_look
 	var torso_t := look_yaw * 0.3                                  # the shoulders open toward the look
@@ -748,13 +825,18 @@ func _compute_pose(dt: float) -> void:
 	# angulation: legs take the full inclination, the torso stays much more upright
 	var counter := _lean * 0.58
 	var plow := _sm("plow", 0.0, 8.0, dt)
-	# flips stay laid out (long body); holding tuck pulls the knees in
-	var ftuck := _sm("ftuck", s.flip_tuck if s.airborne else 0.0, 9.0, dt)
-	var feet_up := _sm("feet_up", air * (0.05 + 0.26 * grab + 0.42 * ftuck), 8.0, dt)
-	# layout flip: body long from the shoulders to the knees, knees bent so the shins and skis fold
-	# back behind the thighs and the skis run parallel to the body; opens up again to land
+	# front flips are always tucked (knees to the chest, opening to spot the landing); backflips
+	# start laid out and tuck when the flip is pulled on into a double
 	var near_land := absf(roundf(s.air_pitch / TAU) * TAU - s.air_pitch) < deg_to_rad(55.0) and absf(s.air_pitch) > PI
-	var lay_t := air * smoothstep(1.2, 2.5, absf(s.flip_vel)) * (0.0 if near_land else 1.0) * (1.0 - ftuck)
+	var front := s.airborne and s.flip_vel > 1.0 and s.air_pitch > deg_to_rad(15.0)
+	var ft_want := s.flip_tuck if s.airborne else 0.0
+	if front and not near_land:
+		ft_want = 1.0
+	var ftuck := _sm("ftuck", ft_want, 9.0, dt)
+	var feet_up := _sm("feet_up", air * (0.05 + 0.26 * grab + 0.42 * ftuck), 8.0, dt)
+	# layout backflip: body long from the shoulders to the knees, knees bent so the shins and skis
+	# fold back behind the thighs and the skis run parallel to the body; opens up again to land
+	var lay_t := air * smoothstep(1.2, 2.5, -s.flip_vel) * (0.0 if near_land else 1.0) * (1.0 - ftuck)
 	if absf(s.air_pitch) < deg_to_rad(25.0):
 		lay_t *= absf(s.air_pitch) / deg_to_rad(25.0)
 	var layout := _sm("layout", lay_t, 7.0, dt)
@@ -1285,9 +1367,10 @@ func _pose_from_ragdoll() -> void:
 	var right := (j_shr - j_shl).normalized()
 	var fwd := right.cross(up).normalized()
 	right = up.cross(fwd).normalized()
-	torso_basis = Basis(right, up, -fwd).orthonormalized()
+	torso_basis = Basis(right, up, right.cross(up)).orthonormalized()           # right-handed (z = back)
+	pelvis_basis = torso_basis
 	var hup := (j_head - j_chest).normalized()
-	head_basis = Basis(right, hup, right.cross(hup).normalized() * -1.0).orthonormalized()
+	head_basis = Basis(right, hup, right.cross(hup).normalized()).orthonormalized()
 	joints["waist"] = j_pelvis + torso_basis.y * 0.07
 	for sd in ["l", "r"]:
 		var sgn := -1.0 if sd == "l" else 1.0
@@ -1321,7 +1404,7 @@ func _apply_parts() -> void:
 	if skeleton_view:
 		_place_skeleton()
 	if rig != null:
-		rig.update(joints, pelvis_basis, torso_basis)
+		rig.update(joints, pelvis_basis, torso_basis, head_basis, boot_l, boot_r)
 	# skis bend under load (landings, crouching on the tails) and spring back in the air
 	var bend := clampf(skier.compression * 1.2 + skier.tail_load * 0.6 + skier.charge * 0.3, 0.0, 1.2)
 	if skier.airborne:

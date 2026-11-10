@@ -52,6 +52,8 @@ func run(w: World) -> void:
 			await _pipe_anim()
 		"switch_shots":
 			await _switch_shots()
+		"rider":
+			await _rider_shots()
 		_:
 			print("[TEST] unknown test mode ", Game.test_mode)
 			failures += 1
@@ -421,6 +423,124 @@ func _switch_shots() -> void:
 	s.set_physics_process(true)
 
 
+## --test=rider: close-ups of the rider for judging the model - skiing (8 angles), a carve, a tuck,
+## a front flip (tucked), a grab.  --angles=N limits the turntable.
+func _rider_shots() -> void:
+	var s := world.skier
+	var body = world.body
+	var st: Dictionary = world.park.park_start(0)
+	world.spawn(st["pos"], st["yaw"])
+	await _frames(10)
+	s.set_physics_process(false)
+	body.set_process(false)
+	var pk: Dictionary = world.park.parks[0]
+	var d := Vector3(pk["dir"][0], 0, pk["dir"][1])
+	s.teleport(Vector3(pk["origin"][0], 0, pk["origin"][1]) + d * 30.0 + d.cross(Vector3.UP) * 15.0, Skier.yaw_of(d), 9.0)
+	var stepf := func(n: int, inp: Dictionary) -> void:
+		for f in n:
+			s.scripted_input = inp
+			s.step(1.0 / 120.0)
+			s.time += 1.0 / 120.0
+			s._prev_xform = s._cur_xform
+			s._cur_xform = s._compose_xform()
+			body._process(1.0 / 120.0)
+	var snap_around := func(tag: String, n: int, dist: float, h: float) -> void:
+		# the pose, for build/gen_rider.py's posed previews
+		var dump := {"joints": {}, "bases": {}}
+		for k in body.joints:
+			var jv = body.joints[k]
+			if jv is Vector3:
+				dump["joints"][k] = [jv.x, jv.y, jv.z]
+		for bn in ["pelvis_basis", "torso_basis", "head_basis", "boot_l", "boot_r"]:
+			var bb: Basis = body.get(bn)
+			dump["bases"][bn] = [bb.x.x, bb.x.y, bb.x.z, bb.y.x, bb.y.y, bb.y.z, bb.z.x, bb.z.y, bb.z.z]
+		var fdump := FileAccess.open(out_dir.path_join("pose_%s.json" % tag), FileAccess.WRITE)
+		fdump.store_string(JSON.stringify(dump))
+		fdump.close()
+		var fw := Vector3(-sin(s.heading), 0, -cos(s.heading))
+		var rt := fw.cross(Vector3.UP)
+		var c: Vector3 = body.joints["pelvis"] + Vector3.UP * 0.25
+		for k in n:
+			var a := TAU * k / float(n)
+			_free_cam(c + (fw * cos(a) + rt * sin(a)) * dist + Vector3.UP * h, c)
+			await _frames(2)
+			await _snap("rider_%s_%d" % [tag, k])
+	var n_ang := int(Game.test_args.get("angles", "8"))
+	await stepf.call(240, {})
+	await snap_around.call("ski", n_ang, float(Game.test_args.get("dist", "2.4")), 0.35)
+	if Game.test_args.get("only", "") == "ski":
+		s.set_physics_process(true)
+		return
+	# a drop: the hood and pant legs fall on through the landing and bounce back
+	s.position.y += 1.3
+	s.airborne = true
+	s.vel.y = -1.0
+	s._cur_xform = s._compose_xform()
+	s._prev_xform = s._cur_xform
+	var guard := 0
+	while s.airborne and guard < 240:
+		await stepf.call(1, {})
+		guard += 1
+	var land_shots := [0, 8, 10, 12, 18, 30]
+	var done_f := 0
+	for k in land_shots.size():
+		await stepf.call(land_shots[k] - done_f, {})
+		done_f = land_shots[k]
+		var fw := Vector3(-sin(s.heading), 0, -cos(s.heading))
+		var rt := fw.cross(Vector3.UP)
+		var c: Vector3 = body.joints["chest"]
+		_free_cam(c - fw * 0.15 + rt * 1.0 + Vector3.UP * 0.1, c - fw * 0.15)
+		await _frames(2)
+		await _snap("rider_land_%d" % k)
+	if Game.test_args.get("only", "") == "land":
+		s.set_physics_process(true)
+		return
+	await stepf.call(90, {"steer_left": 1.0})
+	await snap_around.call("carve", 2, 2.6, 0.5)
+	await stepf.call(120, {"tuck": 1.0})
+	await snap_around.call("tuck", 2, 2.6, 0.5)
+	# front flip, mid rotation (tucked) and a backflip laid out
+	for fl in [["front", 4.5, 2.2], ["back", -4.5, -2.2]]:
+		s.airborne = true
+		s.flip_vel = fl[1]
+		s.air_pitch = fl[2]
+		s.land_t = 2.0
+		for f in 90:
+			body._process(1.0 / 120.0)
+		await snap_around.call("flip_" + fl[0], 2, 2.8, 0.4)
+	s.flip_vel = 0.0
+	s.air_pitch = 0.0
+	body.preview_grab = "Japan"
+	for f in 90:
+		body._compute_pose(0.03)
+	body._apply_parts()
+	await snap_around.call("grab", 2, 2.6, 0.4)
+	body.preview_grab = ""
+	# spinning in the air: arms out
+	s.spin_vel = 7.0
+	s.land_t = 2.0
+	for f in 90:
+		body._process(1.0 / 120.0)
+	await snap_around.call("spin", 2, 2.6, 0.4)
+	s.spin_vel = 0.0
+	s.airborne = false
+	# a crash: the ragdoll
+	s.vel = s.forward_flat() * 8.0
+	s.crash("test")
+	for f in 120:
+		body._physics_process(1.0 / 120.0)
+		body._process(1.0 / 120.0)
+	await snap_around.call("crash", 2, 2.6, 0.6)
+	s.teleport(s.position, s.heading)
+	# on foot, walking
+	s.speed = 0.0
+	s.vel = Vector3.ZERO
+	if s.toggle_skis():
+		await stepf.call(150, {"tuck": 1.0})
+		await snap_around.call("walk", 2, 2.6, 0.4)
+	s.set_physics_process(true)
+
+
 ## --test=pipe [--t0=40 --ang=55 --v0=13]: ride into the pipe and print the hits and a trace.
 func _pipe_report() -> void:
 	var ai := {}
@@ -561,6 +681,28 @@ func _park_kickers() -> void:
 		check("riding switch: the head stays over one shoulder when the turn keys are tapped, moves for a held turn",
 			side_changes == 0 and bd._look_side < 0.0, "%d swaps while tapping; held left -> %s shoulder" % [side_changes,
 			"right" if bd._look_side < 0.0 else "left"])
+		# mid-air the head stays forward through a flip / spin; a front flip is tucked, never laid out
+		sk.airborne = true
+		sk.riding_switch = true
+		sk.flip_vel = 4.5
+		sk.spin_vel = 0.0
+		sk.air_pitch = 2.4
+		sk.land_t = 0.3
+		for f in 120:
+			bd._process(1.0 / 120.0)
+		var mid_look: float = bd._p["switch_look"]
+		var fl_tuck: float = bd._p["ftuck"]
+		var fl_lay: float = bd._p["layout"]
+		sk.flip_vel = 0.0
+		sk.air_pitch = 0.0
+		sk.vel = sk.forward_flat() * 12.0
+		for f in 90:
+			bd._process(1.0 / 120.0)
+		var end_look: float = bd._p["switch_look"]
+		check("front flip is tucked, not laid out; head looks over the shoulder only once the flip is done and he's about to land switch",
+			fl_tuck > 0.8 and fl_lay < 0.05 and mid_look < 0.05 and end_look > 0.6,
+			"tuck %.2f layout %.2f, look mid-flip %.2f, before touchdown %.2f" % [fl_tuck, fl_lay, mid_look, end_look])
+		sk.airborne = false
 	# the mega pipe: across the flat into a wall, straight up out of it and back in; and wall to wall
 	var pr := _pipe_ride(50.0, 65.0, 15.0, 1)
 	if not pr.is_empty():
@@ -1290,17 +1432,44 @@ func _physics() -> void:
 	check("accelerates downhill", v3 > 8.0 and v3 < 30.0, "speed after 3 s on %.0f deg: %.1f m/s" % [spot["slope"], v3])
 	# jacket cloth: skiing fast, the hem and hood are blown back (against the direction of travel)
 	var body = world.body
+	var hood_along := 0.0
+	var pant_along := 0.0
+	var hood_max := 0.0
+	for i in 150:
+		s.step(1.0 / 120.0)
+		s.time += 1.0 / 120.0
+		s._prev_xform = s._cur_xform
+		s._cur_xform = s._compose_xform()
+		body._process(1.0 / 120.0)
+		if i >= 90:
+			var tdir := s.vel.normalized()
+			hood_along += (body._cloth["hood"][0] as Vector3).dot(tdir) / 60.0
+			pant_along += ((body._cloth["pant_l"][0] as Vector3).dot(tdir) + (body._cloth["pant_r"][0] as Vector3).dot(tdir)) / 120.0
+			hood_max = maxf(hood_max, (body._cloth["hood"][0] as Vector3).length())
+	check("cloth: at speed the hood and the pant legs blow back (0.5 s average), the hood flaps", hood_along < -0.012 and pant_along < -0.006
+		and hood_max <= 0.0901 and body._cloth_hood_flap > 0.0,
+		"%.1f m/s: hood %.3f m, legs %.3f m along travel, hood flap %.3f m" % [s.vel.length(), hood_along, pant_along, body._cloth_hood_flap])
+	# landing: the hood drops, then bounces back up past where it hung
+	body._cloth_air = true
+	body._cloth_vy = -7.0
+	var hood_y := []
 	for i in 90:
 		s.step(1.0 / 120.0)
 		s.time += 1.0 / 120.0
 		s._prev_xform = s._cur_xform
 		s._cur_xform = s._compose_xform()
 		body._process(1.0 / 120.0)
-	var tdir := s.vel.normalized()
-	var hem: Vector3 = body._cloth.get("hem", [Vector3.ZERO])[0]
-	var hood: Vector3 = body._cloth.get("hood", [Vector3.ZERO])[0]
-	check("jacket cloth: at speed the hem and hood blow back", hem.dot(tdir) < -0.015 and hood.dot(tdir) < -0.015 and hem.length() <= 0.121,
-		"%.1f m/s: hem %.3f m, hood %.3f m along travel, flutter %.3f m" % [s.vel.length(), hem.dot(tdir), hood.dot(tdir), body._cloth_flutter])
+		hood_y.append((body._cloth["hood"][0] as Vector3).dot(body.torso_basis.y))
+	var lo_i := 0
+	for i in hood_y.size():
+		if hood_y[i] < hood_y[lo_i]:
+			lo_i = i
+	var hi_after: float = hood_y.slice(lo_i).max()
+	var series := []
+	for i in range(0, hood_y.size(), 6):
+		series.append("%.3f" % hood_y[i])
+	check("cloth: landing drops the hood and it bounces back", hood_y[lo_i] < -0.02 and hi_after - hood_y[lo_i] > 0.03,
+		"lowest %.3f m at %d ms, then up to %.3f m (every 50 ms: %s)" % [hood_y[lo_i], lo_i * 1000 / 120, hi_after, " ".join(series)])
 	check("stays grounded on smooth slope", not s.airborne and not s.is_crashed)
 	# 2. no tuck: once you're moving, W (pole push) adds nothing
 	s = _settle_on(spot["pos"], spot["yaw"])

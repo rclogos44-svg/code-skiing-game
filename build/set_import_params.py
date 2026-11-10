@@ -19,6 +19,11 @@ RULES = {
     "assets/textures/noise.png": {"compress/mode": "0", "mipmaps/generate": "true"},
     "assets/textures/puff.png": {"compress/mode": "0", "mipmaps/generate": "true"},
     "assets/textures/flake.png": {"compress/mode": "0", "mipmaps/generate": "true"},
+    "assets/rider/jacket_albedo.png": {"compress/mode": "0", "mipmaps/generate": "true"},
+    "assets/rider/jacket_normal.png": {"compress/mode": "0", "compress/normal_map": "0", "mipmaps/generate": "true"},
+    "assets/rider/pants_albedo.png": {"compress/mode": "0", "mipmaps/generate": "true"},
+    "assets/rider/pants_normal.png": {"compress/mode": "0", "compress/normal_map": "0", "mipmaps/generate": "true"},
+    "assets/rider/weave_normal.png": {"compress/mode": "0", "compress/normal_map": "0", "mipmaps/generate": "true"},
 }
 changed = 0
 for rel, params in RULES.items():

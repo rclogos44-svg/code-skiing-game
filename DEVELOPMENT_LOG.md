@@ -670,3 +670,44 @@ no map, parks, keep the ragdoll crashes, black baggy gear, only flips, spins and
   rails ridden switch read as Switch 50-50. Checks: mashing X = one 180; tapping left/right while
   switch = no shoulder swaps; a held left turn = right shoulder. --test=switch_shots renders it.
   Physics 141/141.
+
+## Rider rebuilt: sculpted clothes and gear, cloth motion
+
+- Head over the shoulder (riding switch) only in the last ~0.45 s before touching down, and only
+  once the flip is done and the spin has slowed - never mid-flip or mid-spin. Front flips are
+  always tucked (knees to chest, opening to spot the landing); only backflips lay out.
+- The rider's clothes and gear are generated offline by `build/gen_rider.py` (numpy + a small C
+  helper `build/rider_kernels.c`, no modelling tools). Each piece is a signed distance field in a
+  bind pose measured from the game's own skiing stance (hips ~50 deg, knees ~80 deg, elbows out):
+  lofted torso sections, tubes along the limbs, smooth unions where they meet, sewn-in folds
+  (stacked pant hems and sleeve ends, creases behind the knees and inside the elbows, pleats where
+  the jacket blouses over the waistband), open lined cuffs / collar / pant hems with real edges.
+  Meshed with surface nets, projected onto the exact surface, simplified (quadric edge collapse)
+  to ~50k triangles in total, skinned with smooth weights, ambient occlusion baked into the vertex
+  colour, UV charts packed into atlases. The atlases (jacket 2048, pants 1024) are painted from 3D
+  positions so seams, stitching, the storm-flap zip, pocket zips, cargo pockets, knee darts, belt
+  and loops line up across UV seams; a tiled twill weave adds the fabric grain.
+  `build/godot_tools/import_rider.gd` turns the export into `assets/rider/rider_body.res` /
+  `rider_head.res`; `02_gen_assets.sh` runs both.
+- Outfit: fitted sage park jacket (darker yoke, hood and cuffs, black zips and tabs, small mountain
+  logo on the left sleeve) tucked into the waistband of baggy khaki pants with a black belt; a
+  real hood lying on the upper back with its opening turned up; black helmet (matte), black-
+  framed orange-mirror goggles on a strap, navy neck gaiter pulled up over the nose, padded black
+  gloves gripping the poles, charcoal boots whose cuffs hinge with the shins. Colours live in
+  SkierBody.OUTFIT (shader parameters, `shaders/skier_gear.gdshader`).
+- SkierRig loads the meshes and drives 16 bones from SkierBody's joints: pelvis, three spine
+  segments (twist shared out between hips and shoulders), neck, head, thighs, shins, upper arms,
+  forearms (gloves), both boots. Crotch weights stay with the pelvis (no webbing between the
+  thighs); the boot cuff follows the shin. Ragdoll bases fixed (they were mirrored, which turned a
+  skinned head backwards).
+- Cloth motion: four springs, each hung on its own body anchor - the hood (upper back), each pant
+  leg (lower leg), the sleeve ends and bloused waist (chest). They lag the anchor's acceleration,
+  so a landing drops the hood and pant legs and they bounce back, a spin swings them out, a flip
+  carries them round; air drag (speed squared) blows them back; gravity takes over once he's
+  tipped past ~50 deg (upside down the hood falls toward his head); above ~15 km/h the hood and
+  pants flap. Tunables: SkierBody.CLOTH_SPRING (stiffness, damping, drag, play, landing kick,
+  inertia).
+- Checks: the hood and pant legs blow back at speed (0.5 s average) and the hood flaps; a landing
+  drops the hood and it bounces back; front flip tucked, no look mid-flip. --test=rider renders the
+  rider skiing (8 angles), carving, tucked, front / back flips, a grab, a spin, a crash, walking and
+  a landing sequence, and dumps each pose for gen_rider's posed previews. Physics 143/143.

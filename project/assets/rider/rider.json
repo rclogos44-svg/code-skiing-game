@@ -1,0 +1,204 @@
+{
+ "bind": {
+  "ankle_l": [
+   -0.115215,
+   -0.680863,
+   -0.132851
+  ],
+  "ankle_r": [
+   0.115215,
+   -0.680863,
+   -0.132851
+  ],
+  "chest": [
+   0.0,
+   0.54,
+   0.0
+  ],
+  "elbow_l": [
+   -0.341152,
+   0.225762,
+   -0.008008
+  ],
+  "elbow_r": [
+   0.341152,
+   0.225762,
+   -0.008008
+  ],
+  "hand_l": [
+   -0.315166,
+   0.02087,
+   -0.181916
+  ],
+  "hand_r": [
+   0.315166,
+   0.02087,
+   -0.181916
+  ],
+  "head": [
+   0.0,
+   0.73,
+   0.0
+  ],
+  "hip_l": [
+   -0.095,
+   -0.04,
+   0.0
+  ],
+  "hip_r": [
+   0.095,
+   -0.04,
+   0.0
+  ],
+  "knee_l": [
+   -0.174126,
+   -0.308426,
+   -0.339539
+  ],
+  "knee_r": [
+   0.174126,
+   -0.308426,
+   -0.339539
+  ],
+  "lumbar": [
+   0.0,
+   0.23,
+   0.0
+  ],
+  "pelvis": [
+   0.0,
+   0.0,
+   0.0
+  ],
+  "shoulder_l": [
+   -0.185,
+   0.47,
+   0.0
+  ],
+  "shoulder_r": [
+   0.185,
+   0.47,
+   0.0
+  ],
+  "thoracic": [
+   0.0,
+   0.39,
+   0.0
+  ],
+  "waist": [
+   0.0,
+   0.07,
+   0.0
+  ]
+ },
+ "bind_bases": {
+  "boot_l": [
+   1.0,
+   0.0,
+   0.0,
+   0.0,
+   0.982613,
+   0.185667,
+   0.0,
+   -0.185667,
+   0.982613
+  ],
+  "boot_r": [
+   1.0,
+   0.0,
+   0.0,
+   0.0,
+   0.982613,
+   0.185667,
+   0.0,
+   -0.185667,
+   0.982613
+  ]
+ },
+ "bones": [
+  "pelvis",
+  "sp1",
+  "sp2",
+  "sp3",
+  "neck",
+  "thigh_l",
+  "shin_l",
+  "thigh_r",
+  "shin_r",
+  "uarm_l",
+  "farm_l",
+  "uarm_r",
+  "farm_r",
+  "head",
+  "foot_l",
+  "foot_r"
+ ],
+ "surfaces": [
+  {
+   "group": "body",
+   "material": "jacket",
+   "name": "jacket",
+   "uv_per_m": 0.592041014533606
+  },
+  {
+   "group": "body",
+   "material": "pants",
+   "name": "pants",
+   "uv_per_m": 0.433237782181095
+  },
+  {
+   "group": "head",
+   "material": "helmet",
+   "name": "helmet",
+   "uv_per_m": 1.0
+  },
+  {
+   "group": "head",
+   "material": "goggle_frame",
+   "name": "goggle_frame",
+   "uv_per_m": 1.0
+  },
+  {
+   "group": "head",
+   "material": "goggle_lens",
+   "name": "goggle_lens",
+   "uv_per_m": 1.0
+  },
+  {
+   "group": "head",
+   "material": "strap",
+   "name": "strap",
+   "uv_per_m": 1.0
+  },
+  {
+   "group": "head",
+   "material": "gaiter",
+   "name": "gaiter",
+   "uv_per_m": 1.0
+  },
+  {
+   "group": "body",
+   "material": "glove",
+   "name": "glove_l",
+   "uv_per_m": 1.0
+  },
+  {
+   "group": "body",
+   "material": "boot",
+   "name": "boot_l",
+   "uv_per_m": 1.0
+  },
+  {
+   "group": "body",
+   "material": "glove",
+   "name": "glove_r",
+   "uv_per_m": 1.0
+  },
+  {
+   "group": "body",
+   "material": "boot",
+   "name": "boot_r",
+   "uv_per_m": 1.0
+  }
+ ]
+}
