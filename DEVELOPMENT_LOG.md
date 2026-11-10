@@ -711,3 +711,34 @@ no map, parks, keep the ragdoll crashes, black baggy gear, only flips, spins and
   drops the hood and it bounces back; front flip tucked, no look mid-flip. --test=rider renders the
   rider skiing (8 angles), carving, tucked, front / back flips, a grab, a spin, a crash, walking and
   a landing sequence, and dumps each pose for gen_rider's posed previews. Physics 143/143.
+
+## Freestyle: Ridgeline Park, directional trick system, off-axis tricks, grabs, rocks
+
+Details, research links, the control table and tuning locations: FREESTYLE.md.
+- Ridgeline Park (fifth park, main menu + pause menu with quick drops: Progression, Flow line, Big
+  line, Jib lane, Step-up). build/parks.py applies it after the mountain's natural features and
+  only on ground clear of them, so the four existing parks and all 43 natural features are
+  byte-for-byte unchanged (checked against the previous layout.json). New analytic snow shapes:
+  rollers, banks, step-up (TerrainData.shape_offset, drawn by park.gd). Regraded at 10 deg; the
+  big line's tables sized from speeds measured riding it (line_design), the other tables from the
+  standalone run-in test; every Ridgeline jump lands past its knuckle in --test=physics.
+- Arrow tricks are an explicit state machine (IDLE / PREPARE / PENDING / AIR / RECOVER): prepare
+  with one arrow (charge capped), initiate with a second; opposite = flips / spins as before,
+  perpendicular = rodeo / misty / cork / bio. Buffered to the lip when one is coming, late window
+  0.3 s off a lip, 0.25 s landing recovery, prepared arrow latched once, the initiating arrow keeps
+  driving the rotation. Focus loss releases all keys without popping; the web page doesn't scroll
+  on arrows.
+- Off-axis tricks: spin in the heading plus one off-axis flip about a diagonal body axis (axis-angle
+  each frame on top of the yaw) - stable through inversion, lands upright for any half-turn of spin.
+  Families differ in axis, inversion (cork ~85 deg, rodeo ~160 deg measured), timing (spin-led /
+  flip-led), tuck and takeoff shape. Bounded help on Easy / Normal only. Landing judged from the
+  real orientation; names from the measured motion (Cork 720, Rodeo 540 = flip + half-turn).
+- Grabs: phases (reach, contact, hold with a half-second tweak, release, landing prep), auto release
+  0.3 s before the real snow on Easy / Normal, grabbing pole swings clear, free arm's pole hangs.
+- HUD: a small charge ring + prepared arrow low in the middle, the resolved trick ("at the lip"
+  while buffered), a shorter control line; F3 developer view.
+- Rocks: chiselled shapes (fracture planes, five variants: boulder, slab, shard, ledge, tor),
+  two-scale triplanar (2.4 m + 21 m macro), strata banding, streaks, roughness variation, snow only
+  on faces turned up with a patchy edge plus a small base drift; rock draw distance capped at 1.4 km.
+- Checks: rodeo / misty / cork / bio off Ridgeline's XL (prepared, buffered, land clean, named);
+  cloth; new park kickers. --test=offaxis_anim, --test=rocks, --test=perf render / profile.

@@ -54,6 +54,12 @@ func run(w: World) -> void:
 			await _switch_shots()
 		"rider":
 			await _rider_shots()
+		"offaxis_anim":
+			await _offaxis_anim()
+		"rocks":
+			await _rock_shots()
+		"perf":
+			await _perf()
 		_:
 			print("[TEST] unknown test mode ", Game.test_mode)
 			failures += 1
@@ -539,6 +545,151 @@ func _rider_shots() -> void:
 		await stepf.call(150, {"tuck": 1.0})
 		await snap_around.call("walk", 2, 2.6, 0.4)
 	s.set_physics_process(true)
+
+
+## --test=offaxis_anim --trick=Cork|Rodeo|Misty|Bio [--grab=grab_left,brake]: rides Ridgeline's first XL
+## with the real input (prepare, second arrow before the lip) and snaps the flight from beside the jump.
+func _offaxis_anim() -> void:
+	var s := world.skier
+	var body = world.body
+	var keys_for := {"Rodeo": ["lean_forward", "lean_right"], "Misty": ["lean_back", "lean_left"], "Cork": ["lean_left", "lean_back"],
+		"Bio": ["lean_right", "lean_forward"], "Backflip": ["lean_forward", "lean_back"]}
+	var tk: Array = keys_for[Game.test_args.get("trick", "Cork")]
+	var grab: String = Game.test_args.get("grab", "")
+	var rp := 0
+	for i in world.terrain.layout["parks"].size():
+		if world.terrain.layout["parks"][i]["name"] == "Ridgeline Park":
+			rp = i
+	var xk: Dictionary = {}
+	for k in world.terrain.layout["parks"][rp]["kickers"]:
+		if k["line"] == "big" and k["size"] == "XL" and xk.is_empty():
+			xk = k
+	var xdir := Vector3(xk["dir"][0], 0, xk["dir"][1])
+	var xlip := Vector3(xk["lip"][0], 0, xk["lip"][1])
+	world.spawn(Vector3(xk["origin"][0], 0, xk["origin"][1]) - xdir * 12.0, Skier.yaw_of(xdir))
+	await _frames(10)
+	s.set_physics_process(false)
+	body.set_process(false)
+	s.teleport(Vector3(xk["origin"][0], 0, xk["origin"][1]) - xdir * 12.0, Skier.yaw_of(xdir), float(xk["approach_speed"]) - 1.0)
+	var side := xdir.cross(Vector3.UP)
+	var mid := xlip + xdir * 9.0
+	var cam := mid + side * 11.0
+	cam.y = world.terrain.height(cam.x, cam.z) + 4.5
+	var shot := 0
+	var t_air := 0.0
+	for i in 900:
+		var keys := {}
+		var to_lip := (xlip - s.position).dot(xdir)
+		if not s.airborne and to_lip > 0.0:
+			keys[tk[0]] = 1.0
+			if to_lip < 6.0:
+				keys[tk[1]] = 1.0
+		if s.airborne and grab != "" and s.air_time > 0.25:
+			for g in grab.split(","):
+				keys[g] = 1.0
+		s.scripted_input = keys
+		s.step(1.0 / 120.0)
+		s.time += 1.0 / 120.0
+		s._prev_xform = s._cur_xform
+		s._cur_xform = s._compose_xform()
+		body._process(1.0 / 120.0)
+		if s.airborne:
+			t_air += 1.0 / 120.0
+		if (s.airborne or t_air > 0.0) and i % 14 == 0 and shot < 16:
+			var c: Vector3 = body.joints["pelvis"]
+			_free_cam(c + side * 6.0 - xdir * 1.5 + Vector3.UP * 1.0, c)
+			await _frames(2)
+			await _snap("off_%02d" % shot)
+			shot += 1
+		if t_air > 0.0 and not s.airborne and shot >= 16:
+			break
+	s.set_physics_process(true)
+
+
+## --test=rocks: big rocks from close, medium and far (texture scale, silhouettes, snow, base).
+func _rock_shots() -> void:
+	var f := FileAccess.open("res://world/rocks.bin", FileAccess.READ)
+	var data := f.get_buffer(f.get_length()).to_float32_array()
+	var picked := []
+	for i in range(0, data.size(), 4):
+		if data[i + 2] > 3.0 and data[i + 2] < 7.0 and picked.size() < 3 and (picked.is_empty() or Vector2(data[i], data[i + 1]).distance_to(picked[-1]) > 600.0):
+			picked.append(Vector2(data[i], data[i + 1]))
+	world.skier.set_physics_process(false)
+	var k := 0
+	for p2 in picked:
+		var c := Vector3(p2.x, world.terrain.height(p2.x, p2.y), p2.y)
+		world.skier.teleport(c + Vector3(30, 0, 30), 0.0)
+		world.skier.position.y = world.terrain.height(c.x + 30, c.z + 30)
+		await _frames(20)
+		for dist in [9.0, 32.0, 140.0]:
+			var cam := c + Vector3(dist * 0.8, 0, dist * 0.6)
+			cam.y = maxf(world.terrain.height(cam.x, cam.z), c.y) + 2.0 + dist * 0.12
+			_free_cam(cam, c + Vector3.UP * 1.5)
+			await _frames(4)
+			await _snap("rock_%d_%03d" % [k, int(dist)])
+		k += 1
+	world.skier.set_physics_process(true)
+
+
+## --test=perf: the real game loop (physics at 120 Hz, interpolation, rendering) while the rider
+## skis Ridgeline's big line popping tricks and grabbing, then Main Park and a forest run.  Prints
+## per-scene CPU time of scripts (process / physics), wall frame time, draw calls and primitives.
+func _perf() -> void:
+	var s := world.skier
+	var scenes := []
+	var rp := 0
+	for i in world.terrain.layout["parks"].size():
+		if world.terrain.layout["parks"][i]["name"] == "Ridgeline Park":
+			rp = i
+	scenes.append(["ridgeline big line + tricks", world.park.park_start(rp, 3)])
+	scenes.append(["main park", world.park.park_start(0)])
+	var fs := _find_slope(18.0, 26.0)
+	if not fs.is_empty():
+		scenes.append(["freeride slope", {"pos": fs["pos"], "yaw": fs["yaw"]}])
+	world.camera.set_mode(CameraRig.Mode.CHASE)
+	for sc in scenes:
+		var st: Dictionary = sc[1]
+		world.spawn(st["pos"], st["yaw"])
+		world.camera.snap()
+		await _frames(30)
+		var proc := []
+		var phys := []
+		var wall := []
+		var draws := []
+		var prims := []
+		var last := Time.get_ticks_usec()
+		for f in 480:
+			var t := f % 240
+			var keys := {}
+			if t < 70:
+				keys = {"tuck": 1.0}
+			elif t < 120:
+				keys = {"lean_forward": 1.0}
+			elif t < 126:
+				keys = {"lean_forward": 1.0, "lean_right": 1.0}
+			elif t < 200 and s.airborne:
+				keys = {"grab_left": 1.0}
+			s.scripted_input = keys
+			await get_tree().process_frame
+			var now := Time.get_ticks_usec()
+			wall.append((now - last) / 1000.0)
+			last = now
+			proc.append(Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0)
+			phys.append(Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0)
+			draws.append(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME))
+			prims.append(Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME))
+		s.scripted_input = {}
+		var stat := func(a: Array) -> String:
+			var b := a.duplicate()
+			b.sort()
+			var sum := 0.0
+			for x in b:
+				sum += float(x)
+			return "avg %.2f p95 %.2f max %.2f" % [sum / b.size(), float(b[int(b.size() * 0.95)]), float(b[-1])]
+		print("[TEST] PERF %-28s process ms %s | physics ms %s | wall ms %s | draw calls %s | primitives %s" % [sc[0],
+			stat.call(proc), stat.call(phys), stat.call(wall), stat.call(draws), stat.call(prims)])
+	print("[TEST] PERF objects %d, static memory %.0f MB, video memory %.0f MB" % [Performance.get_monitor(Performance.OBJECT_COUNT),
+		Performance.get_monitor(Performance.MEMORY_STATIC) / 1e6, Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED) / 1e6])
 
 
 ## --test=pipe [--t0=40 --ang=55 --v0=13]: ride into the pipe and print the hits and a trace.

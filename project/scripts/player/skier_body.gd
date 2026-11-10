@@ -1189,7 +1189,13 @@ func _compute_pose(dt: float) -> void:
 			pd = pd.lerp(swing, _push_amt)
 		if g > 0.01:
 			pd = pd.lerp(Vector3(sgn * 0.6, 0.2, 0.7), g)
-		joints["pole_dir_" + sd] = (tb * pd).normalized()
+		var pdw := (tb * pd).normalized()
+		if gpose.has("free") and gpose["free"].has(sd) and _gw_body > 0.01:
+			# the free arm's pole hangs back and down from the hand in his own frame (not the crunched-
+			# over torso's, which would point it at the sky)
+			var hang := (root.basis.orthonormalized() * Vector3(sgn * 0.35, -0.75, 0.55)).normalized()
+			pdw = pdw.slerp(hang, _gw_body)
+		joints["pole_dir_" + sd] = pdw
 		if planted:
 			joints["pole_dir_" + sd] = (_pole_tip[sd] - hand).normalized()
 		else:

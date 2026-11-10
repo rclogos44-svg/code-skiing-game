@@ -36,17 +36,20 @@ W            Pole push - only when slow (no tuck)
 S            Hockey stop (tap: check speed, hold: stop; + A/D picks the side)
 A / D        Carve left / right. On a rail or box: keep your balance
 Left Shift   Aggressive edge carving (tighter turns, scrubs speed)
-Arrows       Tricks, no jump key: hold an arrow to SET (crouch / coil), then press
-             the OPPOSITE arrow to POP and do the trick:
-               hold Up, press Down     = backflip
-               hold Down, press Up     = front flip
-               hold Right, press Left  = left spin
-               hold Left, press Right  = right spin
-             (hold two arrows to set a flip and a spin together). Let go of the
-             set arrow without pressing the opposite one = a straight pop (ollie),
-             e.g. onto a rail. Press at the lip; a moment after it still counts.
-             In the air the pop arrow keeps rotating (keep holding Down for more
-             backflips - the body tucks after the first one).
+Arrows       Tricks, no jump key. Hold an arrow to PREPARE (crouch / lean / coil;
+             the charge fills in half a second), then press a SECOND arrow to go.
+             The opposite arrow = a flip or spin:
+               Up, then Down     = backflip        Down, then Up    = front flip
+               Left, then Right  = right spin      Right, then Left = left spin
+             A sideways arrow = an off-axis trick:
+               Up, then Right / Left    = rodeo right / left (back over the shoulder)
+               Down, then Right / Left  = misty right / left (forward)
+               Left, then Down          = cork right   (Right, then Down = cork left)
+               Left, then Up            = bio right    (Right, then Up   = bio left)
+             Near a kicker the trick waits for the lip. Let go of the prepared
+             arrow alone = a straight pop (ollie), e.g. onto a rail. In the air,
+             keeping the second arrow held rotates more; the opposite one slows.
+             Full table: FREESTYLE.md.
 Q / E        Grabs (in the air). Q = Mute; Q + W = Tip; Q + S = Japan.
              E = Safety; E + W = Blunt; E + S = Tail. Q + E = Truck
              Driver. W / S can be pressed any time during the grab and stick. The
@@ -63,6 +66,7 @@ X            Switch stance: a 180 on the snow into riding switch (and back out).
 Left / Right On a rail or box: a quick tap spins you 180 on it.
 V            Skeleton view: hide the clothes and show the bones and joints
 B            Slow motion on / off (quarter speed)
+F3           Developer view (trick input, charge, rotation, grab phase, landing)
 F            First-person view
 R            Respawn on the snow
 Tab          Back to the top of the park

@@ -38,7 +38,7 @@ func setup(td: TerrainData, obs: Obstacles) -> void:
 	rock_mat.shader = load("res://shaders/rock.gdshader")
 	rock_mat.set_shader_parameter("rock_albedo", load("res://assets/textures/rock_albedo.png"))
 	rock_mat.set_shader_parameter("rock_normal", load("res://assets/textures/rock_normal.png"))
-	for v in 4:
+	for v in 5:
 		rock_meshes.append(_rock_mesh(v))
 	_load_trees()
 	_load_rocks()
@@ -180,6 +180,9 @@ func _load_rocks() -> void:
 			if xf.is_empty():
 				continue
 			var mmi := _make_mmi(rock_meshes[v], xf, rock_mat, center)
+			mmi.visibility_range_end = 1400.0          # far rocks are a few pixels: don't draw them
+			mmi.visibility_range_end_margin = 150.0
+			mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 			_rock_nodes.append(mmi)
 
 
@@ -273,28 +276,63 @@ func _pine_mesh(variant: int, detailed: bool, lod_layers := 2, lod_segs := 5) ->
 
 
 func _rock_mesh(variant: int) -> ArrayMesh:
+	# a broken block of granite: a lumpy sphere cut by a few fracture planes (flat broken faces with
+	# sharp edges between them), squashed to the variant's shape - a boulder, a slab, a tall shard, a
+	# low ledge, a blocky tor.  Faces cut by a plane shade flat, the rest stays rough.
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7100 + variant * 31
 	var noise := FastNoiseLite.new()
-	noise.seed = 100 + variant
-	noise.frequency = 1.3
-	noise.fractal_octaves = 4
+	noise.seed = 300 + variant
+	noise.frequency = 0.9
+	noise.fractal_octaves = 3
+	var shapes := [Vector3(1.25, 0.82, 1.0), Vector3(1.6, 0.52, 1.15), Vector3(0.78, 1.35, 0.85), Vector3(1.45, 0.66, 1.3), Vector3(1.0, 1.0, 0.95)]
+	var shape: Vector3 = shapes[variant % shapes.size()]
+	var planes: Array = []
+	for i in [8, 10, 7, 11, 9][variant % 5]:
+		var dir := Vector3(rng.randf_range(-1.0, 1.0), rng.randf_range(-0.5, 1.0), rng.randf_range(-1.0, 1.0)).normalized()
+		planes.append([dir, rng.randf_range(0.6, 0.88)])
+	planes.append([Vector3(rng.randf_range(-0.15, 0.15), 1.0, rng.randf_range(-0.15, 0.15)).normalized(), rng.randf_range(0.7, 0.85)])   # a flat-ish top
 	var sm := SphereMesh.new()
 	sm.radius = 1.0
 	sm.height = 2.0
-	sm.radial_segments = 20
-	sm.rings = 12
+	sm.radial_segments = 22
+	sm.rings = 13
 	var arrays := sm.get_mesh_arrays()
 	var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
-	var stretch := Vector3(1.0 + variant * 0.12, 0.9, 1.0 - variant * 0.07)
+	var norms := PackedVector3Array()
+	norms.resize(verts.size())
+	var cut := PackedInt32Array()
+	cut.resize(verts.size())
 	for i in verts.size():
-		var v := verts[i]
-		var d := 1.0 + noise.get_noise_3dv(v * 1.0) * 0.38
-		# flatten facets a bit for a fractured look
-		d = lerpf(d, round(d * 4.0) / 4.0, 0.35)
-		verts[i] = v * d * stretch
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		var v := verts[i].normalized()
+		var r := 1.0 + noise.get_noise_3dv(v * 1.4) * 0.14
+		var hit := -1
+		for k in planes.size():
+			var c := v.dot(planes[k][0])
+			if c > 0.01 and float(planes[k][1]) / c < r:
+				r = float(planes[k][1]) / c
+				hit = k
+		cut[i] = hit
+		verts[i] = v * r * shape
+	# normals: a cut face's own (flat) normal, the rough parts from the shape around them
 	var idx: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
-	for k in idx.size():
-		st.add_vertex(verts[idx[k]])
-	st.generate_normals()
-	return st.commit()
+	var acc := PackedVector3Array()
+	acc.resize(verts.size())
+	for t in range(0, idx.size(), 3):
+		var fnrm := (verts[idx[t + 1]] - verts[idx[t]]).cross(verts[idx[t + 2]] - verts[idx[t]])
+		for j in 3:
+			acc[idx[t + j]] += fnrm
+	for i in verts.size():
+		if cut[i] >= 0:
+			var pn: Vector3 = planes[cut[i]][0]
+			norms[i] = Vector3(pn.x / shape.x, pn.y / shape.y, pn.z / shape.z).normalized()
+		else:
+			norms[i] = -acc[i].normalized() if acc[i].dot(verts[i]) < 0.0 else acc[i].normalized()
+	var out := []
+	out.resize(Mesh.ARRAY_MAX)
+	out[Mesh.ARRAY_VERTEX] = verts
+	out[Mesh.ARRAY_NORMAL] = norms
+	out[Mesh.ARRAY_INDEX] = idx
+	var am := ArrayMesh.new()
+	am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, out)
+	return am
