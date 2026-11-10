@@ -763,3 +763,17 @@ Details, research links, the control table and tuning locations: FREESTYLE.md.
   Rodeo / Misty 540 at ~107 deg/s spin and ~203 deg/s flip (was Cork 720 at up to ~490 deg/s).
 - Teleporting clears latched arrows. New check: the off-axis tricks with both arrows held through
   the air stay under 6 rad/s spin and 4.5 rad/s flip. Physics 167/167.
+
+## Pants: baggier, no knee pinch; pant legs calm in grabs
+
+- Pant legs straight and roomy (radius ~0.118 m from thigh through the knee, widening a little to the
+  hem) instead of narrowing at the knee, which pinched ("crimped") whenever the knee bent past the
+  stance the mesh was made in. Wider thigh/shin skinning band at the knee for a smooth bend, three
+  soft creases behind the knee instead of four deep ones, gentler stacked rings at the hem, and long
+  drape folds (ridge + valley) down the shins and thighs so the legs read as fabric, not balloons.
+  Jacket front at the hem 5 mm roomier to stay clear of the bigger thighs (>= 1.9 cm everywhere).
+- Pant cloth springs now hang on a point fixed below the pelvis instead of the animated shin: his
+  own leg moves (a Truck Driver pulling the knees up) no longer shake the fabric - they drove it
+  back and forth between its limits at ~1 m/s. Heavier, better damped pant fabric (damping 0.55,
+  play 3.5 cm). New check: through a Truck Driver the pant legs swing once and settle (0 reversals,
+  0.53 m/s peak). --test=cloth_grab [--grab=...] prints the springs every 25 ms. Physics 168/168.

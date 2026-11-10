@@ -58,6 +58,8 @@ func run(w: World) -> void:
 			await _offaxis_anim()
 		"rocks":
 			await _rock_shots()
+		"cloth_grab":
+			_cloth_grab_report()
 		"perf":
 			await _perf()
 		_:
@@ -607,6 +609,63 @@ func _offaxis_anim() -> void:
 
 
 ## --test=rocks: big rocks from close, medium and far (texture scale, silhouettes, snow, base).
+## --test=cloth_grab [--grab=Truck Driver]: a grab off Main Park's medium kicker, printing what the
+## pant-leg cloth springs do every 25 ms (offset, its speed, the anchor's acceleration, the gravity
+## gate) - for tuning CLOTH_SPRING.
+func _cloth_grab_report() -> void:
+	var r := _cloth_grab_run(String(Game.test_args.get("grab", "Truck Driver")), true)
+	print("[TEST] cloth_grab max offset %.3f m, max speed %.2f m/s, reversals %d" % [r["max_x"], r["max_u"], r["rev"]])
+
+
+## Rides a grab off Main Park's medium kicker with the body posed every step; returns the pant
+## springs' largest offset (m), largest speed (m/s) and how often the left leg's swing reversed.
+func _cloth_grab_run(grab: String, trace := false) -> Dictionary:
+	var s := world.skier
+	var body = world.body
+	var keys_for := {"Truck Driver": {"grab_left": 1.0, "grab_right": 1.0}, "Mute": {"grab_left": 1.0},
+		"Japan": {"grab_left": 1.0, "brake": 1.0}, "Blunt": {"grab_right": 1.0, "tuck": 1.0}}
+	var mk: Dictionary = {}
+	for k in world.terrain.layout["parks"][0]["kickers"]:
+		if k["size"] == "M":
+			mk = k
+	var md := Vector3(mk["dir"][0], 0, mk["dir"][1])
+	s.teleport(Vector3(mk["origin"][0], 0, mk["origin"][1]) - md * 12.0, Skier.yaw_of(md), float(mk["approach_speed"]) - 1.0)
+	var out := {"max_x": 0.0, "max_u": 0.0, "rev": 0}
+	var prev_u := Vector3.ZERO
+	var landed_t := -1.0
+	for i in 900:
+		var keys := {}
+		if s.airborne and s.air_time > 0.15:
+			keys = (keys_for.get(grab, {}) as Dictionary).duplicate()
+		s.scripted_input = keys
+		s.step(1.0 / 120.0)
+		s.time += 1.0 / 120.0
+		s._prev_xform = s._cur_xform
+		s._cur_xform = s._compose_xform()
+		body._process(1.0 / 120.0)
+		if not body._cloth.has("pant_l"):
+			continue
+		var st: Array = body._cloth["pant_l"]
+		var x: Vector3 = st[0]
+		var u: Vector3 = st[1]
+		if s.airborne or landed_t < 0.0 or s.time - landed_t < 0.6:
+			out["max_x"] = maxf(out["max_x"], x.length())
+			out["max_u"] = maxf(out["max_u"], u.length())
+			if u.length() > 0.05 and prev_u.length() > 0.05 and u.dot(prev_u) < 0.0:
+				out["rev"] += 1
+		prev_u = u
+		if trace and i % 3 == 0:
+			var up: Vector3 = body.pelvis_basis.y.normalized()
+			print("t %.3f air %s grab %-12s |x| %.3f |u| %.2f acc %.1f tilt %.0f" % [s.time, s.airborne, s.grab_name, x.length(), u.length(),
+				(st[4] as Vector3).length(), rad_to_deg(up.angle_to(Vector3.UP))])
+		if not s.airborne and s.air_time == 0.0 and landed_t < 0.0 and i > 200:
+			landed_t = s.time
+		if landed_t > 0.0 and s.time - landed_t > 0.6:
+			break
+	s.scripted_input = {}
+	return out
+
+
 func _rock_shots() -> void:
 	var f := FileAccess.open("res://world/rocks.bin", FileAccess.READ)
 	var data := f.get_buffer(f.get_length()).to_float32_array()
@@ -1714,6 +1773,12 @@ func _physics() -> void:
 	check("cloth: landing drops the hood and it bounces back", hood_y[lo_i] < -0.02 and hi_after - hood_y[lo_i] > 0.03,
 		"lowest %.3f m at %d ms, then up to %.3f m (every 50 ms: %s)" % [hood_y[lo_i], lo_i * 1000 / 120, hi_after, " ".join(series)])
 	check("stays grounded on smooth slope", not s.airborne and not s.is_crashed)
+	# a Truck Driver pulls the knees right up: the pant legs swing once with the body and settle, they
+	# don't flap back and forth (they hang on the pelvis, not the animated shins)
+	var cg := _cloth_grab_run("Truck Driver")
+	check("cloth: pant legs stay calm through a Truck Driver grab", cg["rev"] <= 1 and cg["max_u"] <= 0.8,
+		"largest swing %.3f m, fastest %.2f m/s, %d reversals" % [cg["max_x"], cg["max_u"], cg["rev"]])
+	s = world.skier
 	# 2. no tuck: once you're moving, W (pole push) adds nothing
 	s = _settle_on(spot["pos"], spot["yaw"])
 	_run(s, 2.0, {})

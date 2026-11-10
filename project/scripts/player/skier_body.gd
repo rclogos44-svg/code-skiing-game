@@ -335,10 +335,11 @@ var preview_grab := ""
 ## body, the back of the hood, the cuff end of each sleeve; and which spring drives each.
 ## Cloth springs: [stiffness, damping ratio, air drag, max offset (m), landing kick (s), inertia].
 ## Each hangs on its own anchor point on the body (see _cloth_anchor): sleeves / waist and hood
-## (jacket), and each baggy pant leg.  The hood is loose and bouncy, the pants heavier, the sleeves
-## tight.  Inertia < 1: fabric lying on the body is partly carried along by friction.
+## (jacket), and each baggy pant leg.  The hood is loose and bouncy, the pants heavier and well
+## damped (thick fabric swings and settles, it doesn't flap about), the sleeves tight.  Inertia < 1:
+## fabric lying on the body is partly carried along by friction.
 const CLOTH_SPRING := {"sleeves": [180.0, 0.32, 0.01, 0.03, 0.02, 0.5], "hood": [55.0, 0.2, 0.018, 0.09, 0.1, 0.4],
-	"pant_l": [95.0, 0.26, 0.014, 0.05, 0.045, 0.5], "pant_r": [95.0, 0.26, 0.014, 0.05, 0.045, 0.5]}
+	"pant_l": [95.0, 0.55, 0.012, 0.035, 0.04, 0.35], "pant_r": [95.0, 0.55, 0.012, 0.035, 0.04, 0.35]}
 var _cloth := {}                # spring -> [offset, velocity, anchor pos, anchor vel, anchor acc] (world)
 var _cloth_air := false
 var _cloth_vy := 0.0
@@ -585,16 +586,19 @@ func _process(delta: float) -> void:
 	_cloth_apply()
 
 
-## Where each cloth spring hangs: the hood from the upper back, each pant leg from its lower leg,
-## the sleeve ends and bloused waist from the chest.
+## Where each cloth spring hangs: the hood from the upper back, the sleeve ends and the hem from the
+## chest, each pant leg from a point fixed below the pelvis (where the shin is in the ski stance).
+## The pants hang on the pelvis, not the animated shin, so his own leg moves (a grab pulling the
+## knees up, legs soaking up a bump) don't shake the fabric; what moves the whole body (landings,
+## spins, flips, the wind) does.
 func _cloth_anchor(key: String) -> Vector3:
 	var tb := torso_basis
 	match key:
 		"hood":
 			return joints["chest"] + tb.y * -0.1 + tb.z * 0.15
 		"pant_l", "pant_r":
-			var sd: String = key.right(1)
-			return (joints["ankle_" + sd] as Vector3).lerp(joints["knee_" + sd], 0.3)
+			var pb := pelvis_basis.orthonormalized()
+			return (joints["pelvis"] as Vector3) + pb * Vector3(-0.1 if key == "pant_l" else 0.1, -0.6, -0.15)
 	return joints["chest"]
 
 

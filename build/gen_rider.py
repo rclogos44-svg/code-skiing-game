@@ -270,30 +270,38 @@ def pants_solid(p, folds=True):
     for sd in ("l", "r"):
         S, TH, R, SEG, L, pts = leg_coords(p, sd)
         k_s = np.array([0.0, 0.44, 0.87, 0.96])  # approx arc positions of the control points
-        rad = np.interp(S, [0.0, 0.1, 0.2, 0.44, 0.62, 0.84, 0.9, 0.99], [0.094, 0.104, 0.11, 0.099, 0.097, 0.103, 0.109, 0.116])
+        # baggy and straight: as roomy at the knee as at the thigh (a leg that narrows at the knee
+        # pinches when the knee bends past the stance it was made in), widening a little to the hem;
+        # slimmer only at the very top, under the jacket
+        rad = np.interp(S, [0.0, 0.1, 0.2, 0.44, 0.62, 0.84, 0.9, 0.99], [0.096, 0.11, 0.118, 0.118, 0.115, 0.117, 0.12, 0.124])
         leg = R - rad
         if folds:
             disp = np.zeros(len(p))
             # stacking above the boot: tilted, wobbly rings with a crease between each
-            for s0, a, tilt, ph in ((0.975, 0.009, 0.02, 0.3), (0.935, 0.01, -0.025, 2.0), (0.893, 0.008, 0.03, 4.1),
-                                    (0.852, 0.006, -0.02, 1.0)):
+            for s0, a, tilt, ph in ((0.975, 0.006, 0.02, 0.3), (0.935, 0.007, -0.025, 2.0), (0.893, 0.006, 0.03, 4.1),
+                                    (0.852, 0.004, -0.02, 1.0)):
                 sc = s0 + tilt * np.cos(TH - ph) + 0.008 * np.sin(2 * TH + ph)
                 disp += a * np.exp(-((S - sc) / 0.012) ** 2) - a * 0.6 * np.exp(-((S - sc - 0.02) / 0.008) ** 2)
-            # behind the knee: crushed creases (the knee is bent in the bind pose)
+            # behind the knee: a few soft creases (the knee is bent in the bind pose)
             back = np.exp(-(wrap(TH - np.pi) / 0.9) ** 2)
-            for s0, a in ((0.39, 0.006), (0.425, 0.008), (0.46, 0.007), (0.495, 0.005)):
+            for s0, a in ((0.40, 0.004), (0.44, 0.005), (0.48, 0.004)):
                 sc = s0 + 0.01 * np.sin(TH * 2.0 + s0 * 40)
-                disp += back * (a * np.exp(-((S - sc) / 0.009) ** 2) - a * 0.7 * np.exp(-((S - sc - 0.017) / 0.006) ** 2))
+                disp += back * (a * np.exp(-((S - sc) / 0.013) ** 2) - a * 0.5 * np.exp(-((S - sc - 0.022) / 0.009) ** 2))
             # hip crease at the top front of the thigh, and a fold from the crotch down the inside
             front = np.exp(-(wrap(TH) / 0.9) ** 2)
             for s0, a in ((0.06, 0.006), (0.1, 0.005)):
                 disp += front * a * np.exp(-((S - s0 - 0.01 * np.cos(TH * 3)) / 0.01) ** 2)
             inner = np.exp(-(wrap(TH + side_sign(sd) * np.pi / 2) / 0.5) ** 2)
             disp += inner * 0.005 * np.exp(-((S - 0.16) / 0.06) ** 2) * np.cos((S - 0.16) * 30)
-            # long drape lines down the shin front and the thigh side
-            for th0, s_a, s_b, a in ((0.35, 0.5, 0.82, 0.004), (-0.4, 0.55, 0.8, 0.0035), (side_sign(sd) * 1.4, 0.12, 0.36, 0.004)):
-                win = sstep(s_a, s_a + 0.05, S) * (1.0 - sstep(s_b - 0.05, s_b, S))
-                disp += a * win * np.exp(-(wrap(TH - th0 - 0.6 * (S - s_a)) / 0.18) ** 2)
+            # long drape folds hanging down the shin and the thigh (a ridge with a soft valley beside
+            # it), so the baggy leg reads as fabric, not a smooth balloon
+            ss = side_sign(sd)
+            for th0, s_a, s_b, a in ((0.35, 0.5, 0.84, 0.005), (-0.4, 0.55, 0.84, 0.0045), (ss * 1.4, 0.12, 0.36, 0.004),
+                                     (ss * 2.2, 0.52, 0.86, 0.005), (-ss * 2.0, 0.54, 0.86, 0.004), (0.05, 0.1, 0.34, 0.0035),
+                                     (-ss * 0.9, 0.14, 0.36, 0.003)):
+                win = sstep(s_a, s_a + 0.06, S) * (1.0 - sstep(s_b - 0.06, s_b, S))
+                dth = wrap(TH - th0 - 0.6 * (S - s_a))
+                disp += a * win * (np.exp(-(dth / 0.17) ** 2) - 0.45 * np.exp(-((dth - 0.3) / 0.12) ** 2))
             leg = leg - disp * sstep(0.02, 0.06, S)
         d = smin(d, leg, 0.05)
     if folds:
@@ -349,7 +357,7 @@ def leg_weights(p, jacket=False):
         wt = sstep(lo, lo + 0.11, S) * on_side
         # knee: thigh -> shin across a band around the bisector, sharper behind the knee
         knee_s = 0.44
-        band = np.where(np.abs(wrap(TH)) > np.pi / 2, 0.035, 0.06)
+        band = np.where(np.abs(wrap(TH)) > np.pi / 2, 0.05, 0.09)     # wide enough to bend smoothly
         ws = sstep(knee_s - band, knee_s + band, S) * on_side
         # ankle: the stacked hem partly follows the boot
         wf = sstep(0.9, 1.0, S) * 0.35 * on_side
@@ -396,7 +404,7 @@ def arm_coords(p, sd):
 # rows: y, half width, front depth, back depth, exponent.  Hip-length: it hangs over the pants'
 # waistband (about 2 cm clear of them so the hem never cuts into them), straight and fitted through
 # the waist and chest, square shoulders.
-TORSO = [[-0.03, 0.222, 0.15, 0.162, 2.8], [0.04, 0.222, 0.15, 0.158, 2.8], [0.08, 0.21, 0.142, 0.15, 2.6],
+TORSO = [[-0.03, 0.222, 0.155, 0.162, 2.8], [0.04, 0.222, 0.155, 0.158, 2.8], [0.08, 0.21, 0.142, 0.15, 2.6],
          [0.12, 0.2, 0.136, 0.146, 2.5], [0.16, 0.199, 0.134, 0.14, 2.6], [0.26, 0.205, 0.137, 0.13, 2.7],
          [0.36, 0.215, 0.136, 0.126, 2.8], [0.42, 0.226, 0.128, 0.12, 2.7], [0.46, 0.214, 0.116, 0.112, 2.5],
          [0.5, 0.165, 0.098, 0.098, 2.2], [0.535, 0.115, 0.086, 0.09, 2.0], [0.57, 0.095, 0.082, 0.086, 2.0]]
