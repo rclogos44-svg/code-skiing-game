@@ -227,6 +227,7 @@ func teleport(pos: Vector3, yaw: float, initial_speed := 0.0, keep_mode := false
 	off_angle = 0.0
 	off_max_tilt = 0.0
 	_reset_trick_input()
+	_latched.clear()                    # nothing held from before the teleport stays latched
 	if not keep_mode and mode != Mode.SKI:
 		mode = Mode.SKI
 		mode_changed.emit(mode)
@@ -597,19 +598,24 @@ func _start_trick_in_air(t: Dictionary, strength: float) -> void:
 ## toward the lead shoulder, and leans up toward the spin axis by `elev` (a cork stays a cork -
 ## never fully inverted - while rodeos and mistys go feet over head).  Spin-led families start the
 ## spin at once and drop into the off-axis flip; flip-led ones go back / forward first and the
-## spin grows.  Rates are rad/s at no charge -> full charge.
+## spin grows.  Timing is fitted to the flight (see _start_offaxis): the off-axis flip is spread
+## over the air, the spin is a whole number of half-turns over it.
 ##   flip: +1 back, -1 forward; roll / elev in degrees; flip_in / spin_in: ramp-in times (s)
+##   spin_rate: the spin speed (rad/s) he aims for at no charge -> full charge, which picks how many
+##   half-turns fit in the air; halves: fewest half-turns; spin_max: top spin speed (rad/s)
 const OFFAXIS := {
-	"cork": {"flip": 1.0, "roll": 60.0, "elev": 42.0, "min_tilt": 80.0, "flip_rate": [3.6, 4.8], "spin_rate": [4.4, 6.8], "flip_in": 0.25, "spin_in": 0.05,
-		"tuck": 0.85, "spin_max": 8.5},
-	"bio": {"flip": -1.0, "roll": 55.0, "elev": 36.0, "min_tilt": 60.0, "flip_rate": [3.6, 4.8], "spin_rate": [4.2, 6.4], "flip_in": 0.25, "spin_in": 0.05,
+	"cork": {"flip": 1.0, "roll": 60.0, "elev": 42.0, "min_tilt": 80.0, "spin_rate": [3.4, 5.0], "halves": 2, "flip_in": 0.25, "spin_in": 0.05,
+		"tuck": 0.85, "spin_max": 8.0},
+	"bio": {"flip": -1.0, "roll": 55.0, "elev": 36.0, "min_tilt": 60.0, "spin_rate": [3.3, 4.9], "halves": 2, "flip_in": 0.25, "spin_in": 0.05,
 		"tuck": 0.8, "spin_max": 8.0},
-	"rodeo": {"flip": 1.0, "roll": 28.0, "elev": 6.0, "min_tilt": 120.0, "flip_rate": [4.4, 5.8], "spin_rate": [1.9, 3.0], "flip_in": 0.05, "spin_in": 0.35,
-		"tuck": 0.6, "spin_max": 6.0},
-	"misty": {"flip": -1.0, "roll": 30.0, "elev": 6.0, "min_tilt": 120.0, "flip_rate": [4.4, 5.8], "spin_rate": [2.0, 3.2], "flip_in": 0.05, "spin_in": 0.35,
-		"tuck": 0.9, "spin_max": 6.0},
+	"rodeo": {"flip": 1.0, "roll": 28.0, "elev": 6.0, "min_tilt": 120.0, "spin_rate": [1.4, 2.2], "halves": 1, "flip_in": 0.05, "spin_in": 0.35,
+		"tuck": 0.6, "spin_max": 5.5},
+	"misty": {"flip": -1.0, "roll": 30.0, "elev": 6.0, "min_tilt": 120.0, "spin_rate": [1.4, 2.2], "halves": 1, "flip_in": 0.05, "spin_in": 0.35,
+		"tuck": 0.9, "spin_max": 5.5},
 }
-const OFF_MIN_AIR := 0.75           # less air than this (predicted) and an off-axis becomes a flat spin
+const OFF_MIN_AIR := 1.2            # less air than this (predicted) and an off-axis becomes a flat spin
+const OFF_FLIP_RATE := [2.2, 7.0]   # slowest / fastest off-axis flip (rad/s); big jumps get the slow end
+const OFF_FLIP_END := 0.2           # the off-axis flip is timed to come round this long before touchdown
 var off_family := ""
 var off_dir := 0.0                  # +1 right, -1 left
 var off_axis := Vector3.ZERO        # body frame (x right, y up, z back), turns with the spin
@@ -618,6 +624,9 @@ var off_rate := 0.0                 # flip rate (rad/s)
 var off_spin_rate := 0.0            # spin rate (rad/s, magnitude)
 var off_t := 0.0
 var off_max_tilt := 0.0             # largest angle of his body's up from the sky's (deg): the inversion
+var off_halves := 0                 # half-turns of spin the trick is going for
+var off_flip_base := 0.0            # the flip rate set at takeoff (rad/s)
+var _off_spin_prev := 0.0           # last frame's spin arrow (for fresh presses in the air)
 var charge_at_pop := 0.0
 
 
@@ -641,10 +650,23 @@ func _start_offaxis(fam: String, d: float, chg: float) -> void:
 	off_angle = 0.0
 	off_t = 0.0
 	off_max_tilt = 0.0
-	var fr: Array = F["flip_rate"]
+	# timing fitted to the flight: the off-axis flip is spread over the air (coming round just before
+	# the snow) instead of snapping round and waiting, and the spin is a whole number of half-turns
+	# over the same flight - more charge buys another half-turn, never a faster blur
+	var t_flip := maxf(T - OFF_FLIP_END - float(F["flip_in"]) * 0.5, 0.3)
+	off_rate = clampf(TAU / t_flip, OFF_FLIP_RATE[0], OFF_FLIP_RATE[1])
+	off_flip_base = off_rate
+	var t_spin := maxf(T - 0.05 - float(F["spin_in"]) * 0.5, 0.3)
 	var sr: Array = F["spin_rate"]
-	off_rate = lerpf(fr[0], fr[1], clampf(chg, 0.0, 1.0))
-	off_spin_rate = lerpf(sr[0], sr[1], clampf(chg, 0.0, 1.0))
+	var smax: float = F["spin_max"]
+	var most := maxi(floori(smax * t_spin / PI), int(F["halves"]))
+	off_halves = clampi(roundi(lerpf(sr[0], sr[1], clampf(chg, 0.0, 1.0)) * t_spin / PI), int(F["halves"]), most)
+	off_spin_rate = minf(off_halves * PI / t_spin, smax)
+	# arrows still held from the takeoff don't steer the rotation; a fresh press in the air does
+	for a in ARROW_BITS:
+		if _in(a) > 0.5:
+			_latched[a] = true
+	_off_spin_prev = 0.0
 	# the off-axis replaces the plain flip / spin of the pop
 	flip_vel = 0.0
 	air_pitch = 0.0
@@ -673,16 +695,28 @@ func _offaxis_step(dt: float, spin_in: float, flip_in: float) -> void:
 	var F: Dictionary = OFFAXIS[off_family]
 	var d := diff()
 	off_t += dt
-	# body english: spin key the trick's way spins faster, the other way slower (never reverses)
 	var smax: float = F["spin_max"]
-	var sr: Array = F["spin_rate"]
-	if absf(spin_in) > 0.1:
-		var want := smax if signf(spin_in) == off_dir else float(sr[0]) * 0.5
-		off_spin_rate = move_toward(off_spin_rate, want, float(d["air_spin"]) * 0.6 * dt)
-	# flip key the trick's way (Down for back families, Up for forward) flips faster, the other slower
+	# spin arrow pressed in the air: the trick's way adds a half-turn (if there's time for it at the
+	# family's top speed), the other way takes one off.  Holding it does nothing more.
+	var s_now := signf(spin_in) if absf(spin_in) > 0.5 else 0.0
+	if s_now != 0.0 and s_now != _off_spin_prev:
+		var left := maxf(land_t - 0.05, 0.05)
+		var done := absf(air_rotation)
+		var h := off_halves
+		if s_now == off_dir and (float(h + 1) * PI - done) / left <= smax:
+			h += 1
+		elif s_now != off_dir and h > int(F["halves"]) and float(h - 1) * PI > done + 0.3:
+			h -= 1
+		if h != off_halves:
+			off_halves = h
+			off_spin_rate = clampf((float(h) * PI - done) / left, 0.0, smax)
+	_off_spin_prev = s_now
+	# flip arrow the trick's way (Down for back families, Up for forward) flips a little faster, the
+	# other way a little slower
 	var flip_key := -flip_in * float(F["flip"])        # flip_in: + = forward lean
+	var fwant := off_flip_base
 	if absf(flip_key) > 0.1:
-		off_rate = move_toward(off_rate, 7.0 if flip_key > 0.0 else 2.4, float(d["air_flip"]) * 0.5 * dt)
+		fwant = off_flip_base * (1.25 if flip_key > 0.0 else 0.7)
 	var rate := off_rate
 	if off_angle >= TAU - 0.01 and absf(flip_key) < 0.1:
 		# flip finished: he's opened right up and waits for the snow (still pulling = over-rotating)
@@ -691,17 +725,19 @@ func _offaxis_step(dt: float, spin_in: float, flip_in: float) -> void:
 	elif off_angle > deg_to_rad(300.0):
 		# opening up: just enough to finish the flip at touchdown (never faster than he was going)
 		var need := (TAU - off_angle) / maxf(land_t - 0.1, 0.15)
-		off_rate = move_toward(off_rate, clampf(need, 0.6, off_rate), 9.0 * dt)
+		off_rate = move_toward(off_rate, clampf(need, 0.6, maxf(off_rate, fwant)), 9.0 * dt)
+		rate = off_rate
+	else:
+		off_rate = move_toward(off_rate, fwant, 3.0 * dt)
 		rate = off_rate
 	off_angle = minf(off_angle + rate * smoothstep(0.0, float(F["flip_in"]) + 0.001, off_t) * dt, TAU + 0.35)
+	# spin: Easy / Normal steer it onto the chosen half-turn at touchdown; on Realistic it keeps the
+	# speed it left the lip with
+	if float(d["level"]) > 0.0 and off_t > float(F["spin_in"]):
+		var rem := maxf(float(off_halves) * PI - absf(air_rotation), 0.0)
+		var need_s := rem / maxf(land_t - 0.03, 0.08)
+		off_spin_rate = move_toward(off_spin_rate, clampf(need_s, 0.0, smax), (2.0 + 4.0 * float(d["level"])) * dt)
 	var spin := off_spin_rate * smoothstep(0.0, float(F["spin_in"]) + 0.001, off_t)
-	# spin landing help: within 35 deg of a half-turn just before touchdown, ease onto it
-	if float(d["level"]) > 0.0 and land_t < 0.4:
-		var rot := absf(air_rotation)
-		var rem := roundf(rot / PI) * PI - rot
-		if absf(rem) < deg_to_rad(35.0) and rem > -deg_to_rad(35.0):
-			var need_s := rem / maxf(land_t, 0.08)
-			spin = move_toward(spin, clampf(spin + need_s * 0.6, 0.0, smax), float(d["level"]) * 6.0 * dt)
 	spin_vel = off_dir * spin
 	# how inverted he really is (for naming): his body's up against the sky
 	var b := Basis(off_axis.normalized(), off_angle)
@@ -1044,7 +1080,7 @@ func _air_step(dt: float, spin_in: float, flip_in: float) -> void:
 	# faster (doubles, triples); let go and it opens up again to slow down and spot the landing
 	var pulling := absf(flip_in) > 0.1 and absf(air_pitch) > TAU * 0.7 and signf(flip_in) == signf(flip_vel)
 	flip_tuck = move_toward(flip_tuck, 1.0 if pulling else 0.0, (4.0 if pulling else 3.0) * dt)
-	var w_mul := 1.0 + 0.3 * compact
+	var w_mul := 1.0 if off_family != "" else 1.0 + 0.3 * compact     # off-axis timing already allows for the tuck
 	heading = wrapf(heading - spin_vel * w_mul * dt, -PI, PI)
 	air_rotation += spin_vel * w_mul * dt
 	air_pitch += flip_vel * lerpf(0.85, 1.4, flip_tuck) * dt

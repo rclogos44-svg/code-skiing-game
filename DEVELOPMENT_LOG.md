@@ -742,3 +742,24 @@ Details, research links, the control table and tuning locations: FREESTYLE.md.
   on faces turned up with a patchy edge plus a small base drift; rock draw distance capped at 1.4 km.
 - Checks: rodeo / misty / cork / bio off Ridgeline's XL (prepared, buffered, land clean, named);
   cloth; new park kickers. --test=offaxis_anim, --test=rocks, --test=perf render / profile.
+
+## Jacket over the pants, shorter neck, slower off-axis tricks
+
+- Jacket: hip length and hanging over the pants (not tucked in), still fitted. Its hem follows the
+  hip line (just over the belt in front where the thighs come out, a little lower at the back), open
+  and lined, with soft folds dying out above it and hem sway in the cloth motion. The lower torso
+  sections were fitted numerically to clear the pants by 2.1-3.6 cm all round, so the hem never cuts
+  into them; the pants' seat and the top of the thighs (now under the jacket) are cut a little closer
+  so the jacket doesn't flare. The legs keep their bagginess.
+- Neck: the head sits 3 cm closer to the chest (SkierBody.NECK_LEN 0.16, gen_rider J["head"]) and
+  the collar is 3 cm lower, so the collar meets the goggles instead of a tall tube of gaiter.
+- Off-axis timing is fitted to the jump: the off-axis flip is spread over the flight (coming round
+  ~0.2 s before the snow), the spin is a whole number of half-turns over the same flight, and charge
+  buys another half-turn instead of a faster spin. Arrows still held from the takeoff no longer
+  speed the rotation up (that pushed the spin to ~490 deg/s and the flip to ~400 deg/s); a fresh
+  press of Left / Right in the air adds or removes a half-turn. Easy / Normal steer the spin onto
+  its half-turn; Realistic keeps the takeoff speed. Off-axis needs 1.2 s of air (else a flat spin).
+  Off Ridgeline's XL with the arrows held: Cork / Bio 540 at ~294 deg/s spin and ~215 deg/s flip,
+  Rodeo / Misty 540 at ~107 deg/s spin and ~203 deg/s flip (was Cork 720 at up to ~490 deg/s).
+- Teleporting clears latched arrows. New check: the off-axis tricks with both arrows held through
+  the air stay under 6 rad/s spin and 4.5 rad/s flip. Physics 167/167.

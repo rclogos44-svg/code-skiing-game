@@ -72,7 +72,7 @@ def wrap(a):
 # over the skis, knees ~80 deg, elbows out and bent), so skiing is a small deformation of it; the
 # torso is modelled upright.  Bone lengths match SkierBody (thigh 0.44, shin 0.43, arms 0.29 / 0.27).
 J = {"pelvis": np.zeros(3), "waist": np.array([0, 0.07, 0.0]), "lumbar": np.array([0, 0.23, 0.0]),
-     "thoracic": np.array([0, 0.39, 0.0]), "chest": np.array([0, 0.54, 0.0]), "head": np.array([0, 0.73, 0.0])}
+     "thoracic": np.array([0, 0.39, 0.0]), "chest": np.array([0, 0.54, 0.0]), "head": np.array([0, 0.70, 0.0])}
 for _s, _sd in ((-1.0, "l"), (1.0, "r")):
     J["hip_" + _sd] = np.array([_s * 0.095, -0.04, 0.0])
     J["knee_" + _sd] = J["hip_" + _sd] + 0.44 * nrm([_s * 0.079, -0.268, -0.339])
@@ -262,14 +262,15 @@ def leg_coords(p, sd):
 def pants_solid(p, folds=True):
     seat = loft(p, [[-0.19, 0.08, 0.05, 0.06, 2.0], [-0.16, 0.125, 0.085, 0.1, 2.1], [-0.12, 0.158, 0.104, 0.122, 2.3],
                     [-0.07, 0.18, 0.118, 0.138, 2.4],
-                    [0.02, 0.19, 0.128, 0.148, 2.4], [0.08, 0.19, 0.13, 0.144, 2.4], [0.14, 0.188, 0.13, 0.142, 2.4]], zc=0.004)
+                    # above the hip the jacket hangs over the waistband, so the seat is cut closer there
+                    [0.02, 0.178, 0.118, 0.138, 2.4], [0.08, 0.168, 0.112, 0.128, 2.4], [0.14, 0.164, 0.11, 0.124, 2.4]], zc=0.004)
     seat = np.maximum(seat, p[:, 1] - 0.16)
     seat = smax(seat, -0.19 - p[:, 1], 0.04)         # a rounded seat, no flat underside
     d = seat
     for sd in ("l", "r"):
         S, TH, R, SEG, L, pts = leg_coords(p, sd)
         k_s = np.array([0.0, 0.44, 0.87, 0.96])  # approx arc positions of the control points
-        rad = np.interp(S, [0.0, 0.1, 0.44, 0.62, 0.84, 0.9, 0.99], [0.116, 0.112, 0.099, 0.097, 0.103, 0.109, 0.116])
+        rad = np.interp(S, [0.0, 0.1, 0.2, 0.44, 0.62, 0.84, 0.9, 0.99], [0.094, 0.104, 0.11, 0.099, 0.097, 0.103, 0.109, 0.116])
         leg = R - rad
         if folds:
             disp = np.zeros(len(p))
@@ -303,7 +304,7 @@ def pants_solid(p, folds=True):
 class Pants(Garment):
     def sdf(self, p):
         d = pants_solid(p)
-        # waistband: open at the top, the jacket tucked inside
+        # waistband: open at the top (hidden under the jacket hem)
         d = opening(d, p[:, 1] - pants_top(p), 0.1, WALL)
         for sd in ("l", "r"):
             q = boot_local(p, sd)
@@ -359,9 +360,14 @@ def leg_weights(p, jacket=False):
     return w
 
 
-# --- jacket: fitted, tucked into the pants' waistband (it bags a little over the band)
+# --- jacket: fitted, hip length, hanging a few cm over the pants' waistband (not tucked in)
 WALL = 0.0145                 # hem / cuff / collar thickness (>= 2 grid cells)
-JACKET_BOTTOM = -0.07         # the jacket ends here, inside the pants
+
+
+def jacket_hem(p):
+    """Height of the jacket's hem: just over the belt at the front (where the thighs come out
+    from under it in the ski stance), dropping a little at the back over the top of the seat."""
+    return 0.045 - 0.045 * sstep(-0.06, 0.15, p[:, 2])
 
 
 def pants_top(p):
@@ -387,16 +393,17 @@ def arm_coords(p, sd):
     return poly_coords(p, pts, arm_inner(sd)) + (pts,)
 
 
-# rows: y, half width, front depth, back depth, exponent.  Narrow where it goes into the pants,
-# bloused just above the waistband, fitted through the chest, square shoulders.
-TORSO = [[-0.09, 0.158, 0.104, 0.113, 2.4], [0.0, 0.161, 0.106, 0.116, 2.4], [0.07, 0.166, 0.11, 0.12, 2.4],
-         [0.115, 0.19, 0.128, 0.132, 2.5], [0.16, 0.198, 0.134, 0.132, 2.6], [0.26, 0.205, 0.137, 0.13, 2.7],
+# rows: y, half width, front depth, back depth, exponent.  Hip-length: it hangs over the pants'
+# waistband (about 2 cm clear of them so the hem never cuts into them), straight and fitted through
+# the waist and chest, square shoulders.
+TORSO = [[-0.03, 0.222, 0.15, 0.162, 2.8], [0.04, 0.222, 0.15, 0.158, 2.8], [0.08, 0.21, 0.142, 0.15, 2.6],
+         [0.12, 0.2, 0.136, 0.146, 2.5], [0.16, 0.199, 0.134, 0.14, 2.6], [0.26, 0.205, 0.137, 0.13, 2.7],
          [0.36, 0.215, 0.136, 0.126, 2.8], [0.42, 0.226, 0.128, 0.12, 2.7], [0.46, 0.214, 0.116, 0.112, 2.5],
          [0.5, 0.165, 0.098, 0.098, 2.2], [0.535, 0.115, 0.086, 0.09, 2.0], [0.57, 0.095, 0.082, 0.086, 2.0]]
 
 
 def collar_sdf(p):
-    return tube(p, [np.array([0, 0.5, 0.004]), np.array([0, 0.64, -0.008])], [0.088, 0.084])
+    return tube(p, [np.array([0, 0.5, 0.004]), np.array([0, 0.61, -0.007])], [0.088, 0.084])
 
 
 # --- the hood, down: a soft hood lying on the upper back, attached round the collar, its face
@@ -450,7 +457,7 @@ def jacket_solid(p, folds=True, with_hood=True):
         d = smin(d, sl, 0.035)
     if folds:
         d = d - jacket_folds(p)
-    d = np.maximum(d, JACKET_BOTTOM - p[:, 1])          # tucked: the bottom is hidden in the pants
+    d = np.maximum(d, jacket_hem(p) - 0.05 - p[:, 1])   # closed well below the hem (Jacket.sdf opens it)
     if with_hood:
         d = smin(d, hood_sdf(p), 0.02)
     return d
@@ -462,10 +469,10 @@ def jacket_folds(p):
     disp = np.zeros(len(p))
     front = np.exp(-(th / 1.1) ** 2)
     body = 1.0 - sstep(0.4, 0.47, y)
-    # bloused over the waistband: soft pleats all round, and the overhang's lower edge
-    blouse = sstep(0.09, 0.115, y) * (1.0 - sstep(0.15, 0.2, y))
-    disp += blouse * 0.004 * np.sin(th * 9 + 0.7 * np.sin(th * 3))
-    disp += 0.004 * np.exp(-((y - 0.118) / 0.008) ** 2)
+    # the hem hangs over the pants: a few soft vertical folds dying out above it
+    above = y - jacket_hem(p)
+    drape = 1.0 - sstep(0.02, 0.1, above)
+    disp += drape * 0.003 * np.sin(th * 7 + 0.8 * np.sin(th * 2.3 + 1.0))
     # belly: a couple of horizontal folds as he leans forward
     for y0, a in ((0.17, 0.005), (0.22, 0.004)):
         yc = y0 + 0.01 * np.sin(th * 3 + y0 * 30)
@@ -482,6 +489,8 @@ def jacket_folds(p):
 class Jacket(Garment):
     def sdf(self, p):
         d = jacket_solid(p)
+        # open hem with a lined inside, hanging over the pants
+        d = opening(d, jacket_hem(p) - p[:, 1], 0.07, WALL)
         # cuffs
         for sd in ("l", "r"):
             pts = arm_pts(sd)
@@ -490,7 +499,7 @@ class Jacket(Garment):
             near = length(p - pts[2]) < 0.16
             d = opening(d, np.where(near, cut, -1.0), 0.08, WALL)
         # collar top (higher at the back)
-        ct = 0.618 + 0.03 * sstep(-0.08, 0.08, p[:, 2])
+        ct = 0.588 + 0.03 * sstep(-0.08, 0.08, p[:, 2])
         near = (np.abs(p[:, 0]) < 0.14) & (p[:, 1] > 0.5) & (p[:, 2] < 0.075)
         d = opening(d, np.where(near, p[:, 1] - ct, -1.0), 0.09, WALL)
         return d
@@ -500,12 +509,12 @@ class Jacket(Garment):
         y = p[:, 1]
         # spine: bands up the back, eased into each other; everything inside the pants is pelvis
         ws = [B["pelvis"], B["sp1"], B["sp2"], B["sp3"], B["neck"]]
-        ys = [0.08, 0.2, 0.33, 0.47, 0.63]
+        ys = [0.08, 0.2, 0.33, 0.47, 0.6]
         prof = np.zeros((len(p), 5))
         for i in range(5):
             prof[:, i] = np.exp(-((y - ys[i]) / 0.08) ** 2)
         prof[:, 0] = np.where(y < ys[0], 1.0, prof[:, 0])
-        prof[:, 4] *= sstep(0.56, 0.62, y)
+        prof[:, 4] *= sstep(0.53, 0.59, y)
         prof /= prof.sum(1, keepdims=True)
         for i, bi in enumerate(ws):
             w[:, bi] = prof[:, i]
@@ -523,10 +532,10 @@ class Jacket(Garment):
         return w
 
     def extra(self, p):
-        """r: sleeve-end / blouse sway, a: hood sway (more toward the hood's hanging point)."""
+        """r: sleeve-end / hem sway, a: hood sway (more toward the hood's hanging point)."""
         e = np.zeros((len(p), 4))
         y = p[:, 1]
-        sw = 0.5 * sstep(0.09, 0.12, y) * (1.0 - sstep(0.16, 0.22, y))        # the bloused overhang
+        sw = 0.4 * (1.0 - sstep(0.0, 0.1, y - jacket_hem(p)))                 # the hem over the pants
         for sd in ("l", "r"):
             S, TH, R, SEG, L, pts = arm_coords(p, sd)
             on_arm = (R < 0.1) & (side_sign(sd) * p[:, 0] > 0.15)
@@ -980,11 +989,11 @@ def limb_proj(pts, inner, R):
 def jacket_charts():
     ch = {"torso": cyl_proj([0, 0, 0.006], [0, 1, 0], [0, 0, -1], 0.2),
           "yoke": planar_proj([0, 0.5, 0], [1, 0, 0], [0, 0, 1]),
-          "collar": cyl_proj([0, 0.5, 0.004], [0, 0.14, -0.012], [0, 0, -1], 0.088),
+          "collar": cyl_proj([0, 0.5, 0.004], [0, 0.11, -0.011], [0, 0, -1], 0.088),
           "hood": planar_proj([0, 0.5, 0.15], [1, 0, 0], [0, -0.5, 0.87]),
           "hood_lin": planar_proj([0, 0.5, 0.15], [1, 0, 0], [0, -0.5, 0.87]),
           "hem_lin": cyl_proj([0, 0, 0.006], [0, 1, 0], [0, 0, -1], 0.19),
-          "collar_lin": cyl_proj([0, 0.5, 0.004], [0, 0.14, -0.012], [0, 0, -1], 0.075)}
+          "collar_lin": cyl_proj([0, 0.5, 0.004], [0, 0.11, -0.011], [0, 0, -1], 0.075)}
     for sd in ("l", "r"):
         ch["sleeve_" + sd] = limb_proj(arm_pts(sd), arm_inner(sd), 0.07)
         ch["cuff_lin_" + sd] = limb_proj(arm_pts(sd), arm_inner(sd), 0.055)
@@ -1167,8 +1176,8 @@ def paint_jacket(P, N, lin, chart_name):
     on_front = front & torso_like
     hgt += np.where(on_front, 0.0012 * flap + seam(x - 0.027) + stitch(x - 0.027, 0.004), 0.0)
     lum *= np.where(on_front, 1.0 - 0.25 * np.exp(-((x - 0.0285) / 0.0012) ** 2), 1.0)
-    garage = on_front & (np.abs(x - 0.01) < 0.012) & (y > 0.6)
-    acc = np.maximum(acc, garage * sstep(0.6, 0.605, y))
+    garage = on_front & (np.abs(x - 0.01) < 0.012) & (y > 0.57)
+    acc = np.maximum(acc, garage * sstep(0.57, 0.575, y))
     # side seams and yokes
     tor = chart_name == "torso"
     hgt += np.where(tor & (np.abs(x) > 0.14), seam(z - 0.012), 0.0)
@@ -1223,7 +1232,7 @@ def paint_jacket(P, N, lin, chart_name):
     hgt += np.where(hd, seam(x) * 0.8, 0.0)
     hgt += np.where(hd, stitch(hood_cut(P) + 0.012, 0.0) * 2.0, 0.0)
     # collar: stitch line round the top
-    ct = 0.618 + 0.03 * sstep(-0.08, 0.08, z)
+    ct = 0.588 + 0.03 * sstep(-0.08, 0.08, z)
     hgt += np.where(chart_name == "collar", stitch(y - ct + 0.012, 0.0) * 2.0, 0.0)
     # colour blocking: the yoke (shoulders), hood and cuffs a shade darker
     dark = np.zeros(n)

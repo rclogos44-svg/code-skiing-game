@@ -52,7 +52,8 @@ hold it. **Initiate** = press a second arrow while preparing. The prepared arrow
 | Left, then Up | Bio right (spin-led, forward) |
 | Right, then Up | Bio left |
 | Hold an arrow, let go of it alone | Straight pop (ollie); a tap under 0.1 s does nothing |
-| Keep the second arrow held in the air | Rotates faster that way (within the family's limit) |
+| Keep the second arrow held in the air (plain flips / spins) | Rotates faster that way (within a limit) |
+| Off-axis, in the air: press Left / Right again | One more half-turn the trick's way (if there's time), the other arrow one fewer; arrows still held from the takeoff do nothing |
 | Opposite arrow in the air | Slows the rotation (never reverses it) |
 | Up / Down in the air during a flip or off-axis | Flip faster / slower in that direction (limited) |
 | Q / E (+ W / S) in the air | Grabs: Mute / Safety, Tip / Japan, Blunt / Tail, both = Truck Driver |
@@ -76,8 +77,8 @@ Rules for the edge cases:
 - **Landing / crash**: 0.25 s after touchdown new presses are ignored; a crash clears everything.
 - **Leaving a jump while prepared but not initiated**: a straight air (the held arrow is ignored
   until let go).
-- **Low air**: an off-axis needing more than the predicted air time (< 0.75 s) becomes a flat
-  spin that way ("TOO LOW · SPIN"); flips from flat ground stay small because the pop is small.
+- **Low air**: an off-axis off a jump with less than 1.2 s of predicted air becomes a flat spin
+  that way ("TOO LOW · SPIN"); flips from flat ground stay small because the pop is small.
 - **Losing focus** (alt-tab, clicking outside the browser game): every held key is released and a
   half-prepared trick is dropped without popping. The web page never scrolls with the arrows.
 - Remapping: Settings > Controls (the arrow actions are lean_forward / lean_back / lean_left /
@@ -99,7 +100,13 @@ from axis-angle each frame) on top of the yaw: no Euler accumulation, no gimbal 
 | Rodeo | backflip axis rolled 28 deg, nearly flat | flip at once, spin grows over 0.35 s | arches back, head thrown over the trailing shoulder | feet over head (~160 deg) |
 | Misty | front-flip axis rolled 30 deg, nearly flat | flip-led | curls forward over the chest, tuck 0.9 | feet over head |
 
-Rates at no charge -> full charge, ramp times, tucks and the spin limit are all in OFFAXIS.
+Timing is fitted to the jump, so they never whip round: at the takeoff the predicted air time sets
+the off-axis flip rate so it comes round about 0.2 s before the snow (2.2-7 rad/s, the slow end on
+big jumps), and the spin is a whole number of half-turns spread over the flight. Charge picks how
+many half-turns (each family has an aim speed, `spin_rate`, at no / full charge: cork and bio
+3.4-5 rad/s, rodeo and misty 1.4-2.2), not a faster spin. Off Ridgeline's XL that is a Cork 540 and
+a Rodeo 540; pressing the spin arrow again in the air makes it a 720. Ramp times, tucks and the top
+spin speed are in OFFAXIS.
 Grabs work through all of them: the off-axis rotation is applied to the whole body around its
 centre of mass, and the grab is a pose in the body's own frame whose hand target is recomputed
 from the ski every frame.
@@ -108,7 +115,7 @@ Landing: the error between the body's up and the finished flip (from the off-axi
 replaces the plain flip error in the landing check; within tolerance he lands (a sketchy landing
 below the crash limit), past it he crashes ("landed on your back / head"). Help, only on Easy /
 Normal: after 300 deg he opens up just enough to finish the flip at the predicted touchdown, and
-a spin within 35 deg of a half-turn in the last 0.4 s is eased onto it.
+the spin is steered onto its half-turn at touchdown (on Realistic it keeps its takeoff speed).
 
 ## Grabs
 
@@ -152,7 +159,7 @@ mountain are unchanged (build/parks.py applies it after the features and on clea
 - Trick input: `Skier` constants PREP_MIN, TAKEOFF_BUFFER, LATE_WINDOW, RECOVER_TIME; `resolve_trick`
   is the mapping; charge time 0.55 s in `_arrow_tricks`.
 - Flip / spin pop: Skier.FLIP_POP, WIND_SPIN, SPIN_MAX, UNWIND_TIME.
-- Off-axis: Skier.OFFAXIS, OFF_MIN_AIR; air control rates use the difficulty's `air_spin` /
+- Off-axis: Skier.OFFAXIS, OFF_MIN_AIR, OFF_FLIP_RATE, OFF_FLIP_END; air control rates use the difficulty's `air_spin` /
   `air_flip`; landing help uses `level` (Skier.DIFFICULTIES).
 - Grabs: Skier.GRAB_IN / GRAB_OUT / GRAB_AUTO_RELEASE; poses in SkierBody.GRAB_POSES.
 - Off-axis body shapes: SkierBody._compute_pose (search "off-axis takeoff shapes").

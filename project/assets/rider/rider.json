@@ -37,7 +37,7 @@
   ],
   "head": [
    0.0,
-   0.73,
+   0.7,
    0.0
   ],
   "hip_l": [
@@ -138,13 +138,13 @@
    "group": "body",
    "material": "jacket",
    "name": "jacket",
-   "uv_per_m": 0.592041014533606
+   "uv_per_m": 0.538613357252871
   },
   {
    "group": "body",
    "material": "pants",
    "name": "pants",
-   "uv_per_m": 0.433237782181095
+   "uv_per_m": 0.436474899379391
   },
   {
    "group": "head",

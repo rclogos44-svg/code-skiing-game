@@ -126,6 +126,7 @@ var _fk := {}                    # leg forward kinematics for the current grab: 
 
 var _solved := {}                # grab name -> pose solved so the hand really holds the ski
 const SPINE_LIMITS := {"pitch": [0.0, 70.0], "twist": [-0.7, 0.7], "side": [-0.3, 0.3]}
+const NECK_LEN := 0.16          # chest joint to head centre (m); the rider mesh is built to it (gen_rider J["head"])
 const NECK_YAW := 80.0            # how far the head turns on the shoulders (deg)
 const NECK_PITCH := [-50.0, 35.0] # down / up (deg)
 
@@ -1014,13 +1015,13 @@ func _compute_pose(dt: float) -> void:
 		var gspec: Array = gl_pose["r"] if gl_pose.has("r") else gl_pose["l"]
 		var gsx: Transform3D = ski_l if gspec[0] == "l" else ski_r
 		var target := gsx.origin + gsx.basis * Vector3(0.0, 0.05, float(gspec[1]))
-		var loc := tb.orthonormalized().inverse() * (target - (chest + tb.y * 0.19)).normalized()
+		var loc := tb.orthonormalized().inverse() * (target - (chest + tb.y * NECK_LEN)).normalized()
 		var yaw := clampf(atan2(-loc.x, -loc.z), -deg_to_rad(NECK_YAW), deg_to_rad(NECK_YAW))
 		var lp := clampf(atan2(loc.y, Vector2(loc.x, loc.z).length()), deg_to_rad(NECK_PITCH[0]), deg_to_rad(NECK_PITCH[1]))
 		var hb_look := tb * Basis(Vector3.UP, yaw) * Basis(Vector3(1, 0, 0), lp)
 		hb = hb.orthonormalized().slerp(hb_look.orthonormalized(), clampf(look_w, 0.0, 1.0))
 	head_basis = hb.orthonormalized()
-	joints["head"] = chest + hb.y * 0.19
+	joints["head"] = chest + hb.y * NECK_LEN
 	# ---- arms
 	var plant_side := _update_pole_plant(dt)
 	for sd in ["l", "r"]:
@@ -1288,7 +1289,7 @@ func _compute_walk(dt: float) -> void:
 	joints["chest"] = chest
 	var hb := (B * Basis(Vector3(1, 0, 0), -0.08 + maxf(grade, 0.0) * 0.3)).orthonormalized()
 	head_basis = hb
-	joints["head"] = chest + hb.y * 0.19
+	joints["head"] = chest + hb.y * NECK_LEN
 	# arms: right hand steadies the skis on the shoulder, left arm swings with the poles
 	var swing_l := sin(ph + PI) * lerpf(0.16, 0.26, jog) * move
 	for sd in ["l", "r"]:
@@ -1365,7 +1366,7 @@ func _compute_seated(dt: float) -> void:
 	var look := 0.55 * sin(t * 0.21) + 0.2 * sin(t * 0.67)
 	var hb := (tb * Basis(Vector3.UP, look) * Basis(Vector3(1, 0, 0), -0.12 + 0.08 * sin(t * 0.37))).orthonormalized()
 	head_basis = hb
-	joints["head"] = chest + hb.y * 0.19
+	joints["head"] = chest + hb.y * NECK_LEN
 	for sd in ["l", "r"]:
 		var sgn := -1.0 if sd == "l" else 1.0
 		var sh := chest - tb.y * 0.07 + tb.x * (sgn * SHOULDER_HALF)

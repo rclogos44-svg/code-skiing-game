@@ -1106,26 +1106,41 @@ func _park_kickers() -> void:
 			var ocb := func(info): obox["info"] = info
 			s.landed.connect(ocb)
 			var pend := false
+			var flew := false
+			var max_spin := 0.0
+			var max_flip := 0.0
 			for i in 1200:
 				var keys := {}
 				var to_lip := (xlip - s.position).dot(xdir)
-				if not s.airborne and to_lip > 0.0:
+				# both arrows stay held from the initiation to the landing, as players do: that must
+				# not speed it up
+				if s.airborne or pend or to_lip > 0.0:
 					keys[ot[1]] = 1.0
-					if to_lip < 6.0:
+					if to_lip < 6.0 or s.airborne or pend:
 						keys[ot[2]] = 1.0
 				s.scripted_input = keys
 				s.step(1.0 / 120.0)
 				s.time += 1.0 / 120.0
 				pend = pend or s.trick_state == Skier.TrickState.PENDING
+				if s.airborne and s.off_family != "":
+					flew = true
+					max_spin = maxf(max_spin, absf(s.spin_vel))
+					max_flip = maxf(max_flip, s.off_rate)
 				if obox.has("info") or s.is_crashed:
 					break
 			s.landed.disconnect(ocb)
+			s.scripted_input = {}
+			s.step(1.0 / 120.0)                    # let go of everything before the next run
 			var oi: Dictionary = obox.get("info", {})
 			var otr: Dictionary = TrickSystem.evaluate(oi) if not oi.is_empty() else {}
 			check("off-axis: %s off the XL (prepared, buffered to the lip, lands clean, named from the motion)" % ot[0],
 				pend and not oi.is_empty() and oi["crash"] == "" and str(otr.get("name", "")).contains(ot[0]),
 				"'%s' %s · flip %.0f deg, max tilt %.0f deg, air %.2f s, waited for the lip %s" % [otr.get("name", "-"), oi.get("crash", "no landing"),
 				float(oi.get("off_flip", 0.0)), float(oi.get("off_tilt", 0.0)), float(oi.get("air_time", 0.0)), pend])
+			# arrows held through the air: the rotation stays at the speed fitted to the jump
+			check("off-axis: %s with the arrows held stays unhurried (spin <= 6, flip <= 4.5 rad/s)" % ot[0],
+				flew and max_spin <= 6.0 and max_flip <= 4.5,
+				"peak spin %.2f rad/s (%.0f deg/s), peak flip %.2f rad/s (%.0f deg/s)" % [max_spin, rad_to_deg(max_spin), max_flip, rad_to_deg(max_flip)])
 	s.scripted_input = {}
 	# Ridgeline's step-up, ridden straight from its quick drop: clears the gap, lands on the deck
 	# (not the face) and rides away
