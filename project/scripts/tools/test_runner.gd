@@ -60,6 +60,8 @@ func run(w: World) -> void:
 			await _rock_shots()
 		"cloth_grab":
 			_cloth_grab_report()
+		"grab_ride":
+			await _grab_ride_shots()
 		"perf":
 			await _perf()
 		_:
@@ -421,9 +423,22 @@ func _switch_shots() -> void:
 		s._cur_xform = s._compose_xform()
 		body._process(1.0 / 120.0)
 		if f in [36, 50, 64, 90, 250, 300, 480, 590]:
+			# the pose too, for gen_rider's posed previews (close-ups without the spray)
+			var dump := {"joints": {}, "bases": {}}
+			for k in body.joints:
+				var jv = body.joints[k]
+				if jv is Vector3:
+					dump["joints"][k] = [jv.x, jv.y, jv.z]
+			for bn in ["pelvis_basis", "torso_basis", "head_basis", "boot_l", "boot_r"]:
+				var bb: Basis = body.get(bn)
+				dump["bases"][bn] = [bb.x.x, bb.x.y, bb.x.z, bb.y.x, bb.y.y, bb.y.z, bb.z.x, bb.z.y, bb.z.z]
+			var fd := FileAccess.open(out_dir.path_join("pose_switch_%02d.json" % shot), FileAccess.WRITE)
+			fd.store_string(JSON.stringify(dump))
+			fd.close()
 			var fw := Vector3(-sin(s.heading), 0, -cos(s.heading))
 			var c: Vector3 = body.joints["pelvis"] + Vector3.UP * 0.4
-			var cam := c + fw * 3.0 + fw.cross(Vector3.UP) * (1.6 if shot % 2 == 0 else -1.6) + Vector3.UP * 0.6
+			var dd := float(Game.test_args.get("dist", 3.0))
+			var cam := c + fw * dd + fw.cross(Vector3.UP) * (dd * 0.53 if shot % 2 == 0 else -dd * 0.53) + Vector3.UP * 0.6
 			_free_cam(cam, c)
 			await _frames(2)
 			await _snap("switch_%02d" % shot)
@@ -613,8 +628,54 @@ func _offaxis_anim() -> void:
 ## pant-leg cloth springs do every 25 ms (offset, its speed, the anchor's acceleration, the gravity
 ## gate) - for tuning CLOTH_SPRING.
 func _cloth_grab_report() -> void:
-	var r := _cloth_grab_run(String(Game.test_args.get("grab", "Truck Driver")), true)
+	var r := _cloth_grab_run(String(Game.test_args.get("grab", "Truck Driver")), Game.test_args.has("trace"))
 	print("[TEST] cloth_grab max offset %.3f m, max speed %.2f m/s, reversals %d" % [r["max_x"], r["max_u"], r["rev"]])
+
+
+## --test=grab_ride [--grab=Truck Driver] [--dist=1.8]: rides a grab off Main Park's medium kicker
+## (the real jump, cloth and all) and snaps it from the side every 0.15 s of the flight.
+func _grab_ride_shots() -> void:
+	var s := world.skier
+	var body = world.body
+	var st: Dictionary = world.park.park_start(0)
+	world.spawn(st["pos"], st["yaw"])
+	await _frames(10)
+	s.set_physics_process(false)
+	body.set_process(false)
+	var grab := String(Game.test_args.get("grab", "Truck Driver"))
+	var keys_for := {"Truck Driver": {"grab_left": 1.0, "grab_right": 1.0}, "Mute": {"grab_left": 1.0},
+		"Japan": {"grab_left": 1.0, "brake": 1.0}, "Blunt": {"grab_right": 1.0, "tuck": 1.0}}
+	var mk: Dictionary = {}
+	for k in world.terrain.layout["parks"][0]["kickers"]:
+		if k["size"] == "M":
+			mk = k
+	var md := Vector3(mk["dir"][0], 0, mk["dir"][1])
+	s.teleport(Vector3(mk["origin"][0], 0, mk["origin"][1]) - md * 12.0, Skier.yaw_of(md), float(mk["approach_speed"]) - 1.0)
+	var dd := float(Game.test_args.get("dist", 1.8))
+	var shot := 0
+	var next_t := 0.15
+	for i in 900:
+		var keys := {}
+		if s.airborne and s.air_time > 0.15:
+			keys = (keys_for.get(grab, {}) as Dictionary).duplicate()
+		s.scripted_input = keys
+		s.step(1.0 / 120.0)
+		s.time += 1.0 / 120.0
+		s._prev_xform = s._cur_xform
+		s._cur_xform = s._compose_xform()
+		body._process(1.0 / 120.0)
+		if s.airborne and s.air_time >= next_t:
+			next_t += 0.15
+			var fw := Vector3(-sin(s.heading), 0, -cos(s.heading))
+			var c: Vector3 = body.joints["pelvis"]
+			_free_cam(c + fw.cross(Vector3.UP) * dd + fw * 0.4 * dd + Vector3.UP * 0.3, c)
+			await _frames(2)
+			await _snap("ride_%s_%02d" % [grab.replace(" ", "_"), shot])
+			shot += 1
+		if not s.airborne and i > 300 and s.air_time == 0.0 and shot > 0:
+			break
+	s.scripted_input = {}
+	s.set_physics_process(true)
 
 
 ## Rides a grab off Main Park's medium kicker with the body posed every step; returns the pant
@@ -654,6 +715,24 @@ func _cloth_grab_run(grab: String, trace := false) -> Dictionary:
 			if u.length() > 0.05 and prev_u.length() > 0.05 and u.dot(prev_u) < 0.0:
 				out["rev"] += 1
 		prev_u = u
+		var dump_at := -1
+		for di in 4:
+			if s.airborne and s.grab_name != "" and absf(s.air_time - (0.4 + 0.25 * di)) < 0.0045:
+				dump_at = di
+		if dump_at >= 0:
+			# the held grab's pose, for gen_rider's posed previews
+			var dump := {"joints": {}, "bases": {}}
+			for k in body.joints:
+				var jv = body.joints[k]
+				if jv is Vector3:
+					dump["joints"][k] = [jv.x, jv.y, jv.z]
+			for bn in ["pelvis_basis", "torso_basis", "head_basis", "boot_l", "boot_r"]:
+				var bb: Basis = body.get(bn)
+				dump["bases"][bn] = [bb.x.x, bb.x.y, bb.x.z, bb.y.x, bb.y.y, bb.y.z, bb.z.x, bb.z.y, bb.z.z]
+			var fd := FileAccess.open(out_dir.path_join("pose_grab_%s_%d.json" % [grab.replace(" ", "_"), dump_at]), FileAccess.WRITE)
+			if fd:
+				fd.store_string(JSON.stringify(dump))
+				fd.close()
 		if trace and i % 3 == 0:
 			var up: Vector3 = body.pelvis_basis.y.normalized()
 			print("t %.3f air %s grab %-12s |x| %.3f |u| %.2f acc %.1f tilt %.0f" % [s.time, s.airborne, s.grab_name, x.length(), u.length(),
@@ -891,6 +970,26 @@ func _park_kickers() -> void:
 		check("riding switch: the head stays over one shoulder when the turn keys are tapped, moves for a held turn",
 			side_changes == 0 and bd._look_side < 0.0, "%d swaps while tapping; held left -> %s shoulder" % [side_changes,
 			"right" if bd._look_side < 0.0 else "left"])
+		# turning switch the upper body angulates out of the lean like it does riding forward (it used to
+		# bend the same way as the lean, nearly lying him down in the turn)
+		var side_tilt := 0.0
+		var lean_seen := 0.0
+		for f in 120:
+			sk.scripted_input = {"steer_left": 1.0}
+			sk.step(1.0 / 120.0)
+			sk.time += 1.0 / 120.0
+			sk._prev_xform = sk._cur_xform
+			sk._cur_xform = sk._compose_xform()
+			bd._process(1.0 / 120.0)
+			if f >= 60:
+				var hv := Vector3(sk.vel.x, 0.0, sk.vel.z).normalized()
+				var rt := hv.cross(Vector3.UP)
+				var ty: Vector3 = bd.torso_basis.y.normalized()
+				side_tilt = maxf(side_tilt, absf(atan2(ty.dot(rt), ty.dot(Vector3.UP))))
+				lean_seen = maxf(lean_seen, absf(bd._lean))
+		check("riding switch: in a turn the upper body stays more upright than the lean (angulation)",
+			sk.riding_switch and lean_seen > 0.15 and side_tilt < lean_seen * 0.85,
+			"lean %.0f deg, torso tilted sideways %.0f deg" % [rad_to_deg(lean_seen), rad_to_deg(side_tilt)])
 		# mid-air the head stays forward through a flip / spin; a front flip is tucked, never laid out
 		sk.airborne = true
 		sk.riding_switch = true

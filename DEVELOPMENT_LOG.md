@@ -777,3 +777,22 @@ Details, research links, the control table and tuning locations: FREESTYLE.md.
   back and forth between its limits at ~1 m/s. Heavier, better damped pant fabric (damping 0.55,
   play 3.5 cm). New check: through a Truck Driver the pant legs swing once and settle (0 reversals,
   0.53 m/s peak). --test=cloth_grab [--grab=...] prints the springs every 25 ms. Physics 168/168.
+
+## Switch turns, pants web, arms
+
+- Riding switch the body is turned round, so the lean is the other way in his own frame - the roll
+  allowed for that, but the angulation (upper body bending back toward upright), the head keeping
+  level, the inside ski leading and the inside hand didn't: in a switch turn they all bent INTO
+  the lean, laying the upper body down at ~1.6x the lean. They now use the body-frame lean. New
+  check: in a held switch turn the torso tilts sideways less than the lean (36 deg lean, 21 deg torso).
+- No pole plants while riding switch: the turn's inside is behind him, and the planting arm reached
+  across behind his back.
+- Pants: the baggier legs touched at the ankles in the bind pose, so the two legs were fused into one
+  piece of cloth that stretched into a web between them whenever the legs moved apart - in switch
+  turns and above all in the Truck Driver. The inside of each lower leg now hangs a little flatter
+  (the legs have a 3-9 cm gap all the way down) and the legs barely blend into each other.
+- The baked shading behind the knees and inside the elbows (folded in the bind pose) keeps a third
+  of its darkness so it doesn't smear down a straightened leg or arm.
+- A planted pole that can't stay within arm's reach comes out of the snow instead of stretching the
+  arm. --test=grab_ride [--grab=...] renders a real grab off a kicker; switch_shots dumps poses.
+  Physics 169/169.

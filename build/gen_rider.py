@@ -266,7 +266,7 @@ def pants_solid(p, folds=True):
                     [0.02, 0.178, 0.118, 0.138, 2.4], [0.08, 0.168, 0.112, 0.128, 2.4], [0.14, 0.164, 0.11, 0.124, 2.4]], zc=0.004)
     seat = np.maximum(seat, p[:, 1] - 0.16)
     seat = smax(seat, -0.19 - p[:, 1], 0.04)         # a rounded seat, no flat underside
-    d = seat
+    legs = []
     for sd in ("l", "r"):
         S, TH, R, SEG, L, pts = leg_coords(p, sd)
         k_s = np.array([0.0, 0.44, 0.87, 0.96])  # approx arc positions of the control points
@@ -274,6 +274,11 @@ def pants_solid(p, folds=True):
         # pinches when the knee bends past the stance it was made in), widening a little to the hem;
         # slimmer only at the very top, under the jacket
         rad = np.interp(S, [0.0, 0.1, 0.2, 0.44, 0.62, 0.84, 0.9, 0.99], [0.096, 0.11, 0.118, 0.118, 0.115, 0.117, 0.12, 0.124])
+        # the shins come close together in the ski stance: the inside of each lower leg hangs a
+        # little flatter, so the two legs never touch (touching legs get fused into one piece of
+        # cloth that stretches into a web between them once they move apart)
+        inside = np.exp(-(wrap(TH + side_sign(sd) * np.pi / 2) / 0.6) ** 2)
+        rad = rad - 0.024 * inside * sstep(0.58, 0.8, S)
         leg = R - rad
         if folds:
             disp = np.zeros(len(p))
@@ -303,7 +308,9 @@ def pants_solid(p, folds=True):
                 dth = wrap(TH - th0 - 0.6 * (S - s_a))
                 disp += a * win * (np.exp(-(dth / 0.17) ** 2) - 0.45 * np.exp(-((dth - 0.3) / 0.12) ** 2))
             leg = leg - disp * sstep(0.02, 0.06, S)
-        d = smin(d, leg, 0.05)
+        legs.append(leg)
+    # each leg blends smoothly into the seat, but the legs barely blend into each other
+    d = smin(seat, smin(legs[0], legs[1], 0.012), 0.05)
     if folds:
         d = d - fabric_noise(p, 0.0018)
     return d
@@ -916,6 +923,26 @@ def bake_ao(v, n, scene_fn):
     return np.clip(1.0 - occ * 1.25, 0.2, 1.0)
 
 
+def hinge_ao_mask(g, v):
+    """Where the baked shading only holds for the bind pose: behind the knees and inside the elbows,
+    which are folded in the bind pose but open right up in a grab or a layout (the dark fold would
+    then smear down the calf / forearm).  Returns 0..1."""
+    m = np.zeros(len(v))
+    if g.name == "pants":
+        for sd in ("l", "r"):
+            S, TH, R, SEG, L, pts = leg_coords(v, sd)
+            on = sstep(-0.02, 0.04, side_sign(sd) * v[:, 0])
+            back = sstep(1.2, 2.2, np.abs(wrap(TH)))
+            m = np.maximum(m, on * back * sstep(0.28, 0.36, S) * (1.0 - sstep(0.56, 0.66, S)))
+    elif g.name == "jacket":
+        for sd in ("l", "r"):
+            S, TH, R, SEG, L, pts = arm_coords(v, sd)
+            on = (R < 0.11) & (side_sign(sd) * v[:, 0] > 0.12)
+            inner = 1.0 - sstep(0.9, 1.7, np.abs(wrap(TH)))
+            m = np.maximum(m, on * inner * sstep(0.2, 0.25, S) * (1.0 - sstep(0.36, 0.42, S)))
+    return m
+
+
 # ------------------------------------------------------------------ preview
 def render_preview(meshes, path, view, size=(520, 900), extent=1.0, center=(0, -0.12, 0)):
     """meshes: list of (v, n, tris, color(N,3)). Orthographic, view = yaw degrees (0 = from the front)."""
@@ -1420,6 +1447,7 @@ def build_all(proj, prev=None, only=None):
     meshes_prev = []
     for g, v, n, tris in out:
         ao = bake_ao(v, n, scene)
+        ao = 1.0 - (1.0 - ao) * (1.0 - 0.65 * hinge_ao_mask(g, v))    # keep a third of it at the hinges
         ex = g.extra(v)
         w = g.weights(v)
         bi, bw = top4(w)

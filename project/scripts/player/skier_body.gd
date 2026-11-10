@@ -739,7 +739,10 @@ func _compute_pose(dt: float) -> void:
 	_lean_v += (w_lean * w_lean * (lean_t - _lean) - 2.0 * w_lean * _lean_v) * dt
 	_lean = clampf(_lean + _lean_v * dt, -0.9, 0.9)
 	# the lean is into the turn in the world; with the body turned round (switch) that's the other way
-	var L := Transform3D(root.basis * Basis(Vector3(0, 0, 1), -_lean * cos(s.stance_vis)), root.origin)
+	# round in his own frame - and so is everything that answers it (angulation, the head keeping
+	# level, the inside ski / hand leading), so they all use the body-frame lean `lean_b`
+	var lean_b := _lean * cos(s.stance_vis)
+	var L := Transform3D(root.basis * Basis(Vector3(0, 0, 1), -lean_b), root.origin)
 	# off-axis grab: the whole body tilts in the air (legs and skis swing out to one side)
 	var g_roll := float(GRAB_POSES[_ag].get("roll", 0.0)) * _gw_body if GRAB_POSES.has(_ag) else 0.0
 	if absf(g_roll) > 0.0001:
@@ -778,7 +781,7 @@ func _compute_pose(dt: float) -> void:
 	if not s.airborne and s.speed > 1.5:
 		# hockey stop: the skis pivot underneath while the upper body keeps facing downhill
 		var lim := lerpf(0.7, 1.3, maxf(s.edge_brake, 1.0 if s.grind_slide and s.is_grinding() else 0.0))
-		torso_t += clampf(wrapf(s.travel_yaw - s.heading, -PI, PI), -lim, lim) * lerpf(0.75, 0.9, s.edge_brake) + _lean * 0.22
+		torso_t += clampf(wrapf(s.travel_yaw - s.heading, -PI, PI), -lim, lim) * lerpf(0.75, 0.9, s.edge_brake) + lean_b * 0.22
 	# winding up for a spin: shoulders coil against the spin (Left held -> shoulders left -> right 360)
 	torso_t += s.wind * 0.55
 	# in the air the head and shoulders lead the spin and the hips follow
@@ -863,7 +866,7 @@ func _compute_pose(dt: float) -> void:
 		pitch = lerpf(pitch, deg_to_rad(float(_solved[_ag]["pitch"])), _gw_body)
 	pitch = _sm("pitch", pitch, 10.0, dt) + deg_to_rad(45.0) * _p["ftuck"]
 	# angulation: legs take the full inclination, the torso stays much more upright
-	var counter := _lean * 0.58
+	var counter := lean_b * 0.58
 	# off-axis takeoff shapes (first ~0.35 s): a cork / bio drops the lead shoulder, a rodeo arches
 	# back with the head thrown over the trailing shoulder, a misty curls forward over the chest
 	var off_init := 0.0
@@ -904,7 +907,7 @@ func _compute_pose(dt: float) -> void:
 	var fwd_off := 0.02
 	for side: float in [-1.0, 1.0]:
 		# the inside ski leads a little (right turn: right ski ahead)
-		var lead := (-0.12 * side * _lean) if not s.airborne else 0.0
+		var lead := (-0.12 * side * lean_b) if not s.airborne else 0.0
 		var foot_local := Vector3(side * stance, feet_up, fwd_off + lead)
 		# folded leg: ankle behind the knee at knee height, ski sole facing back
 		foot_local = foot_local.lerp(Vector3(side * 0.11, 0.40, 0.40 + ANKLE_H), layout)
@@ -1010,7 +1013,7 @@ func _compute_pose(dt: float) -> void:
 	joints["thoracic"] = thoracic
 	joints["chest"] = chest
 	# head keeps the eyes level and looks into the turn
-	var hb := tb * Basis(Vector3.UP, -_lean * 0.35 + look_yaw) * Basis(Vector3(0, 0, 1), _lean * 0.3) * Basis(Vector3(1, 0, 0), pitch * 0.8 - deg_to_rad(6.0))
+	var hb := tb * Basis(Vector3.UP, -lean_b * 0.35 + look_yaw) * Basis(Vector3(0, 0, 1), lean_b * 0.3) * Basis(Vector3(1, 0, 0), pitch * 0.8 - deg_to_rad(6.0))
 	# grabbing: look at the ski you're reaching for (over the shoulder for a tail grab), within
 	# what a neck can turn; the head turns first, then the hand follows
 	var gl_pose: Dictionary = GRAB_POSES.get(_ag, {})
@@ -1036,7 +1039,7 @@ func _compute_pose(dt: float) -> void:
 		joints["shoulder_" + sd] = sh
 		var hand_local := Vector3(sgn * 0.13, -0.38, -0.30)
 		# inside hand forward and up, outside hand lower and back (balance through the turn)
-		var inside := clampf(sgn * _lean / 0.6, -1.0, 1.0) * (1.0 - air)
+		var inside := clampf(sgn * lean_b / 0.6, -1.0, 1.0) * (1.0 - air)
 		hand_local += Vector3(0.0, 0.06, -0.10) * inside
 		hand_local = hand_local.lerp(Vector3(sgn * 0.10, -0.32, -0.42), tuck)
 		hand_local = hand_local.lerp(Vector3(sgn * 0.27, -0.30, -0.42), edgeb)
@@ -1160,6 +1163,7 @@ func _compute_pose(dt: float) -> void:
 					tp.y = s.terrain.height(tp.x, tp.z) - 0.04
 					_pole_tip[sd] = tp
 		if _pole_tip.has(sd) and _push_amt > 0.5 and not s.airborne and _push_ph > 0.22 and _push_ph < 0.68:
+			var let_go := false
 			var tipw: Vector3 = _pole_tip[sd]
 			var tg := hand - tipw
 			if absf(tg.length() - POLE_LEN) > 0.001 or (hand - sh).length() > UPPER_ARM + FOREARM:
@@ -1171,12 +1175,19 @@ func _compute_pose(dt: float) -> void:
 					if (hand - sh).length() > arm_len:
 						hand = sh + (hand - sh).normalized() * arm_len
 					hand = tipw + (hand - tipw).normalized() * POLE_LEN
+				if (hand - sh).length() > UPPER_ARM + FOREARM:
+					# the two don't meet (the tip is right at the edge of his reach): the pole comes
+					# out of the snow for the rest of the stroke rather than the arm stretching
+					hand = sh + (hand - sh).normalized() * arm_len
+					_pole_tip.erase(sd)
+					_pole_done[sd] = true
+					let_go = true
 				joints["hand_" + sd] = hand
 				joints["elbow_" + sd] = ik2(sh, hand, UPPER_ARM, FOREARM, elbow_pole)
 			# the arm spring carries on from where the hand really is, so it doesn't jump on release
 			_hands[sd] = tb.orthonormalized().inverse() * (hand - sh)
 			_hands[sd + "_v"] = Vector3.ZERO
-			planted = true
+			planted = not let_go
 		else:
 			_pole_tip.erase(sd)
 			if _push_ph < 0.22 or _push_ph >= 0.68 or _push_amt <= 0.5:
@@ -1387,7 +1398,11 @@ func _compute_seated(dt: float) -> void:
 func _update_pole_plant(dt: float) -> float:
 	var s := skier
 	var sgn := signf(s.steer) if absf(s.steer) > 0.35 else 0.0
-	if sgn != 0.0 and sgn != _last_steer_sign and not s.airborne and s.speed > 2.0 and s.speed < 22.0 and s.tuck < 0.3:
+	# riding switch (or turning round into it) he doesn't plant: the turn's inside is behind him
+	var forward := absf(wrapf(s.stance_vis, -PI, PI)) < 0.3
+	if not forward:
+		_pole_plant = 0.0
+	if sgn != 0.0 and sgn != _last_steer_sign and forward and not s.airborne and s.speed > 2.0 and s.speed < 22.0 and s.tuck < 0.3:
 		_pole_plant = 1.0
 		_plant_side = sgn
 	if sgn != 0.0:
