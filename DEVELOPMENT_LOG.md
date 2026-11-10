@@ -796,3 +796,12 @@ Details, research links, the control table and tuning locations: FREESTYLE.md.
 - A planted pole that can't stay within arm's reach comes out of the snow instead of stretching the
   arm. --test=grab_ride [--grab=...] renders a real grab off a kicker; switch_shots dumps poses.
   Physics 169/169.
+
+## Pants: each leg skinned to its own leg
+
+- The real cause of the pants web / sail: which leg a pants vertex followed was decided by the side
+  of the middle it was on (blended 50/50 within 3.5 cm of it). The baggier shins come within that
+  band at the ankles, so 377 vertices on the inside of the lower legs followed the other leg by up
+  to 36 % and were dragged out into a sail whenever the legs moved apart (switch turns, carving,
+  the Truck Driver). Skinning and the pant-leg sway now go by the nearer leg's centre line: 0
+  lower-leg vertices follow both legs, and gen_rider refuses to build if any do. Physics 169/169.

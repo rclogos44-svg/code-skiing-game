@@ -337,24 +337,37 @@ class Pants(Garment):
         """r / a: sway of the left / right leg's baggy fabric (most at the stacked hem)."""
         e = np.zeros((len(p), 4))
         solid = pants_solid(p)
+        own = leg_owner(p)
         for k, sd in ((0, "l"), (1, "r")):
             inside = (solid < -WALL * 0.5) & (boot_local(p, sd)[:, 1] < 0.06)
             e[:, 2] = np.maximum(e[:, 2], inside.astype(float))
             S, TH, R, SEG, L, pts = leg_coords(p, sd)
-            on = sstep(0.0, 0.06, side_sign(sd) * p[:, 0])
+            on = own[sd]                     # its own leg; the ramp along it keeps the seat still
             e[:, k if k == 0 else 1] = on * (0.35 * sstep(0.12, 0.45, S) + 0.65 * sstep(0.45, 0.95, S))
         e[:, 2] = np.maximum(e[:, 2], (solid < -WALL * 0.5) & (p[:, 1] > pants_top(p) - 0.11))
         return e
+
+
+def leg_owner(p):
+    """How much each point belongs to the left / right leg: the leg whose centre line is nearer
+    (not which side of the middle it's on - the shins come close together in the ski stance and
+    the inside of one would partly follow the other, stretching the cloth into a web).  Returns
+    {"l": w, "r": 1 - w}."""
+    rl = leg_coords(p, "l")[2]
+    rr = leg_coords(p, "r")[2]
+    wr = sstep(-0.02, 0.02, rl - rr)
+    return {"l": 1.0 - wr, "r": wr}
 
 
 def leg_weights(p, jacket=False):
     """Pelvis / thigh / shin / foot weights for anything on the legs."""
     w = np.zeros((len(p), len(BONES)))
     w[:, B["pelvis"]] = 1.0
+    own = leg_owner(p)
     for sd in ("l", "r"):
         s = side_sign(sd)
         S, TH, R, SEG, L, pts = leg_coords(p, sd)
-        on_side = sstep(-0.035, 0.035, s * p[:, 0])           # which leg this point belongs to
+        on_side = own[sd].copy()                              # which leg this point belongs to
         # the crotch stays with the pelvis instead of webbing between the thighs
         on_side *= 1.0 - (1.0 - sstep(0.015, 0.07, np.abs(p[:, 0]))) * sstep(-0.32, -0.2, p[:, 1])
         # hip: thigh weight grows along the leg from the hip crease (further down behind, under
@@ -1451,6 +1464,16 @@ def build_all(proj, prev=None, only=None):
         ex = g.extra(v)
         w = g.weights(v)
         bi, bw = top4(w)
+        if g.name == "pants":
+            # no point below the knees may follow both legs (it would stretch into a web between them)
+            lw = np.zeros(len(v))
+            rw = np.zeros(len(v))
+            for k in range(4):
+                lw += np.where(np.isin(bi[:, k], [B["thigh_l"], B["shin_l"], B["foot_l"]]), bw[:, k], 0.0)
+                rw += np.where(np.isin(bi[:, k], [B["thigh_r"], B["shin_r"], B["foot_r"]]), bw[:, k], 0.0)
+            both = (v[:, 1] < -0.3) & (np.minimum(lw, rw) > 0.05)
+            if both.any():
+                raise SystemExit("pants: %d lower-leg vertices are skinned to both legs" % both.sum())
         col = np.zeros((len(v), 4))
         col[:, 0] = ex[:, 0]
         col[:, 1] = ao
