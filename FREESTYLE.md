@@ -143,6 +143,7 @@ mountain are unchanged (build/parks.py applies it after the features and on clea
 - Snow shapes are exact profiles added to the slope in the game (TerrainData.shape_offset), so
   physics and visuals agree: rollers (cosine bumps), banks (curved wall + narrow top + back slope,
   growing in and out over 7 m), step-ups (takeoff, gap, face, raised deck, rollout).
+- The step-up (flow line, quick drop "Step-up"): a 1.5 m lip, a short gap and a face up to a deck about 0.7 m above the lip; ridden from its drop he lands about 4 m onto the 7 m deck.
 - The park is regraded at 10 deg (the hillside is 13 deg): even at 10 deg a straight-running rider
   carries 12-16 m/s, which is why the progression tables have long decks.
 

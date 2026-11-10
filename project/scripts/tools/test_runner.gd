@@ -1159,7 +1159,7 @@ func _park_kickers() -> void:
 					break
 			s.landed.disconnect(scb)
 			var lip_v := 0.0
-			check("Ridgeline step-up: from its drop, flies the gap and lands on the raised deck", flew and land_t2 >= deck_t - 0.5 \
+			check("Ridgeline step-up: from its drop, flies the gap and lands on the raised deck", flew and land_t2 >= deck_t \
 				and land_t2 < float(su["length"]) and not s.is_crashed, "touched down %.1f m along (deck %.1f .. %.1f m)%s" % [land_t2, deck_t,
 				deck_t + float(su["deck"]), " CRASHED" if s.is_crashed else ""])
 	# grab keys (Q/E + W/S) never touch the flip: same rotation with and without a grab held

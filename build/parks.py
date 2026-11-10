@@ -117,7 +117,7 @@ def pipe_geometry(s0, s1, u, x0, z0, dx, dz):
 # snow shapes (exact profiles the game adds on top of the regraded slope, like kickers - see
 # TerrainData.shape_offset): rollers, banks (a curved wall beside the lane to carve up), step-ups
 # (takeoff, a gap, a face up to a deck higher than the lip, then a rollout)
-STEPUP = dict(h1=1.2, back=1.2, gap=1.6, face=3.0, h2=3.3, deck=7.0)
+STEPUP = dict(h1=1.5, back=0.9, gap=0.7, face=2.3, h2=3.0, deck=7.0)     # deck ~0.7 m above the lip
 
 
 def shape_entry(kind, arg, opt, s0, uc, theta, x0, z0, dx, dz, line):
@@ -238,7 +238,7 @@ DESIGNS = [
         ("jib", "raillip", 425, 7.0), ("jib", "box", 490, 12.0, {"u": 40.0, "shape": "tabletop"}), ("jib", "tube", 490, 10.0, {"u": 48.0}),
     ], {"prog": -42.0, "flow": -14.0, "big": 16.0, "jib": 44.0},
         [("Top", 0.0, 0.0), ("Progression", 0.0, -42.0), ("Flow line", 0.0, -14.0), ("Big line", 30.0, 16.0),
-         ("Jib lane", 20.0, 44.0), ("Step-up", 350.0, -14.0)]),
+         ("Jib lane", 20.0, 44.0), ("Step-up", 330.0, -14.0)]),
 ]
 
 
