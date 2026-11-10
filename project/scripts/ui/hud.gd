@@ -276,6 +276,7 @@ func _build_prompt() -> void:
 	hint_label.offset_bottom = -14
 	hint_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	hint_label.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+	hint_label.grow_vertical = Control.GROW_DIRECTION_BEGIN   # extra lines push up, never off-screen
 	root.add_child(hint_label)
 
 
@@ -437,12 +438,12 @@ func show_controls_hint() -> void:
 	var dn: String = b.call("lean_back")
 	var l: String = b.call("lean_left")
 	var r: String = b.call("lean_right")
-	hint_label.text = "%s/%s turn · %s push · %s stop · TRICKS: hold an arrow to load, press a 2nd to go · opposite: %s%s backflip, %s%s front flip, %s%s right spin, %s%s left spin · sideways: %s%s/%s%s rodeo, %s%s/%s%s misty, %s%s/%s%s cork, %s%s/%s%s bio · let go alone: ollie · grabs %s/%s (+%s/%s) · %s switch · %s top · %s slow-mo · %s dev view" % [
+	hint_label.text = ("%s/%s turn · %s push · %s stop · %s/%s grabs (+%s/%s: other grabs) · %s switch · %s top · %s slow-mo · %s dev view\n"
+		+ "TRICKS: hold an arrow to load, tap a 2nd to go · %s%s backflip · %s%s front flip · %s%s / %s%s spin · %s+side rodeo · %s+side misty · side+%s cork · side+%s bio · let go alone: ollie") % [
 		b.call("steer_left"), b.call("steer_right"), b.call("tuck"), b.call("brake"),
-		u, dn, dn, u, l, r, r, l,
-		u, r, u, l, dn, r, dn, l, l, dn, r, dn, l, u, r, u,
 		b.call("grab_left"), b.call("grab_right"), b.call("tuck"), b.call("brake"),
-		b.call("switch_stance"), b.call("map"), b.call("slow_mo"), b.call("dev_view")]
+		b.call("switch_stance"), b.call("map"), b.call("slow_mo"), b.call("dev_view"),
+		u, dn, dn, u, l, r, r, l, u, dn, dn, u]
 
 
 func show_region(name: String) -> void:
