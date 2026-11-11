@@ -112,7 +112,7 @@ static func evaluate(info: Dictionary) -> Dictionary:
 	var grabs := 0
 	var gname := String(info.get("grab_name", ""))
 	var gtime := float(info.get("grab_time", 0.0))
-	if gname != "" and gtime >= 0.2:
+	if gname != "" and gtime >= 0.08:      # >= 80 ms with the palm verified on the ski
 		# named grab: points for how long it's held, scaled by how hard it is to reach
 		var hard := {"Safety": 0.9, "Mute": 1.0, "Tail": 1.0, "Tip": 1.1, "Truck Driver": 1.2, "Japan": 1.3, "Blunt": 1.3}.get(gname, 1.0) as float
 		parts.append(gname)

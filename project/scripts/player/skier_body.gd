@@ -133,6 +133,10 @@ var _fk := {}                    # leg forward kinematics for the current grab: 
 
 var _solved := {}                # grab name (or "name|context") -> pose solved so the hand really holds the ski
 var _ctx := "straight"           # the trick the current grab is done in (see grab_def)
+var grab_contact_err := -1.0     # palm-to-grip-point distance (m) of the grabbing hand(s) this frame; -1 = no grab
+var grab_contact := false        # every grabbing palm is on its spot on the ski (with hysteresis)
+const CONTACT_ON := 0.03         # palm within this of its grip point (m, ~ a third of the glove) = contact
+const CONTACT_OFF := 0.045       # ... and it stays contact until it drifts past this
 var preview_ctx := "straight"    # tests: the trick context for preview_grab
 var _defs := {}                  # "name|context" -> grab definition adapted to that trick
 const SPINE_LIMITS := {"pitch": [0.0, 70.0], "twist": [-0.7, 0.7], "side": [-0.3, 0.3]}
@@ -499,6 +503,7 @@ func grab_phase_name() -> String:
 
 func setup(s: Skier) -> void:
 	skier = s
+	s.teleported.connect(reset_pose)
 	add_to_group("skier_body")
 	top_level = true
 	global_transform = Transform3D.IDENTITY
@@ -670,9 +675,55 @@ func _process(delta: float) -> void:
 				_compute_seated(dt)
 			_:
 				_compute_pose(dt)
+	_update_contact()
 	_cloth_step(dt)
 	_apply_parts()
 	_cloth_apply()
+
+
+## Is every grabbing palm on its spot on the ski?  Measured this frame after the arm solve (palm-
+## to-grip-point distance, `grab_contact_err`); on within CONTACT_ON, off past CONTACT_OFF or as
+## soon as the hand starts to let go, so a palm hovering at the edge doesn't flicker.  The
+## controller only counts the named grab while this holds.
+func _update_contact() -> void:
+	var grabbing := _ag != "" and (skier.airborne or preview_grab != "") and not skier.is_crashed
+	if not grabbing or grab_contact_err < 0.0:
+		grab_contact = false
+	elif grab_contact:
+		grab_contact = grab_contact_err <= CONTACT_OFF and _gw_hand > 0.9
+	else:
+		grab_contact = grab_contact_err <= CONTACT_ON and _gw_hand > 0.97
+	skier.grab_contact = grab_contact
+	skier.grab_contact_known = true
+
+
+## A teleport (respawn, park drop, back to the top): drop every blend and spring that carried the
+## old spot's motion, so nothing swings in from where he was.
+func reset_pose() -> void:
+	_gp = 0.0
+	_gw = 0.0
+	_gw_legs = 0.0
+	_gw_cross = 0.0
+	_gw_hand = 0.0
+	_gw_body = 0.0
+	_ag = ""
+	_grab_phase = ""
+	_grab_hold_t = 0.0
+	_tweak = 0.0
+	grab_contact = false
+	grab_contact_err = -1.0
+	_hands = {}
+	_lean = 0.0
+	_lean_v = 0.0
+	_absorb = 0.0
+	_absorb_v = 0.0
+	_torso_yaw = 0.0
+	_torso_yaw_v = 0.0
+	_pole_tip.clear()
+	_pole_done.clear()
+	_pole_plant = 0.0
+	_cloth.clear()
+	_prev_root = Vector3.ZERO
 
 
 ## Where each cloth spring hangs: the hood from the upper back, the sleeve ends and the hem from the
@@ -881,7 +932,8 @@ func _compute_pose(dt: float) -> void:
 	torso_t += s.wind * 0.55
 	# in the air the head and shoulders lead the spin and the hips follow
 	if s.airborne:
-		torso_t -= clampf(s.spin_vel * 0.09, -0.6, 0.6)
+		# (less while holding a grab: he turns as one piece, so the hand stays on the ski)
+		torso_t -= clampf(s.spin_vel * 0.09, -0.6, 0.6) * (1.0 - 0.7 * _gw_body)
 	var w_t := 7.0
 	_torso_yaw_v += (w_t * w_t * (torso_t - _torso_yaw) - 2.0 * w_t * _torso_yaw_v) * dt
 	_torso_yaw = clampf(_torso_yaw + _torso_yaw_v * dt, -0.9, 0.9)
@@ -938,7 +990,7 @@ func _compute_pose(dt: float) -> void:
 	# build throughout.  Letting go runs the same stages backwards.
 	_gw_legs = _gw if preview_grab != "" else smoothstep(0.0, 0.55, _gp)
 	_gw_cross = _gw if preview_grab != "" else smoothstep(0.25, 0.85, _gp)
-	_gw_hand = _gw if preview_grab != "" else smoothstep(0.42, 1.0, _gp)
+	_gw_hand = _gw if preview_grab != "" else smoothstep(0.62, 1.0, _gp)     # the hand's own reach: the crisp last part
 	_gw_body = _gw if preview_grab != "" else smoothstep(0.05, 0.95, _gp)
 	if _gp < 0.005 and preview_grab == "":
 		_ag = ""
@@ -1135,8 +1187,48 @@ func _compute_pose(dt: float) -> void:
 		hb = hb.orthonormalized().slerp(hb_look.orthonormalized(), clampf(look_w, 0.0, 1.0))
 	head_basis = hb.orthonormalized()
 	joints["head"] = chest + hb.y * NECK_LEN
+	# ---- reach: the base pose is done.  If a grabbing hand can't get to its spot on the ski (the
+	# spin lead, a flip tuck or an off-axis shape moved the shoulder away from where the grab was
+	# solved), bring that ski to the hand with the leg - within the leg's reach - before the arm
+	# solve, so the palm meets the ski this frame, not last frame's ski.  What's still out of reach
+	# is a missed grab: the hand stops short and nothing is credited.
+	var gdef := _cur_def()
+	if not gdef.is_empty() and _gw_hand > 0.01:
+		var max_leg2 := (THIGH + SHIN) * 0.985
+		for sd in ["l", "r"]:
+			if not gdef.has(sd):
+				continue
+			var spec: Array = gdef[sd]
+			var sgn := -1.0 if sd == "l" else 1.0
+			var sh0 := chest - tb.y * 0.07 + tb.x * (sgn * SHOULDER_HALF) + tb * (gdef.get("shoulders", {}).get(sd, Vector3.ZERO) as Vector3) * _gw_body
+			var lsd: String = spec[0]
+			var sx: Transform3D = ski_l if lsd == "l" else ski_r
+			var spec_live := spec.duplicate()
+			var sal0: Dictionary = _solved.get(skey, {}).get("along", {})
+			if sal0.has(sd):
+				spec_live[1] = sal0[sd]
+			var gp0 := grip_point(sx.origin, sx.basis, -1.0 if lsd == "l" else 1.0, spec_live, sh0, bool(gdef.get("auto_grip", false)))
+			var need := (gp0 - sh0).length() - PALM - (UPPER_ARM + FOREARM) * 0.97
+			if need <= 0.0:
+				continue
+			var hip_g: Vector3 = joints["hip_" + lsd]
+			var ank_g: Vector3 = joints["ankle_" + lsd]
+			var na := ank_g + (sh0 - gp0).normalized() * minf(need + 0.005, 0.22) * _gw_hand
+			if (na - hip_g).length() > max_leg2:
+				na = hip_g + (na - hip_g).normalized() * max_leg2
+			var mv := na - ank_g
+			sx.origin += mv
+			if lsd == "l":
+				ski_l = sx
+			else:
+				ski_r = sx
+			var kn_g: Vector3 = joints["knee_" + lsd]
+			joints["ankle_" + lsd] = na
+			joints["knee_" + lsd] = ik2(hip_g, na, THIGH, SHIN, kn_g + (kn_g - (hip_g + ank_g) * 0.5))
+
 	# ---- arms
 	var plant_side := _update_pole_plant(dt)
+	grab_contact_err = -1.0
 	for sd in ["l", "r"]:
 		var sgn := -1.0 if sd == "l" else 1.0
 		var sh := chest - tb.y * 0.07 + tb.x * (sgn * SHOULDER_HALF)
@@ -1177,6 +1269,7 @@ func _compute_pose(dt: float) -> void:
 		_hands[sd] = hc
 		_hands[sd + "_v"] = hv
 		var hand := sh + tb * hc
+		var grip_target := Vector3.INF
 		var g := gl if sd == "l" else gr
 		var gpose: Dictionary = _cur_def()
 		if not gpose.is_empty():
@@ -1192,7 +1285,8 @@ func _compute_pose(dt: float) -> void:
 			if sal.has(sd):
 				spec_live[1] = sal[sd]
 			var grip_pt := grip_point(sx2.origin, sx2.basis, gs, spec_live, sh, bool(gpose.get("auto_grip", false)))
-			hand = hand.lerp(grip_pt - (grip_pt - sh).normalized() * PALM, g)     # palm on the ski, wrist just short of it
+			grip_target = grip_pt - (grip_pt - sh).normalized() * PALM
+			hand = hand.lerp(grip_target, g)     # palm on the ski, wrist just short of it
 			# the hand travels in on a curve (out and a little up first), not along a straight line
 			hand += tb * Vector3(sgn * 0.1, 0.07, -0.04) * sin(PI * clampf(g, 0.0, 1.0)) * (1.0 - _tweak)
 			grab_gap[sd] = maxf((hand - sh).length() - (UPPER_ARM + FOREARM), 0.0)
@@ -1235,6 +1329,8 @@ func _compute_pose(dt: float) -> void:
 		if reach > UPPER_ARM + FOREARM:
 			hand = sh + (hand - sh).normalized() * (UPPER_ARM + FOREARM)
 		joints["hand_" + sd] = hand
+		if grip_target != Vector3.INF and g > 0.99:
+			grab_contact_err = maxf(grab_contact_err, (hand - grip_target).length())
 		# pole direction
 		var pd := Vector3(sgn * 0.08, -0.62, 0.78)
 		pd = pd.lerp(Vector3(sgn * 0.08, 0.25, 1.0), tuck)

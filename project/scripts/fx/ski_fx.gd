@@ -46,6 +46,7 @@ func setup(s: Skier, b: SkierBody, td: TerrainData) -> void:
 	s.crashed.connect(_on_crashed)
 	s.tree_brush.connect(_on_tree)
 	s.respawned.connect(_break_tracks)
+	s.teleported.connect(_teleported)
 	Settings.changed.connect(_on_settings)
 	_make_prints()
 	_apply_weather()
@@ -355,6 +356,14 @@ func _on_tree(pos: Vector3, strength: float) -> void:
 	puff.global_position = pos + Vector3.UP * 1.5
 	puff.amount_ratio = strength
 	puff.restart()
+
+
+## Moved to a new spot: no track joins the old spot to the new one, no spray carries over.
+func _teleported() -> void:
+	_break_tracks()
+	spray_l.amount_ratio = 0.0
+	spray_r.amount_ratio = 0.0
+	powder.amount_ratio = 0.0
 
 
 # ------------------------------------------------------------------ tracks

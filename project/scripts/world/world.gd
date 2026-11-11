@@ -103,6 +103,7 @@ func build() -> bool:
 	camera.name = "CameraRig"
 	add_child(camera)
 	camera.skier = skier
+	skier.teleported.connect(camera.snap)          # any teleport frames him at once, no sweep from the old spot
 	camera.body = body
 	camera.terrain = terrain
 	renderer.lod_camera = camera

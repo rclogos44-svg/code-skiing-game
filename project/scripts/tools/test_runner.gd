@@ -62,6 +62,8 @@ func run(w: World) -> void:
 			_cloth_grab_report()
 		"grab_ride":
 			await _grab_ride_shots()
+		"bigair_route":
+			await _bigair_route()
 		"perf":
 			await _perf()
 		_:
@@ -632,6 +634,185 @@ func _cloth_grab_report() -> void:
 	print("[TEST] cloth_grab max offset %.3f m, max speed %.2f m/s, reversals %d" % [r["max_x"], r["max_u"], r["rev"]])
 
 
+## --test=bigair_route [--shots=1] [--out=DIR] [--only=N]: the Big Air Park jump line ridden with
+## the labelled tricks from the gameplay footage, with real inputs: Right Bio 540 (L), switch Left
+## Misty 540 Tail, an off-axis that lands sideways (bail, then respawn), switch Backflip, switch
+## Blunt, switch Left 720 Blunt, runout.  Prints one line per jump (takeoff, air, trick, score,
+## landing, grab contact) and, with --shots=1, snaps the normal follow camera around each jump.
+## The same script before and after a change gives the comparison.
+func _bigair_route() -> void:
+	var s := world.skier
+	var body = world.body
+	var cam = world.camera
+	var shots: bool = String(Game.test_args.get("shots", "0")) == "1"
+	var only := int(Game.test_args.get("only", "-1"))
+	var pi := 1
+	var pk: Dictionary = world.terrain.layout["parks"][pi]
+	var d := Vector3(pk["dir"][0], 0, pk["dir"][1])
+	var side_v := Vector3(-d.z, 0, d.x)
+	var o := Vector3(pk["origin"][0], 0, pk["origin"][1])
+	var uc := float(pk["lines"]["jump"])
+	var ks := []
+	for k in pk["kickers"]:
+		if k["line"] == "jump":
+			ks.append(k)
+	ks.sort_custom(func(a, b): return float(a["start_s"]) < float(b["start_s"]))
+	var st: Dictionary = world.park.park_start(pi)
+	world.spawn(st["pos"], st["yaw"])
+	await _frames(5)
+	s.set_physics_process(false)
+	body.set_process(false)
+	cam.set_process(false)
+	# [label, prepare arrow, initiate arrow, air keys [[keys, from s, to s], ...] (as a player holds
+	#  them), ride switch into it, difficulty override]
+	var plan := [
+		["Right Bio 540", "lean_left", "lean_forward", [], false, -1],
+		["Switch Left Misty 540 Tail", "lean_back", "lean_left", [[{"grab_right": 1.0}, 0.15, 9.0], [{"brake": 1.0}, 0.3, 9.0]], true, -1],
+		["over-spun -> landed sideways", "lean_left", "lean_right", [[{"lean_right": 1.0}, 0.12, 9.0]], false, -1],
+		["Switch Backflip", "lean_forward", "lean_back", [[{"lean_back": 1.0}, 0.0, 0.7]], true, -1],
+		["Switch Blunt", "", "", [[{"grab_right": 1.0}, 0.15, 9.0], [{"tuck": 1.0}, 0.3, 9.0]], true, -1],
+		["Switch Left 720 Blunt", "lean_right", "lean_left", [[{"lean_left": 1.0}, 0.12, 9.0], [{"grab_right": 1.0}, 0.2, 9.0],
+			[{"tuck": 1.0}, 0.35, 9.0]], true, -1],
+	]
+	var results := []
+	var box := {}
+	var cb := func(info): box["info"] = info
+	s.landed.connect(cb)
+	var saved_diff := s.difficulty
+	for ji in mini(plan.size(), ks.size()):
+		if only >= 0 and ji != only:
+			continue
+		var pl: Array = plan[ji]
+		var k: Dictionary = ks[ji]
+		var lip := Vector3(k["lip"][0], 0, k["lip"][1])
+		var ko := Vector3(k["origin"][0], 0, k["origin"][1])
+		# each jump from its own start, so a bail on one doesn't change the next
+		s.difficulty = saved_diff if int(pl[5]) < 0 else int(pl[5])
+		s.teleport(ko - d * 26.0 + side_v * (Vector3(k["lip"][0], 0, k["lip"][1]) - o).dot(side_v) * 0.0, Skier.yaw_of(d), float(k["approach_speed"]) - 1.5)
+		var back := 26.0
+		if ji > 0:
+			var pe := Vector3(ks[ji - 1]["end"][0], 0, ks[ji - 1]["end"][1])
+			back = minf(back, (ko - pe).dot(d) - 4.0)
+		s.position = Vector3(ko.x, s.position.y, ko.z) - d * back
+		s.position.y = world.terrain.height(s.position.x, s.position.z) + 0.02
+		s._cur_xform = s._compose_xform()
+		s._prev_xform = s._cur_xform
+		cam.snap()
+		var res := {"jump": ji, "trick": pl[0], "size": k["size"], "takeoff_t": -1.0, "air": 0.0, "name": "-", "points": 0, "flip": 0.0, "misalign": 0.0,
+			"quality": "-", "crash": "", "grab": "", "grab_t": 0.0, "max_contact_err": -1.0}
+		var t0 := s.time
+		var snapped := {}
+		var landed_at := -1.0
+		var want_switch: bool = pl[4]
+		var switch_sent := false
+		var pend := false
+		for f in 120 * 14:
+			var to_lip := (lip - s.position).dot(d)
+			var keys := {}
+			# ride switch into it: one press of X well before the lip (a real 180 on the snow)
+			if want_switch and not switch_sent and to_lip < 24.0:
+				keys["switch_stance"] = 1.0
+				if s.riding_switch:
+					switch_sent = true
+			if String(pl[1]) != "" and not s.airborne and landed_at < 0.0 and to_lip < 14.0 and to_lip > -1.0:
+				keys[pl[1]] = 1.0
+				if to_lip < 6.0:
+					keys[pl[2]] = 1.0
+			pend = pend or s.trick_state == Skier.TrickState.PENDING
+			if s.airborne:
+				for w in pl[3]:
+					if s.air_time >= float(w[1]) and s.air_time < float(w[2]):
+						keys.merge(w[0] as Dictionary)
+			s.scripted_input = keys
+			var was_air := s.airborne
+			s.step(1.0 / 120.0)
+			s.time += 1.0 / 120.0
+			s._prev_xform = s._cur_xform
+			s._cur_xform = s._compose_xform()
+			body._process(1.0 / 120.0)
+			cam._process(1.0 / 120.0)
+			if Game.test_args.has("trace") and s.airborne and f % 12 == 0:
+				print("[TEST]   t %.2f air_rot %.0f spin_vel %.2f keys %s latch %.0f latched %s ink_l %.1f grab %s" % [s.air_time, rad_to_deg(s.air_rotation), s.spin_vel, str(keys.keys()), s._spin_latch, str(s._latched.keys()), s._ink("lean_left"), s.grab_name])
+			if s.airborne and not was_air and res["takeoff_t"] < 0.0:
+				res["takeoff_t"] = s.time - t0
+			if s.airborne and s.grab_name != "":
+				res["grab"] = s.grab_name
+				if body._grab_phase == "hold" or body._grab_phase == "contact":
+					res["max_contact_err"] = maxf(float(res["max_contact_err"]), float(body.grab_contact_err))
+			if box.has("info"):
+				var info: Dictionary = box["info"]
+				box.erase("info")
+				if float(info.get("air_time", 0.0)) > 0.3 and landed_at < 0.0:
+					landed_at = s.time
+					# as the game does: a crash scores nothing
+					var tr: Dictionary = TrickSystem.evaluate(info) if str(info.get("crash", "")) == "" else {}
+					res["flip"] = rad_to_deg(float(info.get("flip", 0.0)))
+					res["misalign"] = float(info.get("misalign", 0.0))
+					res["air"] = info["air_time"]
+					res["name"] = tr.get("name", "-")
+					res["points"] = tr.get("points", 0)
+					res["quality"] = tr.get("quality", "-")
+					res["crash"] = info.get("crash", "")
+					res["grab_t"] = info.get("grab_time", 0.0)
+			if s.is_crashed and res["crash"] == "":
+				res["crash"] = "crashed"
+				if landed_at < 0.0:
+					landed_at = s.time
+			# chase-camera snaps: approach, takeoff, mid-air, late air, touchdown, absorbing, riding away
+			if shots:
+				var tag := ""
+				if not snapped.has("a") and to_lip < 8.0 and not s.airborne and res["takeoff_t"] < 0.0:
+					tag = "a"
+				elif not snapped.has("b") and s.airborne and s.air_time > 0.08:
+					tag = "b"
+				elif not snapped.has("c") and s.airborne and s.air_time > 0.55:
+					tag = "c"
+				elif not snapped.has("d") and s.airborne and s.air_time > 1.0:
+					tag = "d"
+				elif not snapped.has("e") and s.airborne and s.land_t < 0.12 and s.air_time > 0.5:
+					tag = "e"
+				elif not snapped.has("f") and landed_at > 0.0 and s.time - landed_at > 0.09:
+					tag = "f"
+				elif not snapped.has("g") and landed_at > 0.0 and s.time - landed_at > 0.45:
+					tag = "g"
+				if tag != "":
+					snapped[tag] = true
+					await _frames(1)
+					await _snap("route_%d_%s" % [ji, tag])
+			if landed_at > 0.0 and s.time - landed_at > (1.6 if s.is_crashed else 0.8):
+				break
+		results.append(res)
+		print("[TEST] route jump %d %-28s %s: takeoff %.2f s, air %.2f s, flip %.0f deg, misalign %.0f deg -> '%s' %s pts, %s%s, grab %s %.2f s, worst palm-to-ski %.3f m" % [
+			ji, pl[0], res["size"], res["takeoff_t"], res["air"], res["flip"], res["misalign"], res["name"], res["points"], res["quality"],
+			(" CRASH " + str(res["crash"])) if str(res["crash"]) != "" else "", res["grab"], res["grab_t"], res["max_contact_err"]])
+		if s.is_crashed:
+			s.respawn()
+	s.landed.disconnect(cb)
+	s.difficulty = saved_diff
+	s.scripted_input = {}
+	# runout: the last kicker's landing straight down, then a carve
+	if only < 0:
+		var kl: Dictionary = ks[mini(plan.size(), ks.size()) - 1]
+		var ke := Vector3(kl["end"][0], 0, kl["end"][1])
+		s.teleport(ke + d * 2.0, Skier.yaw_of(d), 18.0)
+		cam.snap()
+		for f in 120 * 4:
+			s.scripted_input = {"steer_left": 1.0} if f > 240 else {}
+			s.step(1.0 / 120.0)
+			s.time += 1.0 / 120.0
+			s._prev_xform = s._cur_xform
+			s._cur_xform = s._compose_xform()
+			body._process(1.0 / 120.0)
+			cam._process(1.0 / 120.0)
+			if shots and f in [120, 230, 400]:
+				await _frames(1)
+				await _snap("route_runout_%d" % f)
+		s.scripted_input = {}
+	s.set_physics_process(true)
+	body.set_process(true)
+	cam.set_process(true)
+
+
 ## --test=grab_ride [--grab=Truck Driver] [--dist=1.8]: rides a grab off Main Park's medium kicker
 ## (the real jump, cloth and all) and snaps it from the side every 0.15 s of the flight.
 func _grab_ride_shots() -> void:
@@ -1200,6 +1381,11 @@ func _park_kickers() -> void:
 			s.scripted_input = keys
 			s.step(1.0 / 120.0)
 			s.time += 1.0 / 120.0
+			# the body poses every step, as in the game: it measures the palm on the ski, and only
+			# that verified contact counts toward the named grab
+			s._prev_xform = s._cur_xform
+			s._cur_xform = s._compose_xform()
+			world.body._process(1.0 / 120.0)
 			if s.grab_name != "":
 				held_name = s.grab_name
 			if gbox.has("info") or s.is_crashed:

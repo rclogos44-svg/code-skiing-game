@@ -19,6 +19,7 @@ signal took_off
 signal landed(info: Dictionary)
 signal crashed(reason: String, velocity: Vector3)
 signal respawned
+signal teleported                   # any jump to a new spot (respawn, park drop, back to the top): reset history
 signal tree_brush(pos: Vector3, strength: float)
 signal jumped(strength: float)
 signal mode_changed(mode: int)
@@ -143,7 +144,9 @@ var sketchy := 0.0                 # > 0 while recovering from a sketchy landing
 var grab_kind_l := ""              # "", "tip" or "tail"
 var grab_held := false             # a grab key is held (the pose eases in while it is)
 var grab_name := ""                # the grab being held: Mute, Safety, Japan, Tail, Tip, Truck Driver, Blunt
-var grab_time := 0.0
+var grab_time := 0.0               # time the named grab was really held: the palm verified on the ski
+var grab_contact := false           # set by the body every frame: every grabbing palm is on its spot on the ski
+var grab_contact_known := false     # a body is reporting contact (a bare controller in a test falls back)
 var _jump_grab := ""               # the grab done on this jump (scored at landing)
 var _s_grabbed := false           # S was used to pick a back-of-ski grab on this jump
 var _brake_block := false          # ... and is still held after landing: it doesn't brake until re-pressed
@@ -246,6 +249,7 @@ func teleport(pos: Vector3, yaw: float, initial_speed := 0.0, keep_mode := false
 	_record_safe(true)
 	_cur_xform = _compose_xform()
 	_prev_xform = _cur_xform
+	teleported.emit()
 
 
 func _reset_motion() -> void:
@@ -263,6 +267,11 @@ func _reset_motion() -> void:
 	grab_r = 0.0
 	grab_time_l = 0.0
 	grab_time_r = 0.0
+	grab_name = ""
+	grab_time = 0.0
+	_jump_grab = ""
+	grab_held = false
+	grab_contact = false
 	compression = 0.0
 	compression_vel = 0.0
 	is_crashed = false
@@ -432,7 +441,10 @@ func _arrow_tricks(dt: float) -> void:
 			return
 		trick_state = TrickState.IDLE
 		pressed = 0                         # keys still down from the air don't start a new trick
-	if airborne and _coyote <= 0.0:
+	# airborne: the takeoff grace time (coyote) only matters while a trick is being set up at the lip;
+	# once the trick is in the air (or nothing was set), an arrow pressed just after takeoff is
+	# body english for the rotation - it must not start a new "prepare" that then gets latched
+	if airborne and (_coyote <= 0.0 or trick_state == TrickState.AIR or trick_state == TrickState.IDLE):
 		if trick_state == TrickState.PREPARE:
 			# rolled off the lip prepared but never initiated: a straight air; the held arrow is latched
 			_latch_set()
@@ -1125,7 +1137,10 @@ func _air_step(dt: float, spin_in: float, flip_in: float) -> void:
 		grab_name = ""
 	if grab_name != "":
 		_jump_grab = grab_name
-	if (gl or gr) and (grab_l > 0.8 or grab_r > 0.8):
+	# the named grab counts only while the palm is really on the ski (the body measures it); a
+	# reach that never gets there, or a short hop, scores no named grab
+	var verified := grab_contact if grab_contact_known else (grab_l > 0.98 or grab_r > 0.98)
+	if (gl or gr) and verified:
 		grab_time += dt
 	# where the hand goes: leaning forward reaches the tip, leaning back the tail
 	var kind := "tip" if gv > 0.5 else ("tail" if gv < -0.5 else "")
