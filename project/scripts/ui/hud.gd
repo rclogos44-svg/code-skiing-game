@@ -353,11 +353,14 @@ func _update_dev() -> void:
 		"input  %s  prep %s  charge %.2f  pending %s" % [Skier.TrickState.keys()[s.trick_state], ARROW_GLYPH.get(s.prep_dir, "-"), s.charge,
 			s.pending_trick.get("label", "-")],
 		"trick  %s  %s" % [s.trick_label if s.trick_label != "" else "-", ("%s %s" % [s.off_family, "R" if s.off_dir > 0 else "L"]) if s.off_family != "" else ""],
-		"state  %s%s  speed %.1f m/s" % ["AIR" if s.airborne else "ground", (" %.2fs" % s.air_time) if s.airborne else "", s.speed],
+		"state  %s%s  snow contact %s  speed %.1f m/s" % ["AIR" if s.airborne else "ground", (" %.2fs" % s.air_time) if s.airborne else "",
+			"yes" if s.contact else "no", s.speed],
 		"rotation  spin %.1f rad/s (%.0f deg)  flip %.1f rad/s (%.0f deg)  off-axis %.1f rad/s (%.0f deg, tilt %.0f)" % [s.spin_vel,
 			rad_to_deg(s.air_rotation), s.flip_vel, rad_to_deg(s.air_pitch), s.off_rate, rad_to_deg(s.off_angle), s.off_max_tilt],
 		"landing  in %.2f s  normal %s" % [s.land_t if s.land_t < 8.0 else -1.0, str(s.land_n.snapped(Vector3(0.01, 0.01, 0.01)))],
-		"grab  %s  %s" % [s.grab_name if s.grab_name != "" else "-", gph],
+		"grab  %s  %s  palm-to-ski %s  contact %s  held %.2f s" % [s.grab_name if s.grab_name != "" else "-", gph,
+			("%.1f cm" % (float(body.grab_contact_err) * 100.0)) if body and float(body.grab_contact_err) >= 0.0 else "-",
+			"ON" if s.grab_contact else "off", s.grab_time],
 	]
 	dev_label.text = "\n".join(lines)
 

@@ -509,7 +509,7 @@ func setup(s: Skier) -> void:
 	global_transform = Transform3D.IDENTITY
 	_build()
 	ragdoll.terrain = s.terrain
-	for k in ["layout", "ftuck", "chatter", "pelvis_h", "pelvis_z", "pitch", "counter", "hand_spread", "plow", "feet_up", "arms_air", "tuck", "grab_l", "grab_r", "brake", "edgeb", "switch_look", "look_yaw"]:
+	for k in ["layout", "ftuck", "chatter", "pelvis_h", "pelvis_z", "pitch", "counter", "hand_spread", "plow", "feet_up", "arms_air", "tuck", "grab_l", "grab_r", "brake", "edgeb", "switch_look", "look_yaw", "lprep"]:
 		_p[k] = 0.0
 	_p["pelvis_h"] = 0.9
 	for gname in GRAB_POSES:
@@ -1046,13 +1046,18 @@ func _compute_pose(dt: float) -> void:
 		off_open = maxf(smoothstep(deg_to_rad(270.0), deg_to_rad(330.0), s.off_angle), smoothstep(0.45, 0.2, s.land_t))
 		ft_want = float(Skier.OFFAXIS[s.off_family]["tuck"]) * smoothstep(0.05, 0.3, s.off_t) * (1.0 - off_open)
 	var ftuck := _sm("ftuck", ft_want, 9.0, dt)
-	var feet_up := _sm("feet_up", air * (0.05 + 0.26 * grab + 0.42 * ftuck), 8.0, dt)
-	# layout backflip: body long from the shoulders to the knees, knees bent so the shins and skis
-	# fold back behind the thighs and the skis run parallel to the body; opens up again to land
+	# landing prep from the predicted time to the snow: the legs reach down for it and the arms come
+	# in front, so the skis visibly meet the landing and the body absorbs over them
+	var lprep := _sm("lprep", air * smoothstep(0.42, 0.12, s.land_t) * (1.0 - grab), 12.0, dt)
+	var feet_up := _sm("feet_up", air * (0.05 + 0.26 * grab + 0.42 * ftuck) * (1.0 - 0.75 * lprep), 8.0, dt)
+	# layout backflip: long through the hips (a slight arch) with soft knees, feet apart under him
+	# and the skis square to the boots, arms held in front - not a fold; it opens up again to land
 	var lay_t := air * smoothstep(1.2, 2.5, -s.flip_vel) * (0.0 if near_land else 1.0) * (1.0 - ftuck)
 	if absf(s.air_pitch) < deg_to_rad(25.0):
 		lay_t *= absf(s.air_pitch) / deg_to_rad(25.0)
 	var layout := _sm("layout", lay_t, 7.0, dt)
+	pitch = lerpf(pitch, deg_to_rad(-6.0), layout)
+	ph = lerpf(ph, 0.92, layout)        # legs long: ~150 deg at the knee (soft, not locked)
 	var arms_air := _sm("arms_air", air * (1.0 - grab), 5.0, dt)
 
 	# ---- feet / skis
@@ -1062,8 +1067,8 @@ func _compute_pose(dt: float) -> void:
 		# the inside ski leads a little (right turn: right ski ahead)
 		var lead := (-0.12 * side * lean_b) if not s.airborne else 0.0
 		var foot_local := Vector3(side * stance, feet_up, fwd_off + lead)
-		# folded leg: ankle behind the knee at knee height, ski sole facing back
-		foot_local = foot_local.lerp(Vector3(side * 0.11, 0.40, 0.40 + ANKLE_H), layout)
+		# layout: legs long under him, feet a shoulder apart and a little behind the hips (the hips open)
+		foot_local = foot_local.lerp(Vector3(side * 0.15, -0.16, 0.05), layout)
 		var gp: Dictionary = _cur_def()
 		var sd_key := "l" if side < 0.0 else "r"
 		var fk := []
@@ -1093,7 +1098,7 @@ func _compute_pose(dt: float) -> void:
 			var lup := L.basis.y
 			foot -= lup * (dy / maxf(lup.dot(up), 0.3))
 		var yaw := plow * side
-		var sb := L.basis * Basis(Vector3.UP, yaw) * Basis(Vector3(1, 0, 0), -PI * 0.5 * layout)
+		var sb := L.basis * Basis(Vector3.UP, yaw) * Basis(Vector3(1, 0, 0), -0.12 * layout)
 		if not gp.is_empty():
 			sb = sb.orthonormalized().slerp((LH.basis * (fk[1] as Basis)).orthonormalized(), _gw_legs)
 		if not s.airborne:
@@ -1241,9 +1246,10 @@ func _compute_pose(dt: float) -> void:
 		hand_local += Vector3(0.0, 0.06, -0.10) * inside
 		hand_local = hand_local.lerp(Vector3(sgn * 0.10, -0.32, -0.42), tuck)
 		hand_local = hand_local.lerp(Vector3(sgn * 0.27, -0.30, -0.42), edgeb)
-		hand_local = hand_local.lerp(Vector3(sgn * 0.42, -0.22, -0.14), arms_air)
+		hand_local = hand_local.lerp(Vector3(sgn * 0.18, -0.24, -0.24), arms_air)      # in the air: arms a little out, in front
+		hand_local = hand_local.lerp(Vector3(sgn * 0.24, -0.3, -0.36), lprep)          # spotting the landing: hands forward
 		hand_local = hand_local.lerp(Vector3(sgn * 0.15, -0.5, -0.32), ftuck)   # tucked flip: hands to the shins
-		hand_local = hand_local.lerp(Vector3(sgn * 0.40, -0.05, -0.05), layout * 0.6)  # layout: arms wide
+		hand_local = hand_local.lerp(Vector3(-sgn * 0.02, -0.2, -0.32), layout)  # layout: hands held in front of the chest
 		if _push_amt > 0.02:
 			# reach: hands forward at chest height -> push: driven down and back past the hips
 			var reach_p := Vector3(sgn * 0.19, -0.2, -0.52)          # arms out in front, low enough for the tips to reach the snow
@@ -1334,7 +1340,7 @@ func _compute_pose(dt: float) -> void:
 		# pole direction
 		var pd := Vector3(sgn * 0.08, -0.62, 0.78)
 		pd = pd.lerp(Vector3(sgn * 0.08, 0.25, 1.0), tuck)
-		pd = pd.lerp(Vector3(sgn * 0.45, -0.55, 0.7), arms_air)
+		pd = pd.lerp(Vector3(sgn * 0.22, -0.62, 0.72), arms_air)      # poles trail, no wide flare
 		pd = pd.lerp(Vector3(sgn * 0.3, -0.8, 0.45), edgeb)
 		if g > 0.01:
 			pd = pd.lerp(Vector3(sgn * 0.55, 0.3, 0.75), g)     # grabbing: the pole swings out and back, clear of the skis

@@ -9,6 +9,7 @@ var world: World
 var out_dir := "user://test_out"
 var failures := 0
 var checks := 0
+var _replay := {}                # --test=fps_replay: the scripted run fed tick by tick from _physics_process
 
 
 func run(w: World) -> void:
@@ -64,6 +65,8 @@ func run(w: World) -> void:
 			await _grab_ride_shots()
 		"bigair_route":
 			await _bigair_route()
+		"fps_replay":
+			await _fps_replay()
 		"perf":
 			await _perf()
 		_:
@@ -813,6 +816,73 @@ func _bigair_route() -> void:
 	cam.set_process(true)
 
 
+## --test=fps_replay --fps=30|60|120 [--trick=tail|blunt|backflip]: one jump off Big Air Park's L
+## kicker played through the engine's real loop (physics at its fixed rate, frames capped at --fps),
+## the inputs fed tick by tick from the skier's own state, so the same run can be compared across
+## frame rates: takeoff tick, air time, grab contact time, landing and score.
+func _fps_replay() -> void:
+	var s := world.skier
+	var fps := int(Game.test_args.get("fps", "60"))
+	Engine.max_fps = fps
+	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
+	var pk: Dictionary = world.terrain.layout["parks"][1]
+	var d := Vector3(pk["dir"][0], 0, pk["dir"][1])
+	var k: Dictionary = {}
+	for kk in pk["kickers"]:
+		if kk["line"] == "jump" and kk["size"] == "L":
+			k = kk
+	var ko := Vector3(k["origin"][0], 0, k["origin"][1])
+	world.spawn(ko - d * 24.0, Skier.yaw_of(d))
+	s.teleport(ko - d * 24.0, Skier.yaw_of(d), float(k["approach_speed"]) - 1.5)
+	var trick := String(Game.test_args.get("trick", "tail"))
+	_replay = {"lip": Vector3(k["lip"][0], 0, k["lip"][1]), "d": d, "trick": trick, "t0": s.time, "takeoff": -1.0,
+		"info": {}, "frames": 0, "done": false, "landed_t": -1.0}
+	process_physics_priority = -100          # feed the inputs before the skier steps
+	var cb := func(info): _replay["info"] = info
+	s.landed.connect(cb)
+	var t_start := Time.get_ticks_msec()
+	while not bool(_replay["done"]) and Time.get_ticks_msec() - t_start < 60000:
+		await get_tree().process_frame
+		_replay["frames"] = int(_replay["frames"]) + 1
+	s.landed.disconnect(cb)
+	s.scripted_input = {}
+	var info: Dictionary = _replay["info"]
+	var tr: Dictionary = TrickSystem.evaluate(info) if not info.is_empty() and str(info.get("crash", "")) == "" else {}
+	print("[TEST] fps_replay %d fps (%s): takeoff at tick %d, air %.4f s, grab '%s' held %.4f s, landing tick %d, '%s' %s pts %s %s; %d frames" % [
+		fps, trick, int(round(float(_replay["takeoff"]) * 120.0)), float(info.get("air_time", 0.0)), info.get("grab_name", ""),
+		float(info.get("grab_time", 0.0)), int(round(float(_replay["landed_t"]) * 120.0)), tr.get("name", "-"), tr.get("points", 0),
+		tr.get("quality", "-"), info.get("crash", ""), int(_replay["frames"])])
+	_replay = {}
+
+
+func _physics_process(_dt: float) -> void:
+	if _replay.is_empty() or bool(_replay["done"]):
+		return
+	var s := world.skier
+	var t := s.time - float(_replay["t0"])
+	var to_lip: float = (Vector3(_replay["lip"]) - s.position).dot(Vector3(_replay["d"]))
+	var keys := {}
+	var tk := String(_replay["trick"])
+	if tk == "backflip":
+		if not s.airborne and _replay["takeoff"] < 0.0 and to_lip < 14.0:
+			keys["lean_forward"] = 1.0
+			if to_lip < 6.0:
+				keys["lean_back"] = 1.0
+		if s.airborne and s.air_time < 0.7:
+			keys["lean_back"] = 1.0
+	elif s.airborne and s.air_time > 0.15:
+		keys["grab_right"] = 1.0
+		if s.air_time > 0.3:
+			keys["brake" if tk == "tail" else "tuck"] = 1.0
+	s.scripted_input = keys
+	if s.airborne and float(_replay["takeoff"]) < 0.0:
+		_replay["takeoff"] = t
+	if not (_replay["info"] as Dictionary).is_empty() and float(_replay["landed_t"]) < 0.0:
+		_replay["landed_t"] = t
+	if float(_replay["landed_t"]) > 0.0 and t - float(_replay["landed_t"]) > 0.5:
+		_replay["done"] = true
+
+
 ## --test=grab_ride [--grab=Truck Driver] [--dist=1.8]: rides a grab off Main Park's medium kicker
 ## (the real jump, cloth and all) and snaps it from the side every 0.15 s of the flight.
 func _grab_ride_shots() -> void:
@@ -1397,6 +1467,135 @@ func _park_kickers() -> void:
 			and str(tr.get("name", "")).contains(gt[0]) and absf(float(gi["flip"])) < 0.6,
 			"held '%s' %.2f s -> '%s' %s, flip %.0f deg" % [held_name, float(gi.get("grab_time", 0.0)), tr.get("name", "-"), gi.get("crash", "no landing"),
 			rad_to_deg(float(gi.get("flip", 0.0)))])
+	# --- polish pass checks: grabs on verified contact, in-air input, layout vs tuck, teleport resets
+	var pb = world.body
+	var mk2: Dictionary = {}
+	for k in world.terrain.layout["parks"][0]["kickers"]:
+		if k["size"] == "M":
+			mk2 = k
+	var md2 := Vector3(mk2["dir"][0], 0, mk2["dir"][1])
+	var mlip := Vector3(mk2["lip"][0], 0, mk2["lip"][1])
+	# a single jump off the medium kicker; keys_fn(skier) -> keys each step; the body poses every step
+	var jump := func(keys_fn: Callable, watch: Callable) -> Dictionary:
+		s.teleport(Vector3(mk2["origin"][0], 0, mk2["origin"][1]) - md2 * 12.0, Skier.yaw_of(md2), float(mk2["approach_speed"]) - 1.0)
+		var jb := {}
+		var jcb := func(info): jb["info"] = info
+		s.landed.connect(jcb)
+		for i in 900:
+			s.scripted_input = keys_fn.call(s)
+			s.step(1.0 / 120.0)
+			s.time += 1.0 / 120.0
+			s._prev_xform = s._cur_xform
+			s._cur_xform = s._compose_xform()
+			pb._process(1.0 / 120.0)
+			watch.call(s)
+			if jb.has("info") or s.is_crashed:
+				break
+		s.landed.disconnect(jcb)
+		s.scripted_input = {}
+		return jb.get("info", {})
+	# 1. an arrow pressed again just after takeoff still drives the spin (it used to be latched)
+	var spin_peak := {"pop": 0.0, "late": 0.0}
+	var k1 := func(sk: Skier) -> Dictionary:
+		var to_lip := (mlip - sk.position).dot(md2)
+		if not sk.airborne and to_lip > 0.0 and to_lip < 14.0:
+			return {"lean_left": 1.0, "lean_right": 1.0} if to_lip < 6.0 else {"lean_left": 1.0}
+		if sk.airborne and sk.air_time > 0.1 and sk.air_time < 0.9:
+			return {"lean_right": 1.0}
+		return {}
+	var w1 := func(sk: Skier) -> void:
+		if sk.airborne and sk.air_time < 0.1:
+			spin_peak["pop"] = maxf(spin_peak["pop"], absf(sk.spin_vel))
+		elif sk.airborne and sk.air_time > 0.5:
+			spin_peak["late"] = maxf(spin_peak["late"], absf(sk.spin_vel))
+	jump.call(k1, w1)
+	check("in-air arrow pressed just after takeoff speeds the spin up (not latched)", spin_peak["late"] > spin_peak["pop"] + 0.5,
+		"spin %.2f rad/s at the pop, %.2f rad/s with the arrow held in the air" % [spin_peak["pop"], spin_peak["late"]])
+	# 2. a grab pressed too late for the hand to get there scores no named grab
+	var k2 := func(sk: Skier) -> Dictionary:
+		return {"grab_right": 1.0, "brake": 1.0} if sk.airborne and sk.land_t < 0.38 else {}
+	var w_none := func(_sk: Skier) -> void:
+		pass
+	var late: Dictionary = jump.call(k2, w_none)
+	var late_tr: Dictionary = TrickSystem.evaluate(late) if not late.is_empty() else {}
+	check("a grab pressed too late to reach the ski scores no named grab", not late.is_empty() and late["crash"] == ""
+		and not str(late_tr.get("name", "")).contains("Tail"), "'%s', named-grab hold %.3f s" % [late_tr.get("name", "-"), float(late.get("grab_time", 0.0))])
+	# 3. Tail through a misty and Blunt through a spin off Ridgeline's XL: the palm stays on the ski
+	var rpk := -1
+	for pi3 in world.terrain.layout["parks"].size():
+		if world.terrain.layout["parks"][pi3]["name"] == "Ridgeline Park":
+			rpk = pi3
+	if rpk >= 0:
+		var xk2: Dictionary = {}
+		for k in world.terrain.layout["parks"][rpk]["kickers"]:
+			if k["line"] == "big" and k["size"] == "XL" and xk2.is_empty():
+				xk2 = k
+		var xd := Vector3(xk2["dir"][0], 0, xk2["dir"][1])
+		var xl := Vector3(xk2["lip"][0], 0, xk2["lip"][1])
+		for gt2 in [["Misty + Tail", "lean_back", "lean_left", {"grab_right": 1.0, "brake": 1.0}, "Tail"],
+				["Left 360 + Blunt", "lean_right", "lean_left", {"grab_right": 1.0, "tuck": 1.0}, "Blunt"]]:
+			s.teleport(Vector3(xk2["origin"][0], 0, xk2["origin"][1]) - xd * 12.0, Skier.yaw_of(xd), float(xk2["approach_speed"]) - 1.0)
+			var gb2 := {}
+			var gcb2 := func(info): gb2["info"] = info
+			s.landed.connect(gcb2)
+			var worst_err := 0.0
+			var held_frames := 0
+			for i in 1200:
+				var keys := {}
+				var to_lip2 := (xl - s.position).dot(xd)
+				if not s.airborne and to_lip2 > 0.0 and to_lip2 < 14.0:
+					keys[gt2[1]] = 1.0
+					if to_lip2 < 6.0:
+						keys[gt2[2]] = 1.0
+				if s.airborne and s.air_time > 0.15:
+					keys.merge(gt2[3])
+				s.scripted_input = keys
+				s.step(1.0 / 120.0)
+				s.time += 1.0 / 120.0
+				s._prev_xform = s._cur_xform
+				s._cur_xform = s._compose_xform()
+				pb._process(1.0 / 120.0)
+				if s.grab_contact:
+					held_frames += 1
+					worst_err = maxf(worst_err, float(pb.grab_contact_err))
+				if gb2.has("info") or s.is_crashed:
+					break
+			s.landed.disconnect(gcb2)
+			s.scripted_input = {}
+			var gi2: Dictionary = gb2.get("info", {})
+			var gtr2: Dictionary = TrickSystem.evaluate(gi2) if not gi2.is_empty() else {}
+			check("%s off the XL: palm held on the ski (<= 3 cm) for many frames, named" % gt2[0], held_frames >= 20 and worst_err <= 0.03
+				and str(gtr2.get("name", "")).contains(gt2[4]), "'%s', %d frames in contact, worst palm-to-ski %.1f cm" % [gtr2.get("name", "-"),
+				held_frames, worst_err * 100.0])
+	# 4. a backflip is laid out (long legs, hands in front), a misty / front flip tucked
+	var knee_ang := func(sd: String) -> float:
+		return rad_to_deg((pb.joints["hip_" + sd] - pb.joints["knee_" + sd]).angle_to(pb.joints["ankle_" + sd] - pb.joints["knee_" + sd]))
+	var lay := {"knee": 0.0, "hands": 9.0, "layout": 0.0, "flip": 0.0}
+	var k4 := func(sk: Skier) -> Dictionary:
+		var to_lip := (mlip - sk.position).dot(md2)
+		if not sk.airborne and to_lip > 0.0 and to_lip < 14.0:
+			return {"lean_forward": 1.0, "lean_back": 1.0} if to_lip < 6.0 else {"lean_forward": 1.0}
+		if sk.airborne and sk.air_time < 0.6:
+			return {"lean_back": 1.0}
+		return {}
+	var w4 := func(sk: Skier) -> void:
+		if sk.airborne and absf(sk.air_pitch) > deg_to_rad(120.0) and absf(sk.air_pitch) < deg_to_rad(240.0):
+			lay["knee"] = maxf(lay["knee"], (float(knee_ang.call("l")) + float(knee_ang.call("r"))) * 0.5)
+			lay["hands"] = minf(lay["hands"], (pb.joints["hand_l"] - pb.joints["hand_r"]).length())
+			lay["layout"] = maxf(lay["layout"], float(pb._p.get("layout", 0.0)))
+			lay["flip"] = minf(lay["flip"], sk.flip_vel)
+	jump.call(k4, w4)
+	check("backflip is a layout through the inversion: long legs (soft knees), hands in, not spread wide", lay["knee"] > 140.0 and lay["hands"] < 0.75,
+		"knee angle %.0f deg (180 = straight), hands %.2f m apart; layout blend %.2f, flip %.1f rad/s" % [lay["knee"], lay["hands"], lay["layout"], lay["flip"]])
+	# 5. a teleport mid-grab: no grab, no pose blend, no tracks carried to the new spot
+	var k5 := func(sk: Skier) -> Dictionary:
+		return {"grab_right": 1.0} if sk.airborne and sk.air_time > 0.15 else {}
+	var w5 := func(sk: Skier) -> void:
+		if sk.airborne and sk.air_time > 0.5 and sk.grab_name != "":
+			sk.teleport(sk.position + Vector3(30, 0, 0), sk.heading, 5.0)
+	jump.call(k5, w5)
+	check("teleport mid-grab resets the grab and the pose blend", s.grab_name == "" and s.grab_time == 0.0 and not s.grab_contact and pb._gp < 0.05,
+		"grab '%s', time %.2f, body blend %.2f" % [s.grab_name, s.grab_time, pb._gp])
 	# arrow tricks: ollie (set and let go), arrow backflip, arrow left 360, arrow rail pop
 	var ost: Dictionary = world.park.park_start(0)
 	s.teleport(ost["pos"], ost["yaw"], 4.0)

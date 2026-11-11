@@ -166,15 +166,23 @@ func _third_person(dt: float) -> void:
 	if _auto_center and idle > 1.6 and speed > 3.0 and not walking:
 		user_yaw = lerp_angle(user_yaw, 0.0, 1.0 - exp(-1.4 * dt))
 		user_pitch = lerpf(user_pitch, 0.0, 1.0 - exp(-1.0 * dt))
+	# follow the body closely sideways and along, but take its vertical motion slowly and never more
+	# than ~0.8 m behind it: a landing or a bump doesn't yank the view down and back up
+	var ty := _target.y
 	_target = _target.lerp(desired_target, 1.0 - exp(-(22.0 if not chase else 30.0) * dt))
+	_target.y = clampf(lerpf(ty, desired_target.y, 1.0 - exp(-7.0 * dt)), desired_target.y - 0.8, desired_target.y + 0.8)
 	# on a chairlift the default view is from the side, so you can see yourself (and the valley)
 	var yaw := _follow_yaw + user_yaw + (1.05 if on_lift else 0.0)
 	# look a little more downhill on steep slopes
 	var slope_pitch := -deg_to_rad(clampf(skier.slope, 0.0, 45.0)) * 0.22 if not skier.airborne else 0.0
 	var pitch := (-0.12 if not chase else -0.09) + user_pitch + slope_pitch
+	if skier.is_crashed:
+		pitch -= 0.28          # a bail: look down on him from higher, so the fall reads over the landing
 	pitch = clampf(pitch, -1.25, 0.6)
 	# low and close behind the skier, park-video style
 	var dist := (3.9 + speed * 0.04) if not chase else (2.7 + speed * 0.022)
+	if skier.is_crashed:
+		dist += 1.2
 	if walking:
 		dist = 3.6 if not chase else 2.6
 	elif on_lift:

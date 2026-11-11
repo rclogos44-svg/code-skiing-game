@@ -874,7 +874,8 @@ func step(dt: float) -> void:
 	_measure_turn(dt)
 	_update_safe(dt)
 	# landing / bump compression spring
-	compression_vel += (-compression * 70.0 - compression_vel * 11.0) * dt
+	# (peaks ~90 ms after a landing, back up ~270 ms later: a quick, visible absorb, then ride on)
+	compression_vel += (-compression * 120.0 - compression_vel * 17.0) * dt
 	compression = clampf(compression + compression_vel * dt, -0.2, 1.0)
 	revert = move_toward(revert, 0.0, dt * 7.0)
 	if airborne:
@@ -1312,10 +1313,10 @@ func _land(n: Vector3, impact: float) -> void:
 		"offaxis": off_family, "off_dir": off_dir, "off_flip": rad_to_deg(off_angle), "off_tilt": off_max_tilt,
 	}
 	ground_n = n
-	# the legs absorb the landing: the impact sets them sinking (the compression spring peaks ~0.13 s
-	# later at this depth and comes back up), instead of snapping straight into a crouch
+	# the legs absorb the landing: the impact sets them sinking (the compression spring peaks ~0.09 s
+	# later, deeper for a harder impact, and comes back up), instead of snapping into a crouch
 	var depth := clampf(impact / 14.0, 0.1, 1.0) * (1.0 if air_time > 0.25 else 0.4)
-	compression_vel = maxf(compression_vel, depth * 17.0)
+	compression_vel = maxf(compression_vel, depth * 21.0)
 	# crash conditions
 	var reason := ""
 	if pitch_off > tol + deg_to_rad(15.0) and air_time > 0.3:

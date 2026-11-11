@@ -32,7 +32,7 @@ func setup(s: Skier, b: SkierBody, td: TerrainData) -> void:
 	spray_l = _make_spray(puff_tex)
 	spray_r = _make_spray(puff_tex)
 	powder = _make_powder(puff_tex)
-	burst = _make_burst(puff_tex, 90, 1.4)
+	burst = _make_burst(puff_tex, 70, 1.1)        # crashes and very hard impacts only
 	puff = _make_burst(puff_tex, 50, 1.6)
 	ambient = _make_ambient(flake_tex)
 	track_mat = StandardMaterial3D.new()
@@ -287,6 +287,9 @@ func _make_ambient(tex: Texture2D) -> GPUParticles3D:
 
 
 # ------------------------------------------------------------------ per frame
+var _land_pulse := 0.0               # landing spray, 0..1, fades over ~0.3 s
+
+
 func _process(_delta: float) -> void:
 	if skier == null:
 		return
@@ -304,11 +307,19 @@ func _process(_delta: float) -> void:
 	var sp := skier.speed
 	var grounded := not skier.airborne and skier.contact
 	var pdepth := skier.surface.r * (1.0 - skier.surface.g)
-	# spray from the outside edges, stronger while skidding / carving hard
+	var groomed := skier.surface.g
+	# spray from the outside edges with the edge load: skidding and hard carving throw snow, a
+	# straight run on packed park snow barely does (the skis stay readable)
 	var intensity := 0.0
+	var turning := clampf(absf(skier.yaw_rate) / 0.6, 0.0, 1.0)
 	if grounded and sp > 2.5:
-		intensity = clampf(skier.skid * 1.2 + skier.carve_g / 16.0 + (sp - 2.5) / 40.0, 0.0, 1.0)
+		intensity = clampf(skier.skid * 1.2 + skier.carve_g / 16.0 + (sp - 2.5) / 40.0 * turning, 0.0, 1.0)
 		intensity *= 1.0 - 0.6 * skier.surface.b * (1.0 - skier.surface.g)
+		intensity *= 1.0 - 0.35 * groomed
+	# a landing: a short sheet of snow off the ski tails, thrown back and out (not a cloud round him)
+	_land_pulse = maxf(_land_pulse - _delta * 3.5, 0.0)
+	if grounded and _land_pulse > 0.0:
+		intensity = maxf(intensity, _land_pulse * (1.0 - 0.45 * groomed))
 	var hv := Vector3(skier.vel.x, 0.0, skier.vel.z)
 	var back := -hv.normalized() if hv.length() > 0.5 else Vector3.ZERO
 	var side_dir := Vector3.ZERO
@@ -325,9 +336,9 @@ func _process(_delta: float) -> void:
 		var xf: Transform3D = body.ski_l if i == 0 else body.ski_r
 		ps.global_position = xf.origin + xf.basis.z * 0.45 + Vector3.UP * 0.05
 		var pm: ParticleProcessMaterial = ps.process_material
-		var dir := (Vector3.UP * 0.9 + side_dir * 1.2 + back * 0.4).normalized()
+		var dir := (Vector3.UP * 0.6 + side_dir * 1.2 + back * (0.5 + 0.6 * _land_pulse)).normalized()   # low and away from him
 		pm.direction = dir
-		pm.initial_velocity_max = 2.0 + sp * 0.18 + skier.skid * 4.0
+		pm.initial_velocity_max = 2.0 + sp * 0.18 + skier.skid * 4.0 + 2.0 * _land_pulse
 		ps.amount_ratio = intensity
 	powder.global_position = skier.position + back * 0.6 + Vector3.UP * 0.2
 	powder.amount_ratio = clampf(pdepth * (sp - 3.0) / 10.0, 0.0, 1.0) if grounded else 0.0
@@ -338,10 +349,14 @@ func _on_landed(info: Dictionary) -> void:
 	var impact: float = info["impact"]
 	if info["air_time"] < 0.3 and impact < 4.0:
 		return
-	burst.global_position = skier.position + Vector3.UP * 0.2
-	(burst.process_material as ParticleProcessMaterial).initial_velocity_max = 3.0 + impact * 0.5
-	burst.amount_ratio = clampf(0.35 + impact / 14.0, 0.3, 1.0)
-	burst.restart()
+	# the ski tails throw a short sheet of snow back and out, harder for a harder landing
+	_land_pulse = clampf(0.35 + impact / 14.0, 0.3, 1.0)
+	if impact > 14.0:
+		# a really hard one also kicks up a (small) cloud behind him
+		burst.global_position = skier.position - Vector3(skier.vel.x, 0.0, skier.vel.z).normalized() * 0.8 + Vector3.UP * 0.1
+		(burst.process_material as ParticleProcessMaterial).initial_velocity_max = 2.0 + impact * 0.2
+		burst.amount_ratio = 0.4
+		burst.restart()
 
 
 func _on_crashed(_reason: String, v: Vector3) -> void:
@@ -360,6 +375,7 @@ func _on_tree(pos: Vector3, strength: float) -> void:
 
 ## Moved to a new spot: no track joins the old spot to the new one, no spray carries over.
 func _teleported() -> void:
+	_land_pulse = 0.0
 	_break_tracks()
 	spray_l.amount_ratio = 0.0
 	spray_r.amount_ratio = 0.0
