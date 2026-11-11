@@ -67,15 +67,19 @@ const BOOT_LEAN := 15.0        # shin leans this far forward of the boot's up ax
 const GRAB_POSES := {
 	# relaxed, real-world shapes: knees tucked ~90-110 deg, skis close to parallel with a light
 	# tweak, a little twist toward the grab, free arm out to the side for balance
-	# the mute from the cork 7 video and the X photo: knees pulled right up to the chest and the
-	# skis swung into a wide X (~85 deg between them) crossing under the boots by the bindings; the
-	# left hand comes down onto the right ski at the crossing, the right arm goes up and out with
-	# the pole pointing up; compact and fairly upright (the tilt in the video is the cork, not the
-	# grab).  Quick and clean: arms out at the pop, knees up and the skis across, then the hand
-	"Mute": {"l": ["r", -0.06, 1.0], "free": {"r": Vector3(0.34, 0.36, 0.0)}, "free_pole": {"r": Vector3(0.35, 0.8, 0.3)},
-		"legs": {"l": [118.0, -22.0, 0.0, 125.0, 0.0, 20.0], "r": [118.0, -22.0, 0.0, 128.0, 0.0, 20.0]}, "pitch": 35.0, "pitch_w": 1.0, "legs_w": 0.15,
-		"twist": 0.15, "twist_w": 4.0, "side": 0.0, "side_w": 4.0, "curve": 0.45,
-		"skis": {"yaw": {"l": 42.0, "r": -42.0}, "gap": 0.06, "stack": 0.07, "side_off": -0.06}, "hips_yaw": 0.08, "roll": -0.12,
+	# the mute from the cork 7 video and the X photo: TWEAKED - the skis in a wide X (~80 deg between
+	# them) out to the side and back: the whole body tilts so his head goes toward the grabbing
+	# (left) hand and the X out to his right ("roll"), pitches forward over it so the skis trail
+	# behind ("tip"), and the legs swing back a little more about the hips ("tweak"); the left
+	# hand hangs down his left side onto the front of the right ski, where it has crossed over
+	# (~28 cm ahead of the boot), the right arm goes up and out with the pole pointing up.  Arms
+	# out at the pop, knees up and the skis across, then the hand
+	"Mute": {"l": ["r", -0.28, 1.0], "free": {"r": Vector3(0.38, 0.26, 0.04)}, "free_pole": {"r": Vector3(0.35, 0.8, 0.3)},
+		"legs": {"l": [110.0, -19.0, 0.0, 138.0, 6.0, 25.0], "r": [108.0, -25.0, -12.0, 136.0, -5.0, 15.0]}, "pitch": 45.0, "pitch_w": 4.0, "legs_w": 0.6,
+		"along_range": [-0.3, -0.05], "reach": 0.95,
+		"twist": 0.0, "twist_w": 2.0, "side": 0.15, "side_w": 3.0, "curve": 0.45,
+		"skis": {"yaw": {"l": 40.0, "r": -40.0}, "gap": 0.06, "stack": 0.07, "side_off": 0.0}, "tweak": [8.0, 15.0],
+		"hips_yaw": 0.08, "roll": 0.32, "tip": 14.0,
 		"time_in": 0.75},
 	"Safety": {"r": ["r", -0.02, 1.0], "free": {"l": Vector3(-0.45, 0.05, -0.1)},
 		"legs": {"l": [70.0, 6.0, 5.0, 100.0], "r": [88.0, 12.0, -5.0, 108.0]}, "pitch": 28.0, "twist": 0.12, "side": 0.12, "time_in": 0.7},
@@ -168,6 +172,18 @@ func _arm_ski_clearance(sh: Vector3, el: Vector3, hand: Vector3) -> float:
 	return best - 0.12
 
 
+## A tweaked grab swings the whole lower body about the pelvis: "tweak" = [deg the feet swing out
+## to his right (- = left), deg they swing back behind him].  Body frame, pelvis at (0, ph, pz);
+## `w` blends it in.
+static func _tweak_xf(g: Dictionary, ph: float, pz: float, w: float) -> Transform3D:
+	if not g.has("tweak") or w <= 0.0:
+		return Transform3D.IDENTITY
+	var tw: Array = g["tweak"]
+	var p0 := Vector3(0.0, ph, pz)
+	var R := Basis(Vector3(0, 0, 1), deg_to_rad(float(tw[0])) * w) * Basis(Vector3(1, 0, 0), -deg_to_rad(float(tw[1])) * w)
+	return Transform3D(Basis(), p0) * Transform3D(R, Vector3.ZERO) * Transform3D(Basis(), -p0)
+
+
 ## Body-frame geometry of a grab pose: returns the total hand-to-grab-point gap (m) beyond arm reach.
 func _grab_gap(g: Dictionary, legs: Dictionary, sp: Array, ph: float, pz: float, al := {}) -> float:
 	var total := 0.0
@@ -193,7 +209,9 @@ func _grab_dists(g: Dictionary, legs: Dictionary, sp: Array, ph: float, pz: floa
 			spec[1] = al[sd]
 		var ss := -1.0 if spec[0] == "l" else 1.0
 		var fk := _leg_fk(Vector3(ss * HIP_HALF, ph - 0.04, pz), ss, legs[spec[0]])
-		var B: Basis = fk[1]
+		var TW := _tweak_xf(g, ph, pz, 1.0)
+		var B: Basis = TW.basis * (fk[1] as Basis)
+		fk[2] = TW * (fk[2] as Vector3)
 		var hs := -1.0 if sd == "l" else 1.0
 		var sh := chest - tb.y * 0.07 + tb.x * (hs * SHOULDER_HALF) + tb * (g.get("shoulders", {}).get(sd, Vector3.ZERO) as Vector3)
 		var pt := grip_point(fk[2], B, ss, spec, sh, bool(g.get("auto_grip", false)))
@@ -242,10 +260,12 @@ func grab_def(name: String, ctx: String) -> Dictionary:
 			g["pitch"] = float(g["pitch"]) + 12.0
 			g["twist"] = float(g["twist"]) * 0.5
 			g["roll"] = float(g.get("roll", 0.0)) * 0.3
+			g["tip"] = float(g.get("tip", 0.0)) * 0.3
 			g["hips_yaw"] = float(g.get("hips_yaw", 0.0)) * 0.5
 		"cork":
 			g["twist"] = clampf(float(g["twist"]) * 1.4, SPINE_LIMITS["twist"][0], SPINE_LIMITS["twist"][1])
 			g["roll"] = float(g.get("roll", 0.0)) * 0.4
+			g["tip"] = float(g.get("tip", 0.0)) * 0.5
 	_defs[key] = g
 	return g
 
@@ -370,9 +390,11 @@ func _ski_target_cost(t: Dictionary, legs: Dictionary, ph: float, pz: float) -> 
 		c += (pow(tip.y / 0.15, 2.0) + pow(B.x.y / 0.15, 2.0)) * 2.0       # flat skis
 		cen[sd] = fk[2]
 	var dl: Vector3 = cen["l"] - cen["r"]
+	var mid: Vector3 = (cen["l"] + cen["r"]) * 0.5
 	if t.has("side_off"):     # where the X sits sideways from the body centre (- = his left)
-		var mid: Vector3 = (cen["l"] + cen["r"]) * 0.5
 		c += pow((mid.x - float(t["side_off"])) / 0.05, 2.0) * 3.0
+	if t.has("back"):         # how far behind the hips the X sits (a tweaked grab pushes it back)
+		c += pow((mid.z - float(t["back"])) / 0.05, 2.0) * 3.0
 	c += pow((Vector2(dl.x, dl.z).length() - float(t["gap"])) / 0.04, 2.0) * 2.0
 	c += pow((dl.y - float(t["stack"])) / 0.03, 2.0) * 2.0
 	return c
@@ -816,6 +838,12 @@ func _compute_pose(dt: float) -> void:
 		var piv := L.origin + L.basis.y * 0.9
 		var R := Basis(L.basis.z.normalized(), g_roll)
 		L = Transform3D(R * L.basis, piv + R * (L.origin - piv))
+	# ... and pitches forward over the grab: head and chest down, the skis trailing back behind him
+	var g_tip := deg_to_rad(float(_cur_def().get("tip", 0.0))) * _gw_body
+	if absf(g_tip) > 0.0001:
+		var piv_t := L.origin + L.basis.y * 0.9
+		var Rt := Basis(L.basis.x.normalized(), -g_tip)
+		L = Transform3D(Rt * L.basis, piv_t + Rt * (L.origin - piv_t))
 	# a tweaked grab twists the hips and legs against the chest (skis go across, chest faces on)
 	var hips_yaw := float(_cur_def().get("hips_yaw", 0.0)) * _gw_cross
 	var LH := Transform3D(L.basis * Basis(Vector3.UP, hips_yaw), L.origin)
@@ -999,6 +1027,9 @@ func _compute_pose(dt: float) -> void:
 			if la.size() > 5:
 				ang.append(lerpf(0.0, float(la[5]), _gw_cross))     # the lower legs twist as the skis cross
 			fk = _leg_fk(hip_local, side, ang)
+			# a tweaked grab swings the legs out to the side and back about the pelvis
+			var TW := _tweak_xf(gp, ph, pz, _gw_cross)
+			fk = [TW * (fk[0] as Vector3), TW.basis * (fk[1] as Basis), TW * (fk[2] as Vector3)]
 			_fk["hip_" + sd_key] = LH * hip_local
 			_fk["knee_" + sd_key] = LH * (fk[0] as Vector3)
 		var foot := L * foot_local

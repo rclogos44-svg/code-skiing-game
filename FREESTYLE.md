@@ -124,10 +124,12 @@ Getting into a grab takes time, like a real one: up to 0.75-0.9 s on a big jump 
 big air the grab is unhurried and on a small kicker there's still a grab to hold.
 
 The Mute and the Japan are fitted to reference footage / photos the player supplied (kept out of
-the repo): the **Mute** from a cork 7 mute video - arms out at the pop, knees pulled to the chest,
-the skis swung into a wide X (~80-85 deg between them) crossing under the boots by the bindings,
-then the left hand comes down onto the right ski at the crossing while the right arm goes up and
-out; the **Japan** from Japan photos - the right hand goes down between the legs behind the right
+the repo): the **Mute** from a cork 7 mute video and an X photo - arms out at the pop, knees pulled
+up, the skis swung into a wide X (~80 deg between them), then the left hand comes down its own side
+onto the front of the right ski where it has crossed over, while the right arm goes up and out. It
+is *tweaked* to the side and back: the whole body tilts so the head goes toward the grabbing hand
+and the X out the other side (`roll`), pitches forward over it so the skis trail behind (`tip`),
+and the legs swing back a little about the hips (`tweak`); the **Japan** from Japan photos - the right hand goes down between the legs behind the right
 knee to the left ski by the binding, and the left ski is pulled across behind the right leg TIP UP
 (~45 deg) while the other ski stays flat. The wide X needs the lower legs to twist (a bent knee
 allows it), so the leg model has a lower-leg twist (`tib`, +-25 deg, toes in / out).

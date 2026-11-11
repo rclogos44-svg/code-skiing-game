@@ -2629,8 +2629,8 @@ func _grab_shots() -> void:
 		var zl: Vector3 = -body.ski_l.basis.z
 		var zr: Vector3 = -body.ski_r.basis.z
 		var xang := rad_to_deg(Vector2(zl.x, zl.z).normalized().angle_to(Vector2(zr.x, zr.z).normalized()))
-		print("[TEST] grab %-12s skis %.0f deg apart seen from above; tips up: left %.0f deg, right %.0f deg" % [gname, absf(xang),
-			rad_to_deg(asin(clampf(zl.y, -1, 1))), rad_to_deg(asin(clampf(zr.y, -1, 1)))])
+		print("[TEST] grab %-12s skis %.0f deg apart seen from above; tips up: left %.0f deg, right %.0f deg; feet %.2f m %s of the hips" % [gname, absf(xang),
+			rad_to_deg(asin(clampf(zl.y, -1, 1))), rad_to_deg(asin(clampf(zr.y, -1, 1))), absf(mid_ank.dot(fwd)), "in front" if mid_ank.dot(fwd) > 0.0 else "behind"])
 		c += Vector3.UP * 0.15
 		var views := [["front", fwd * 2.5 + Vector3.UP * 0.3], ["side", rt * 2.5 + Vector3.UP * 0.2],
 				["back", -fwd * 2.4 + Vector3.UP * 0.4], ["above", -rt * 1.6 + fwd * 1.0 + Vector3.UP * 1.9]]

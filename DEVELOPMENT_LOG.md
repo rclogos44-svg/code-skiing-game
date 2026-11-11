@@ -827,3 +827,13 @@ Details, research links, the control table and tuning locations: FREESTYLE.md.
   hand still holds the ski (new check over all grabs x 4 tricks, worst gap 1.3 cm).
 - --test=grabs --ctx=straight|spin|flip|cork; --test=grab_ride --grab=.. --size=S|M|L --view=front
   --every=s. Physics 170/170.
+
+## Mute tweaked to the side and back
+
+- From the X photo and the cork 7 video: the whole body tilts so his head goes toward the grabbing
+  (left) hand and the X out to his right (`roll` 0.32 rad), pitches forward over the grab so the
+  skis trail behind (`tip` 14 deg, new), and the legs swing back a little more about the hips
+  (`tweak`, new: [side deg, back deg], applied about the pelvis in the solver and the live pose).
+  The left hand comes down its own side onto the front of the right ski where it has crossed over
+  (the photo), instead of reaching across to the crossing. Flips / corks use less of the tilt and
+  pitch (the trick does the rotating). Physics 170/170.
