@@ -1036,6 +1036,7 @@ func _perf() -> void:
 	for i in world.terrain.layout["parks"].size():
 		if world.terrain.layout["parks"][i]["name"] == "Ridgeline Park":
 			rp = i
+	scenes.append(["big air park jump line", world.park.park_start(1)])
 	scenes.append(["ridgeline big line + tricks", world.park.park_start(rp, 3)])
 	scenes.append(["main park", world.park.park_start(0)])
 	var fs := _find_slope(18.0, 26.0)
@@ -1052,6 +1053,14 @@ func _perf() -> void:
 		var wall := []
 		var draws := []
 		var prims := []
+		var pose := []
+		var fxms := []
+		# the body's pose / IK and the snow effects are timed on their own: they run here, not
+		# from the engine, for exactly the same work per frame
+		world.body.set_process(false)
+		var fxn = world.get("fx")
+		if fxn:
+			fxn.set_process(false)
 		var last := Time.get_ticks_usec()
 		for f in int(Game.test_args.get("frames", "240")):
 			var t := f % 240
@@ -1066,6 +1075,15 @@ func _perf() -> void:
 				keys = {"grab_left": 1.0}
 			s.scripted_input = keys
 			await get_tree().process_frame
+			var dt_f := get_process_delta_time()
+			var t0p := Time.get_ticks_usec()
+			world.body._process(dt_f)
+			var t1p := Time.get_ticks_usec()
+			if fxn:
+				fxn._process(dt_f)
+			var t2p := Time.get_ticks_usec()
+			pose.append((t1p - t0p) / 1000.0)
+			fxms.append((t2p - t1p) / 1000.0)
 			var now := Time.get_ticks_usec()
 			wall.append((now - last) / 1000.0)
 			last = now
@@ -1081,8 +1099,15 @@ func _perf() -> void:
 			for x in b:
 				sum += float(x)
 			return "avg %.2f p95 %.2f max %.2f" % [sum / b.size(), float(b[int(b.size() * 0.95)]), float(b[-1])]
-		print("[TEST] PERF %-28s process ms %s | physics ms %s | wall ms %s | draw calls %s | primitives %s" % [sc[0],
-			stat.call(proc), stat.call(phys), stat.call(wall), stat.call(draws), stat.call(prims)])
+		world.body.set_process(true)
+		if fxn:
+			fxn.set_process(true)
+		var med := func(a: Array) -> String:
+			var b := a.duplicate()
+			b.sort()
+			return "median %.2f p95 %.2f" % [float(b[b.size() / 2]), float(b[int(b.size() * 0.95)])]
+		print("[TEST] PERF %-28s frame (wall) ms %s | pose+IK ms %s | snow fx ms %s | physics ms %s | draw calls %s" % [sc[0],
+			med.call(wall), med.call(pose), med.call(fxms), med.call(phys), stat.call(draws)])
 	print("[TEST] PERF objects %d, static memory %.0f MB, video memory %.0f MB" % [Performance.get_monitor(Performance.OBJECT_COUNT),
 		Performance.get_monitor(Performance.MEMORY_STATIC) / 1e6, Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED) / 1e6])
 

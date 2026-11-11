@@ -837,3 +837,26 @@ Details, research links, the control table and tuning locations: FREESTYLE.md.
   The left hand comes down its own side onto the front of the right ski where it has crossed over
   (the photo), instead of reaching across to the crossing. Flips / corks use less of the tilt and
   pitch (the trick does the rotating). Physics 170/170.
+
+## Polish pass: Big Air Park jump line (motion ownership, grabs on contact, layout, landings, snow, camera)
+
+Reproduced from the player's notes (the Gameplay.mov itself wasn't among the uploads) with
+`--test=bigair_route`: the Big Air Park jump line ridden with real inputs - Right Bio 540, switch
+Left Misty 540 Tail, an over-spun jump that lands sideways (bail, respawn), switch Backflip,
+switch Blunt, switch Left 720 Blunt, runout - with chase-camera snaps around each jump.
+- Ownership (traced): the controller (Skier, plain Node3D, own terrain collision) owns position,
+  velocity, contacts and trick state at 120 Hz and keeps prev / current transforms; visual_xform()
+  interpolates them; SkierBody (top level, identity) poses joints, skis and rig bones from that one
+  root every frame; the camera reads the same root; ski fx read the body's skis. One path each.
+- Found and fixed: grabs were credited while the glove was up to 13 cm off the ski (Tail in a
+  Misty) / 7 cm (Blunt in a spin) - now a reach correction before the arm solve and contact-gated
+  scoring (palm within 3 cm, 80 ms); an arrow pressed just after takeoff became a latched
+  'prepare' so in-air spin / flip input was ignored; teleports (park drops, back to the top) left
+  tracks bridging to the old spot and kept the grab state; the backflip was a fold with the arms
+  in a wide T; a landing burst was a cloud centred on the skier; a straight runout sprayed.
+- Same jump at 30 / 60 / 120 fps (--test=fps_replay): identical takeoff and landing ticks, air
+  time, trick and score; the verified grab time differs by one physics tick at 30 fps (contact is
+  measured per rendered frame).
+- Profile (software rendering, 640x360, same scenes before / after): pose+IK median 0.53 ms ->
+  0.53 ms, snow fx ~0.3 ms, draw calls unchanged; frame time is the software renderer (~0.6 s).
+- Physics 176/176; the route gives identical results on three runs.

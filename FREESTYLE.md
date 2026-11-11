@@ -141,6 +141,22 @@ bio** it is styled and tweaked - pulled across harder, legs a little longer, the
 in a **spin** it is compact so it keeps spinning. Each version is solved separately so the hand
 still really holds the ski.
 
+**A grab only counts while the glove is really on the ski.** Each grab has a grip point on its
+ski (`GRAB_POSES[name][hand] = [ski, along, edge]`, along = metres from the binding toward the tail,
++, or the tip, -): the Tail is the near-tail edge (0.68 m, ~11 cm from the end), the Blunt the tail
+end itself (0.73-0.78 m), the Mute the front of the crossed ski, the Tip the last ~15 cm of the tip.
+Every frame, after the base pose, the body measures the palm-to-grip-point distance: if the
+shoulder has moved away (the spin lead, a flip tuck, an off-axis shape) the grabbed ski is first
+brought to the hand with the leg (within the leg's reach), then the arm is solved against the
+ski's current transform, so the hand never chases last frame's ski. Contact is ON within 3 cm and
+stays on until 4.5 cm (`SkierBody.CONTACT_ON / CONTACT_OFF`); the controller counts the named
+grab only while it's on (`Skier.grab_time`), and the trick only names it after 80 ms of verified
+contact (`TrickSystem`). A reach that never gets there, or a grab pressed too late on a short air,
+scores no named grab. F3 shows the palm-to-ski distance, contact state and verified hold time.
+Each named grab is bound to one hand (E = right hand: Safety / Tail / Blunt; Q = left: Mute / Japan
+/ Tip; both = Truck Driver), so there are no separate mirrored bindings; riding switch never swaps
+his anatomical left and right.
+
 Phases (shown in the F3 view): **reach** (the knees come up first, the skis cross, the hand
 travels in on a curve - out and a little up first - and arrives last: SkierBody stages `_gw_legs`,
 `_gw_cross`, `_gw_hand`, `_gw_body`), **contact**,
@@ -153,6 +169,18 @@ side that clears the skis, and limbs are never stretched (out-of-reach targets b
 The grabbing hand's pole swings out and back; the free arm's pole hangs back and down. On Easy /
 Normal a grab lets go by itself 0.3 s before the snow (from the landing probe, i.e. the real
 terrain), Skier.GRAB_AUTO_RELEASE; on Realistic you must let go yourself.
+
+## Air shapes and landings
+
+- Backflips are laid out: long through the hips with a slight arch and soft knees (~160 deg),
+  feet apart, skis square to the boots, hands held in front of the chest; pulled on into a
+  double, the body tucks. Front flips are always tucked; off-axis families use their own tuck.
+- Landing prep from the predicted time to the snow (`Skier.land_t`): from ~0.4 s out the legs
+  reach down for it and the hands come forward; at touchdown the compression spring
+  (`Skier.compression`) peaks ~90 ms later, deeper for a harder impact, and is back ~270 ms after
+  that, while steering stays live.
+- A sideways or upside-down landing hands the current pose and velocity to the ragdoll (no snap
+  upright); the camera looks down on the bail from higher and wider.
 
 ## Ridgeline Park
 
@@ -190,3 +218,8 @@ mountain are unchanged (build/parks.py applies it after the features and on clea
 - Landing tolerance / impact limits: Skier.DIFFICULTIES `land_tol`, `impact`.
 - Park layout and jump sizes: build/parks.py (DESIGNS "Ridgeline Park", STEPUP, KICKERS).
 - Cloth: SkierBody.CLOTH_SPRING.
+- Grab contact: SkierBody.CONTACT_ON / CONTACT_OFF, the 80 ms named-grab threshold in TrickSystem.
+- Landing absorption: the compression spring in Skier.step (stiffness 120, damping 17) and the
+  impact -> depth line in Skier._land.
+- Snow: SkiFx landing pulse / spray intensity in scripts/fx/ski_fx.gd; camera follow in
+  CameraRig._third_person.
