@@ -20,7 +20,9 @@ summit_dev/
     world/             generated heightmaps, normal/surface/bake maps, trees/rocks, layout.json
     assets/            generated textures and audio
   build/              automated pipeline (see below), generators, C terrain kernels
-  tools/              portable Godot editor + export templates, Mesa lavapipe (tests only)
+    blender/           build_rider.py: the rider's body and draped clothes (run with tools/blender)
+  tools/              portable Godot editor + export templates, Mesa lavapipe (tests only),
+                      Blender 4.5 LTS (only to re-drape the clothes; building the game doesn't need it)
   dist/               exported builds and packaged ZIPs
   previews/           screenshots produced by automated tests
 ```
@@ -44,7 +46,9 @@ Nothing is installed system-wide; everything lives under `summit_dev/`.
 - Development container: Linux x86_64 (Ubuntu 24.04), 4 cores, no GPU.
 - The network policy blocks Poly Haven, ambientCG, Quaternius and tuxfamily, so **no external art
   assets could be downloaded**. All content (terrain, textures, models, animation, sounds) is
-  generated procedurally — no Blender.
+  generated procedurally. Since the rider rebuild below, the clothes are draped by a script in
+  Blender 4.5.16 LTS (official blender.org Linux build, SHA-256 checked against blender.org's
+  published checksum, unpacked into `tools/blender`, built-in tools only, no add-ons).
 - GitHub releases are reachable, so the official Godot binaries and templates were used.
 - No GPU: visual tests render through Mesa lavapipe (software Vulkan). Frame times measured here
   are CPU-rendered and **not representative of real GPU performance**; only CPU-side costs, draw
@@ -860,3 +864,29 @@ switch Blunt, switch Left 720 Blunt, runout - with chase-camera snaps around eac
 - Profile (software rendering, 640x360, same scenes before / after): pose+IK median 0.53 ms ->
   0.53 ms, snow fx ~0.3 ms, draw calls unchanged; frame time is the software renderer (~0.6 s).
 - Physics 176/176; the route gives identical results on three runs.
+
+## Rider clothes rebuilt in Blender (Riders Republic references)
+
+The jacket and pants are now draped by Blender's cloth simulation instead of being sculpted as
+distance fields; the outfit is unchanged (sage fitted jacket with hood, baggy khaki pants, black
+helmet, orange goggles, navy gaiter).
+- `build/blender/build_rider.py` (headless, built-in tools only): a body mannequin on an armature
+  that matches SkierRig's 16 bones, posed into the bind stance from rider.json (max joint error
+  0.0 mm). Each garment is a shell round the standing body (ease per region: fitted chest,
+  roomy hem over the pants, wide legs, standing collar), carried onto the posed body with Surface
+  Deform (the lower legs and collar ride their bones rigidly), relaxed with Corrective Smooth,
+  pushed out of the body and boots, then settled by the cloth simulation with the standing shape
+  as its rest lengths. The boots already sit at the stance's forward lean in the standing pose, so
+  the hems wrap them the same way in both. `--export` writes the garments decimated to budget with
+  ray-cast AO; the repo keeps that output as `build/rider_garments.npz`.
+- `build/rider_from_blender.py` (plain Python, no Blender): lining and rim round every opening,
+  gen_rider's skin weights and sway channels (the legs never web, the crotch stays with the pelvis),
+  its UV charts and painted atlases, the hood the player liked moved onto the new jacket's back,
+  and the gear unchanged. `02_gen_assets.sh` runs it; the result is byte-identical from the npz.
+- Bugs met on the way: Blender winds front faces counter-clockwise, Godot clockwise (the clothes
+  came out inside out until the triangles were flipped); hand-built boot and collar parts had
+  inward normals (offsets and push-outs went the wrong way); Godot kept serving stale atlases from
+  its import cache after the UV layout changed (re-import fixes it).
+- Triangles: jacket 21.0k (with hood and lining), pants 14.7k, gear unchanged - 62k in all
+  (the old rider was 58k).
+- Physics 176/176; cloth_grab (Truck Driver) max offset 3.5 cm, 0 reversals.
