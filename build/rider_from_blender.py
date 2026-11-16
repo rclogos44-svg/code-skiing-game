@@ -25,7 +25,7 @@ sys.path.insert(0, HERE)
 import gen_rider as gr  # noqa: E402
 
 LINING_DEPTH = 0.006
-LINING_REACH = 0.1          # how far into an opening the lining runs (further in is never seen)
+LINING_REACH = 0.05         # how far into an opening the lining runs (gloves, boots and gaiter fill the rest)
 
 
 def add_lining(v, n, ao, tris):

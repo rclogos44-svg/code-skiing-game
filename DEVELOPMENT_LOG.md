@@ -890,3 +890,17 @@ helmet, orange goggles, navy gaiter).
 - Triangles: jacket 21.0k (with hood and lining), pants 14.7k, gear unchanged - 62k in all
   (the old rider was 58k).
 - Physics 176/176; cloth_grab (Truck Driver) max offset 3.5 cm, 0 reversals.
+
+### Folds (v58)
+- The fabric's folds are geometry: before decimation the draped mesh is subdivided once and pushed
+  along its normals by fold fields placed in limb coordinates (gen_rider's fold layout, larger):
+  pants - five tilted, wobbly rings stacking above each boot, creases behind the knees, the hip
+  crease, long drape lines down the thigh and shin; jacket - bunching above the cuffs, creases
+  inside the elbows, a drag line under the arm, gathers across the waist. Up to 2 cm on the pants,
+  1.1 cm on the jacket; they stay in the silhouette and the ray-cast AO darkens their valleys.
+- AO rays now start 8 mm out (the occluders include the undecimated copy of the same surface).
+- Only an 8 mm band round each open edge is kept from the decimation (a 2.5 cm band had spent
+  ~10k triangles on the hems); the lining reaches 5 cm into each opening. Total 61.8k triangles.
+- `--from-blend` re-exports from a saved simulation in ~40 s (no re-simulation).
+- Physics 176/176, cloth_grab unchanged; the web build loads in headless Chromium with no errors.
+  Published as v58.

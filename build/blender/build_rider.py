@@ -929,6 +929,129 @@ def simulate(objs):
     return out
 
 
+# ------------------------------------------------------------------ folds
+# The simulation gives the drape; the folds a stiff ski fabric keeps (stacked rings above the
+# boots, creases behind the knees and inside the elbows, the hip crease, drape lines down the legs,
+# bunching above the cuffs and at the waist) are added as geometry along the normals before the
+# mesh is decimated, so they stay in the silhouette and darken the AO.  Placements follow
+# gen_rider's older sculpted outfit, larger.
+def wrap(a):
+    return (a + np.pi) % (2.0 * np.pi) - np.pi
+
+
+def poly_coords(p, pts, inner):
+    """Closest point on a polyline: arc length S, angle TH round it (0 toward `inner`), distance R."""
+    n = len(p)
+    best = np.full(n, np.inf)
+    S, TH, R = np.zeros(n), np.zeros(n), np.zeros(n)
+    cum = 0.0
+    for i in range(len(pts) - 1):
+        a, b = pts[i], pts[i + 1]
+        d = nrm(b - a)
+        f = nrm(inner - d * np.dot(inner, d))
+        side = np.cross(d, f)
+        L = np.linalg.norm(b - a)
+        t = np.clip((p - a) @ (b - a) / (L * L), 0.0, 1.0)
+        q = p - (a + t[:, None] * (b - a))
+        d2 = (q * q).sum(1)
+        better = d2 < best
+        best = np.where(better, d2, best)
+        S = np.where(better, cum + t * L, S)
+        TH = np.where(better, np.arctan2(q @ side, q @ f), TH)
+        R = np.where(better, np.sqrt(d2), R)
+        cum += L
+    return S, TH, R
+
+
+def ring(S, sc, a, w=0.013):
+    """A fold round a limb at arc length sc: a ridge with the crease just below it."""
+    return a * np.exp(-((S - sc) / w) ** 2) - 0.6 * a * np.exp(-((S - sc - 1.7 * w) / (0.65 * w)) ** 2)
+
+
+def pants_folds(P):
+    disp = np.zeros(len(P))
+    rl = [poly_coords(P, leg_pts(sd), np.array([0.0, 0.0, -1.0])) for sd in ("l", "r")]
+    for k, sd in enumerate(("l", "r")):
+        S, TH, R = rl[k]
+        own = R <= rl[1 - k][2]                       # the leg this point hangs on
+        ss = -1.0 if sd == "l" else 1.0
+        pts = leg_pts(sd)
+        s_knee = np.linalg.norm(pts[1] - pts[0])
+        s_ank = s_knee + np.linalg.norm(pts[2] - pts[1])
+        d = np.zeros(len(P))
+        # stacking above the boot: tilted, wobbly rings
+        for up, a, tilt, ph in ((-0.012, 0.011, 0.02, 0.3), (0.03, 0.012, -0.025, 2.0), (0.073, 0.01, 0.03, 4.1),
+                                (0.116, 0.007, -0.02, 1.0), (0.16, 0.004, 0.02, 2.6)):
+            sc = s_ank - up + tilt * np.cos(TH - ph) + 0.01 * np.sin(2 * TH + ph)
+            d += ring(S, sc, a)
+        # behind the knee: soft creases where the bend gathers the cloth
+        back = np.exp(-(wrap(TH - np.pi) / 0.9) ** 2)
+        for off, a in ((-0.045, 0.006), (-0.005, 0.008), (0.035, 0.007), (0.075, 0.004)):
+            d += back * ring(S, s_knee + off + 0.012 * np.sin(TH * 2.0 + off * 40), a, 0.012)
+        # hip crease across the top of the thigh
+        front = np.exp(-(wrap(TH) / 0.9) ** 2)
+        for s0, a in ((0.07, 0.007), (0.115, 0.006)):
+            d += front * ring(S, s0 + 0.012 * np.cos(TH * 3), a, 0.011)
+        # long drape lines hanging down the thigh and shin (ridge with a soft valley beside it)
+        for th0, s_a, s_b, a in ((0.35, s_knee + 0.02, s_ank - 0.05, 0.008), (-0.4, s_knee + 0.06, s_ank - 0.05, 0.007),
+                                 (ss * 1.4, 0.12, s_knee - 0.12, 0.006), (ss * 2.2, s_knee + 0.03, s_ank - 0.03, 0.008),
+                                 (-ss * 2.0, s_knee + 0.05, s_ank - 0.03, 0.006), (0.05, 0.1, s_knee - 0.14, 0.005),
+                                 (-ss * 0.9, 0.14, s_knee - 0.12, 0.005)):
+            win = sstep(s_a, s_a + 0.06, S) * (1.0 - sstep(s_b - 0.06, s_b, S))
+            dth = wrap(TH - th0 - 0.6 * (S - s_a))
+            d += a * win * (np.exp(-(dth / 0.16) ** 2) - 0.45 * np.exp(-((dth - 0.3) / 0.12) ** 2))
+        disp += np.where(own, d * sstep(0.03, 0.07, S), 0.0)
+    return disp
+
+
+def leg_pts(sd):
+    s = -1.0 if sd == "l" else 1.0
+    hip, knee, ank = J["hip_" + sd], J["knee_" + sd], J["ankle_" + sd]
+    return [hip + np.array([s * 0.005, 0.06, 0.012]), knee, ank, ank + BOOT_B @ np.array([0.0, -0.09, 0.012])]
+
+
+def arm_pts(sd):
+    s = -1.0 if sd == "l" else 1.0
+    sh, el, hd = J["shoulder_" + sd], J["elbow_" + sd], J["hand_" + sd]
+    return [sh + np.array([-s * 0.03, 0.0, 0.005]), el, hd - nrm(hd - el) * 0.035]
+
+
+def jacket_folds(P):
+    disp = np.zeros(len(P))
+    x, y, z = P[:, 0], P[:, 1], P[:, 2]
+    for sd in ("l", "r"):
+        s = -1.0 if sd == "l" else 1.0
+        sh, el, hd = J["shoulder_" + sd], J["elbow_" + sd], J["hand_" + sd]
+        inner = nrm(nrm(hd - el) - nrm(el - sh))
+        pts = arm_pts(sd)
+        S, TH, R = poly_coords(P, pts, inner)
+        on = (R < 0.12) & (s * x > 0.15)
+        s_el = np.linalg.norm(pts[1] - pts[0])
+        s_end = s_el + np.linalg.norm(pts[2] - pts[1])
+        d = np.zeros(len(P))
+        # sleeves bunch above the cuffs
+        for up, a, ph in ((0.025, 0.006, 0.4), (0.06, 0.007, 2.2), (0.097, 0.005, 4.0), (0.135, 0.003, 1.3)):
+            d += ring(S, s_end - up + 0.012 * np.cos(TH - ph) + 0.006 * np.sin(2 * TH + ph), a, 0.011)
+        # inside the elbow: creases fanning out of the bend
+        inside = np.exp(-(wrap(TH) / 0.8) ** 2)
+        for off, a in ((-0.04, 0.005), (-0.012, 0.007), (0.016, 0.007), (0.044, 0.005)):
+            d += inside * ring(S, s_el + off + 0.02 * np.sin(TH * 2.0 + off * 50), a, 0.01)
+        # a drag line from the armpit down the back of the upper arm
+        dth = wrap(TH - np.pi - 0.4 * (S - 0.05))
+        d += 0.004 * sstep(0.04, 0.1, S) * (1 - sstep(s_el - 0.08, s_el - 0.02, S)) * np.exp(-(dth / 0.18) ** 2)
+        disp += np.where(on, d, 0.0)
+    # waist: the jacket gathers across the front as the hips fold
+    front = sstep(-0.02, -0.09, z) * (1 - sstep(0.13, 0.19, np.abs(x)))
+    torso = ~((np.abs(x) > 0.17) & (y < 0.5))         # not the sleeves
+    for y0, a, ph in ((0.0, 0.006, 0.0), (0.05, 0.007, 1.7), (0.1, 0.005, 3.1), (0.15, 0.003, 4.4)):
+        yc = y0 + 0.012 * np.sin(x * 25 + ph)
+        disp += torso * front * (a * np.exp(-((y - yc) / 0.012) ** 2) - 0.5 * a * np.exp(-((y - yc - 0.022) / 0.008) ** 2))
+    return disp
+
+
+FOLDS = {"pants": pants_folds, "jacket": jacket_folds}
+
+
 # ------------------------------------------------------------------ export
 def ambient_occlusion(obj, occluders, rays=24, reach=0.3):
     """Per-vertex AO by ray casting the outward hemisphere against `occluders` (BVH trees)."""
@@ -944,13 +1067,15 @@ def ambient_occlusion(obj, occluders, rays=24, reach=0.3):
         tx /= np.linalg.norm(tx)
         ty = np.cross(nz, tx)
         dirs = local @ np.stack([tx, ty, nz])
-        o = v.co + v.normal * 0.003
+        o = v.co + v.normal * 0.002
         occ = 0.0
         for d in dirs:
             dv = Vector(d)
             best = None
             for tree in occluders:
-                hit = tree.ray_cast(o, dv, reach)
+                # start past the first 8 mm: the occluders include the undecimated copy of this very
+                # surface, which can lie a few millimetres above it
+                hit = tree.ray_cast(o + dv * 0.008, dv, reach)
                 if hit[0] is not None and (best is None or hit[3] < best):
                     best = hit[3]
             if best is not None:
@@ -963,23 +1088,17 @@ def export_garments(garments, occluders, path):
     """garments: [(name, object, target_tris)] -> npz of game-space vertices, normals, triangles
     and AO for build/rider_from_blender.py."""
     from mathutils.bvhtree import BVHTree
-    dg = bpy.context.evaluated_depsgraph_get()
-    trees = []
-    for o in occluders:
-        me = bpy.data.meshes.new_from_object(o.evaluated_get(dg))
-        trees.append(BVHTree.FromPolygons([v.co.copy() for v in me.vertices], [tuple(p.vertices) for p in me.polygons]))
-        bpy.data.meshes.remove(me)
-    out = {}
+    from mathutils.kdtree import KDTree
     to_g = np.array(C.transposed())
+    dense = []
     for name, obj, target in garments:
         cp = bpy.data.objects.new(name + "_export", obj.data.copy())
         link(cp)
         cp.modifiers.clear()
         cp.vertex_groups.clear()
-        tri = cp.modifiers.new("tri", "TRIANGULATE")
+        cp.modifiers.new("tri", "TRIANGULATE")
         apply_modifiers(cp)
-        # even out the open edges (hems, cuffs, collar): relax each edge loop along itself, then keep
-        # the decimation away from it
+        # even out the open edges (hems, cuffs, collar): relax each edge loop along itself
         bm = bmesh.new()
         bm.from_mesh(cp.data)
         for _ in range(24):
@@ -991,10 +1110,42 @@ def export_garments(garments, occluders, path):
                         new[v] = v.co * 0.5 + (nb[0].co + nb[1].co) * 0.25
             for v, c in new.items():
                 v.co = c
-        edge_co = [v.co.copy() for v in bm.verts if v.is_boundary]
         bm.to_mesh(cp.data)
         bm.free()
-        from mathutils.kdtree import KDTree
+        # finer mesh for the folds, then the folds along the normals
+        sub = cp.modifiers.new("sub", "SUBSURF")
+        sub.levels = 1
+        sub.boundary_smooth = "PRESERVE_CORNERS"
+        cp.modifiers.new("tri", "TRIANGULATE")
+        apply_modifiers(cp)
+        me = cp.data
+        n = len(me.vertices)
+        co = np.empty(n * 3)
+        me.vertices.foreach_get("co", co)
+        no = np.empty(n * 3)
+        me.vertices.foreach_get("normal", no)
+        Pg = co.reshape(-1, 3) @ to_g.T
+        Ng = no.reshape(-1, 3) @ to_g.T
+        disp = FOLDS[name](Pg) if name in FOLDS else np.zeros(n)
+        Pg = Pg + Ng * disp[:, None]
+        me.vertices.foreach_set("co", (Pg @ np.array(C).T).ravel())
+        me.update()
+        print("  folds %-7s %6d verts, displacement %.4f..%.4f m" % (name, n, disp.min(), disp.max()))
+        dense.append((name, cp, target))
+    dg = bpy.context.evaluated_depsgraph_get()
+    trees = []
+    for o in [c for _, c, _ in dense] + list(occluders):
+        me = bpy.data.meshes.new_from_object(o.evaluated_get(dg))
+        trees.append(BVHTree.FromPolygons([v.co.copy() for v in me.vertices], [tuple(p.vertices) for p in me.polygons]))
+        bpy.data.meshes.remove(me)
+    out = {}
+    for name, cp, target in dense:
+        # keep the decimation away from the open edges
+        edge_co = []
+        bm = bmesh.new()
+        bm.from_mesh(cp.data)
+        edge_co = [v.co.copy() for v in bm.verts if v.is_boundary]
+        bm.free()
         kd = KDTree(len(edge_co))
         for i, c in enumerate(edge_co):
             kd.insert(c, i)
@@ -1002,8 +1153,8 @@ def export_garments(garments, occluders, path):
         keep = cp.vertex_groups.new(name="keep")
         for v in cp.data.vertices:
             d = kd.find(v.co)[2]
-            if d < 0.025:
-                keep.add([v.index], 1.0 - d / 0.025, "REPLACE")
+            if d < 0.008:                          # just the edge loop and the ring inside it
+                keep.add([v.index], 1.0 - d / 0.008, "REPLACE")
         dc = cp.modifiers.new("dec", "DECIMATE")
         dc.vertex_group = "keep"
         dc.invert_vertex_group = True              # decimate everything but the edge band
