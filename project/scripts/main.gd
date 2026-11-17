@@ -310,6 +310,9 @@ func _respawn() -> void:
 	world.camera.snap()
 
 
+var _bottom_t := 0.0
+
+
 func _process(delta: float) -> void:
 	if state != State.PLAYING:
 		return
@@ -336,6 +339,17 @@ func _process(delta: float) -> void:
 					world.camera.snap())
 		else:
 			_skip_hold = 0.0
+	# stopped at the bottom fence of a park: back to the top
+	var pi: int = world.park.park_at(s.position) if world.park else -1
+	if pi >= 0 and not s.airborne and not s.is_crashed and s.speed < 4.0 \
+			and world.park.local_su(pi, s.position).x > float(world.park.fence_rect(pi)["s1"]) - 15.0:
+		_bottom_t += delta
+		if _bottom_t > 1.2:
+			_bottom_t = -10.0
+			park_i = pi
+			_open_map()
+	else:
+		_bottom_t = 0.0
 	if s.mode == Skier.Mode.WALK and prompt == "" and s.speed < 0.2:
 		prompt = "%s  put your skis back on" % Settings.binding_label("skis")
 	hud.set_prompt(prompt)

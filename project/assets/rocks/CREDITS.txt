@@ -1,0 +1,8 @@
+Rock shapes: scanned models from Poly Haven (https://polyhaven.com), released under CC0
+(public domain). Decimated and rescaled by build/blender/import_rocks.py; the game shades them with
+its own snow and granite shader.
+
+rock_0.obj  Boulder 01               https://polyhaven.com/a/boulder_01               by Rico Cilliers
+rock_1.obj  Namaqualand Boulder 03   https://polyhaven.com/a/namaqualand_boulder_03   by Jenelle van Heerden, Dario Barresi
+rock_2.obj  Namaqualand Boulder 05   https://polyhaven.com/a/namaqualand_boulder_05   by Jenelle van Heerden, Dario Barresi
+rock_3.obj  Rock 09                  https://polyhaven.com/a/rock_09                  by Jenelle van Heerden

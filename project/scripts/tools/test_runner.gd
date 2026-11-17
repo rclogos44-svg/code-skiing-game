@@ -1007,7 +1007,8 @@ func _rock_shots() -> void:
 	var data := f.get_buffer(f.get_length()).to_float32_array()
 	var picked := []
 	for i in range(0, data.size(), 4):
-		if data[i + 2] > 3.0 and data[i + 2] < 7.0 and picked.size() < 3 and (picked.is_empty() or Vector2(data[i], data[i + 1]).distance_to(picked[-1]) > 600.0):
+		if data[i + 2] > 3.0 and data[i + 2] < 7.0 and picked.size() < 3 and world.vegetation._near_park(data[i], data[i + 1]) \
+				and (picked.is_empty() or Vector2(data[i], data[i + 1]).distance_to(picked[-1]) > 600.0):
 			picked.append(Vector2(data[i], data[i + 1]))
 	world.skier.set_physics_process(false)
 	var k := 0
@@ -1023,6 +1024,21 @@ func _rock_shots() -> void:
 			await _frames(4)
 			await _snap("rock_%d_%03d" % [k, int(dist)])
 		k += 1
+	# the park fences: from the top of Big Air Park, and from inside along the side netting
+	var pk = world.park
+	var r: Dictionary = pk.fence_rect(1)
+	var o: Vector2 = r["o"]
+	var d: Vector2 = r["d"]
+	var n := Vector2(-d.y, d.x)
+	for v in [[-60.0, 0.0, 120.0, 0.0, 14.0], [200.0, 50.0, 260.0, 66.0, 3.0], [560.0, -30.0, 600.0, 10.0, 4.0]]:
+		var eye2: Vector2 = o + d * float(v[0]) + n * float(v[1])
+		var at2: Vector2 = o + d * float(v[2]) + n * float(v[3])
+		var eye := Vector3(eye2.x, world.terrain.height(eye2.x, eye2.y) + float(v[4]), eye2.y)
+		var at := Vector3(at2.x, world.terrain.height(at2.x, at2.y) + 1.0, at2.y)
+		world.skier.teleport(Vector3(eye2.x, 0, eye2.y) + Vector3(0, 0, 0), 0.0)
+		_free_cam(eye, at)
+		await _frames(20)
+		await _snap("fence_%d" % int(v[0]))
 	world.skier.set_physics_process(true)
 
 
@@ -2177,6 +2193,35 @@ func _ghost_race() -> void:
 	Engine.time_scale = 1.0
 
 
+## The parks are fenced: riding hard at the side netting, or on past the bottom, he stays inside
+## the fence and on his feet.
+func _fences() -> void:
+	var pk = world.park
+	check("parks are fenced (%d)" % pk.parks.size(), pk.parks.size() > 0 and pk.get_child_count() > 0)
+	for i in [1, 3]:
+		var r: Dictionary = pk.fence_rect(i)
+		var o: Vector2 = r["o"]
+		var d: Vector2 = r["d"]
+		var n := Vector2(-d.y, d.x)
+		# across the park into the side netting at speed
+		for side in [-1.0, 1.0]:
+			var p2: Vector2 = o + d * 300.0 + n * float(side) * (float(r["w"]) - 12.0)
+			var out := Vector3(n.x * float(side), 0, n.y * float(side))
+			var s := _settle_on(Vector3(p2.x, 0, p2.y), Skier.yaw_of(out))
+			s.vel = out * 14.0
+			_run(s, 2.0, {})
+			var su: Vector2 = pk.local_su(i, s.position)
+			check("park %d: the %s fence stops him (%.1f m across, fence at %.0f)" % [i, "left" if side < 0 else "right", absf(su.y), r["w"]],
+				absf(su.y) <= float(r["w"]) and not s.is_crashed)
+		# straight down past the end of the park
+		var pb: Vector2 = o + d * (float(r["s1"]) - 30.0)
+		var s2 := _settle_on(Vector3(pb.x, 0, pb.y), Skier.yaw_of(Vector3(d.x, 0, d.y)))
+		s2.vel = Vector3(d.x, 0, d.y) * 15.0
+		_run(s2, 3.0, {})
+		var sb: Vector2 = pk.local_su(i, s2.position)
+		check("park %d: the bottom fence holds him (%.1f m down, fence at %.0f)" % [i, sb.x, r["s1"]], sb.x <= float(r["s1"]))
+
+
 func _lift_ride() -> void:
 	var r = world.resort
 	if r == null or r.lifts.is_empty():
@@ -2421,9 +2466,9 @@ func _physics() -> void:
 	_skis_attached(spot)
 	_jibs()
 	_on_foot(spot)
+	_fences()
 	world.body.set_process(true)
 	s.set_physics_process(true)
-	await _lift_ride()
 	await _ghost_race()
 
 

@@ -19,6 +19,7 @@ var _far_nodes: Array[MultiMeshInstance3D] = []
 var _rock_nodes: Array[MultiMeshInstance3D] = []
 var tree_count := 0
 var rock_count := 0
+var _scanned_rocks := false
 
 
 func setup(td: TerrainData, obs: Obstacles) -> void:
@@ -38,8 +39,15 @@ func setup(td: TerrainData, obs: Obstacles) -> void:
 	rock_mat.shader = load("res://shaders/rock.gdshader")
 	rock_mat.set_shader_parameter("rock_albedo", load("res://assets/textures/rock_albedo.png"))
 	rock_mat.set_shader_parameter("rock_normal", load("res://assets/textures/rock_normal.png"))
-	for v in 5:
-		rock_meshes.append(_rock_mesh(v))
+	# scanned boulders (Poly Haven, CC0; build/blender/import_rocks.py); the procedural rocks if absent
+	for v in 4:
+		var path := "res://assets/rocks/rock_%d.obj" % v
+		if ResourceLoader.exists(path):
+			rock_meshes.append(load(path))
+	_scanned_rocks = not rock_meshes.is_empty()
+	if rock_meshes.is_empty():
+		for v in 5:
+			rock_meshes.append(_rock_mesh(v))
 	_load_trees()
 	_load_rocks()
 	apply_settings()
@@ -86,10 +94,26 @@ func _read_bin(path: String) -> PackedFloat32Array:
 	return f.get_buffer(f.get_length()).to_float32_array()
 
 
+## Only the forest framing the parks is kept: the game is the fenced parks, the rest of the mountain
+## is scenery seen over the netting (and needs no trees to read as a mountain from there).
+const KEEP_S := 220.0
+const KEEP_U := 200.0
+
+
+func _near_park(x: float, z: float) -> bool:
+	for pk: Dictionary in terrain.layout.get("parks", []):
+		var d := Vector2(pk["dir"][0], pk["dir"][1])
+		var rel := Vector2(x, z) - Vector2(pk["origin"][0], pk["origin"][1])
+		var s := rel.dot(d)
+		if s > -KEEP_S - 60.0 and s < float(pk["length"]) + KEEP_S and absf(rel.dot(Vector2(-d.y, d.x))) < float(pk["half_width"]) + KEEP_U:
+			return true
+	return false
+
+
 func _load_trees() -> void:
 	var data := _read_bin("res://world/trees.bin")
 	var count := data.size() / 4
-	tree_count = count
+	tree_count = 0
 	var chunks := {}
 	var nchunk := int(ceil(terrain.world / CHUNK))
 	for i in count:
@@ -97,6 +121,9 @@ func _load_trees() -> void:
 		var z := data[i * 4 + 1]
 		var s := data[i * 4 + 2]
 		var r := data[i * 4 + 3]
+		if not _near_park(x, z):
+			continue
+		tree_count += 1
 		var key := clampi(int(z / CHUNK), 0, nchunk - 1) * nchunk + clampi(int(x / CHUNK), 0, nchunk - 1)
 		if not chunks.has(key):
 			chunks[key] = []
@@ -140,7 +167,7 @@ func _tree_xform(arr: PackedFloat32Array, i: int, center: Vector3) -> Transform3
 func _load_rocks() -> void:
 	var data := _read_bin("res://world/rocks.bin")
 	var count := data.size() / 4
-	rock_count = count
+	rock_count = 0
 	var nchunk := int(ceil(terrain.world / CHUNK))
 	var chunks := {}
 	for i in count:
@@ -148,6 +175,9 @@ func _load_rocks() -> void:
 		var z := data[i * 4 + 1]
 		var s := clampf(data[i * 4 + 2], 0.6, 9.0)
 		var r := data[i * 4 + 3]
+		if not _near_park(x, z):
+			continue
+		rock_count += 1
 		var key := clampi(int(z / CHUNK), 0, nchunk - 1) * nchunk + clampi(int(x / CHUNK), 0, nchunk - 1)
 		if not chunks.has(key):
 			chunks[key] = []
@@ -175,7 +205,9 @@ func _load_rocks() -> void:
 				var tilt := Vector3.UP.cross(nrm)
 				if tilt.length() > 0.01:
 					b = Basis(tilt.normalized(), Vector3.UP.angle_to(nrm) * 0.6) * b
-				b = b.scaled(Vector3(s, s * randf_range(0.55, 0.9), s * randf_range(0.8, 1.2)))
+				# the procedural blobs vary their height; scanned boulders keep their own shape
+				var sy := randf_range(0.85, 1.1) if _scanned_rocks else randf_range(0.55, 0.9)
+				b = b.scaled(Vector3(s, s * sy, s * randf_range(0.8, 1.2)))
 				xf.append(Transform3D(b, Vector3(x, y, z) - center))
 			if xf.is_empty():
 				continue

@@ -1,7 +1,7 @@
 class_name MiniMap
 extends Control
 ## Round minimap in the top-right corner: the painted map around the player, turning with the
-## camera (or north-up), with pistes, lifts, open drop zones, the next race gate and the map
+## camera (or north-up), with the park fences and jump lips, the next race gate and the map
 ## waypoint (pinned to the rim with its distance when it is out of view).
 
 const SIZE := 210.0
@@ -111,39 +111,27 @@ func _draw_overlay() -> void:
 	var c := Vector2(SIZE * 0.5, SIZE * 0.5)
 	var reach := radius_m * 1.6
 	var pp := Vector2(skier.position.x, skier.position.z)
-	# pistes
-	for pi in terrain.layout.get("pistes", []):
-		var col: Color = DIFF_COLORS.get(pi["difficulty"], Color.WHITE)
-		var pts: Array = pi["pts"]
-		var prev := Vector2.INF
-		for i in range(0, pts.size(), 2):
-			var q := Vector2(pts[i][0], pts[i][1])
-			if q.distance_to(pp) > reach:
-				prev = Vector2.INF
-				continue
-			var sp := _to_px(q.x, q.y)
-			if prev != Vector2.INF:
-				_clip_line(prev, sp, Color(1, 1, 1, 0.8), 4.5)
-				_clip_line(prev, sp, col, 2.6)
-			prev = sp
-	# lifts
-	for lf in terrain.layout.get("lifts", []):
-		var a := _to_px(lf["bottom"][0], lf["bottom"][1])
-		var b := _to_px(lf["top"][0], lf["top"][1])
-		_clip_line(a, b, Color(1, 1, 1, 0.8), 4.0)
-		_clip_line(a, b, Color(0.08, 0.08, 0.1), 2.0)
-		for e in [a, b]:
-			if _inside(e, 4.0):
-				_ov.draw_rect(Rect2(e - Vector2(3, 3), Vector2(6, 6)), Color(0.08, 0.08, 0.1))
-	# open drop zones
-	for d in terrain.layout.get("drop_zones", []):
-		if not Game.is_drop_unlocked(d["name"]):
+	# the park fences (the parks are the whole game: no pistes, lifts or drop zones)
+	for pk: Dictionary in terrain.layout.get("parks", []):
+		var o := Vector2(pk["origin"][0], pk["origin"][1])
+		var d := Vector2(pk["dir"][0], pk["dir"][1])
+		var n := Vector2(-d.y, d.x)
+		var w := float(pk["half_width"]) + 6.0
+		var s0 := -48.0
+		var s1 := float(pk["length"]) + 28.0
+		var cs := [o + d * s0 - n * w, o + d * s1 - n * w, o + d * s1 + n * w, o + d * s0 + n * w]
+		if (o + d * (s1 * 0.5)).distance_to(pp) > reach + s1:
 			continue
-		var p := _to_px(d["x"], d["z"])
-		if _inside(p, 6.0):
-			var r := 5.0
-			var dia := PackedVector2Array([p + Vector2(0, -r), p + Vector2(r, 0), p + Vector2(0, r), p + Vector2(-r, 0)])
-			_ov.draw_colored_polygon(dia, UITheme.ACCENT)
+		for k in 4:
+			var a := _to_px(cs[k].x, cs[k].y)
+			var b := _to_px(cs[(k + 1) % 4].x, cs[(k + 1) % 4].y)
+			_clip_line(a, b, Color(1.0, 0.42, 0.05), 2.5)
+		for kk in pk.get("kickers", []):
+			var lp: Array = kk.get("lip", [])
+			if lp.size() >= 2:
+				var q := _to_px(float(lp[0]), float(lp[1]))
+				if _inside(q, 3.0):
+					_ov.draw_circle(q, 2.5, Color(1, 1, 1, 0.9))
 	# next race gate and the waypoint: pinned to the rim when out of view
 	if challenges:
 		var g := challenges.next_gate()

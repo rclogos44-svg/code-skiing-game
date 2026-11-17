@@ -154,6 +154,7 @@ var grab_kind_r := ""
 var _ground_pitch := 0.0           # pitch of the snow along the direction of travel
 var _ground_pitch_rate := 0.0      # how fast it changes (a kicker's lip throws you backward)
 var rails: Array = []              # jib features {a, b (top line), kind, width, length}, set by the park
+var park: Node = null              # the parks (fence_rect / park_at): the fences keep him inside
 var grind := {}                    # the rail being slid
 var grind_slide := false           # skis across the rail (slide) instead of along it (50-50)
 var grind_switch := false
@@ -870,6 +871,7 @@ func step(dt: float) -> void:
 	position = p
 	_bounds()
 	_collide(dt)
+	_fence()
 	speed = vel.length()
 	_measure_turn(dt)
 	_update_safe(dt)
@@ -1427,6 +1429,42 @@ func _collide(dt: float) -> void:
 		position = Vector3(o.x + nrm.x * r, position.y, o.z + nrm.z * r)
 
 
+## The park fences: inside a park's fenced rectangle he is held a little short of the netting, which
+## gives like a net - his speed into it is taken out with a small bounce, never a crash.
+func _fence() -> void:
+	if park == null:
+		return
+	var i: int = park.park_at(position)
+	if i < 0:
+		return
+	var r: Dictionary = park.fence_rect(i)
+	var d: Vector2 = r["d"]
+	var n := Vector2(-d.y, d.x)
+	var rel := Vector2(position.x, position.z) - (r["o"] as Vector2)
+	var s := rel.dot(d)
+	var u := rel.dot(n)
+	var m := 0.5
+	var w: float = r["w"] - m
+	var push := Vector2.ZERO
+	if u > w:
+		push += n * (w - u)
+	elif u < -w:
+		push += n * (-w - u)
+	if s < float(r["s0"]) + m:
+		push += d * (float(r["s0"]) + m - s)
+	elif s > float(r["s1"]) - m:
+		push += d * (float(r["s1"]) - m - s)
+	if push == Vector2.ZERO:
+		return
+	position.x += push.x
+	position.z += push.y
+	var nrm := Vector3(push.x, 0.0, push.y).normalized()
+	var vn := vel.dot(nrm)
+	if vn < 0.0:
+		vel -= nrm * vn * 1.2
+		vel *= 0.85
+
+
 func _bounds() -> void:
 	var m := 60.0
 	var w := terrain.world
@@ -1625,6 +1663,7 @@ func _walk_step(dt: float) -> void:
 	contact = not _walk_air
 	_bounds()
 	_collide(dt)
+	_fence()
 	speed = hv.length()
 	travel_yaw = heading
 	lat_acc = 0.0

@@ -904,3 +904,19 @@ helmet, orange goggles, navy gaiter).
 - `--from-blend` re-exports from a saved simulation in ~40 s (no re-simulation).
 - Physics 176/176, cloth_grab unchanged; the web build loads in headless Chromium with no errors.
   Published as v58.
+
+## The game is the parks: fenced, no open mountain; scanned rocks (v59)
+
+- Each park is fenced: orange safety netting (alpha-cut diamond mesh, `shaders/fence_net.gdshader`)
+  on posts every 3 m, 6 m outside the groomed width, across the top behind the staging and 28 m
+  past the bottom. `Skier._fence` holds him 0.5 m short of it and takes his speed into the net out
+  with a small bounce (never a crash). Stopping near the bottom fence returns you to the top.
+- Not built any more: lifts and village (resort.gd), landmarks, NPC skiers. Trees and rocks are kept
+  only in a band round the parks (the rest of the mountain stays as the view over the nets). The
+  minimap draws the park fences and jump lips instead of pistes, lifts and drop zones.
+- Rocks: four Poly Haven scans (CC0) - Boulder 01, Namaqualand Boulder 03 / 05, Rock 09 -
+  downloaded to `build/.cache/polyhaven`, decimated to 1500 triangles and normalised by
+  `build/blender/import_rocks.py` into `project/assets/rocks/*.obj` (credits beside them and in
+  SUMMIT_CONTENT.txt); the game's own snowy granite shader shades them.
+- Tests: the chairlift ride is gone from the physics suite; new fence checks ride into both side
+  nets at 14 m/s and on past the bottom in two parks. Physics 168/168.

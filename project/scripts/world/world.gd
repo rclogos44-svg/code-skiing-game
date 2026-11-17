@@ -53,27 +53,13 @@ func build() -> bool:
 	load_ms["vegetation"] = Time.get_ticks_msec() - t2
 
 	var t3 := Time.get_ticks_msec()
-	if ClassDB.class_exists("Node") and ResourceLoader.exists("res://scripts/world/resort.gd"):
-		resort = load("res://scripts/world/resort.gd").new()
-		resort.name = "Resort"
-		add_child(resort)
-		resort.setup(terrain, obstacles)
-	if ResourceLoader.exists("res://scripts/world/landmarks.gd"):
-		var lm = load("res://scripts/world/landmarks.gd").new()
-		lm.name = "Landmarks"
-		add_child(lm)
-		lm.setup(terrain, obstacles, resort)
-	if resort and ResourceLoader.exists("res://scripts/world/npc_skiers.gd"):
-		var npc = load("res://scripts/world/npc_skiers.gd").new()
-		npc.name = "NPCSkiers"
-		add_child(npc)
-		npc.setup(terrain, resort.rider_mat)
+	# the game is the parks: no lifts, village, landmarks or other skiers on the open mountain
 	if ResourceLoader.exists("res://scripts/world/park.gd"):
 		park = load("res://scripts/world/park.gd").new()
 		park.name = "Park"
 		add_child(park)
 		park.setup(terrain, obstacles)
-	load_ms["resort"] = Time.get_ticks_msec() - t3
+	load_ms["park"] = Time.get_ticks_msec() - t3
 	obstacles.build()
 
 	skier = Skier.new()
@@ -82,6 +68,7 @@ func build() -> bool:
 	skier.setup(terrain, obstacles)
 	if park:
 		skier.rails = park.rails
+		skier.park = park
 
 	body = SkierBody.new()
 	body.name = "SkierBody"
